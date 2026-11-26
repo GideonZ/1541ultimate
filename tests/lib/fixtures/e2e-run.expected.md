@@ -108,6 +108,7 @@ What the action log says the run did to the device and, where a mutation has an 
 | 127.0.0.1 | 127.0.0.1/overlay/leaves-things-behind/1 | mount not undone | /v1/drives/a |
 | 127.0.0.1@localhost | 127.0.0.1@localhost/overlay/leaves-things-behind/1 | mount not undone | /v1/drives/a |
 | 127.0.0.1 | 127.0.0.1 (the runner itself) | written 2 times, last set to a value | /v1/configs/Network Settings/Log to Syslog Server |
+| 127.0.0.1 | 127.0.0.1 (the runner itself) | set to Stored names | /v1/configs/User Interface Settings/Filename view |
 | 127.0.0.1@localhost | 127.0.0.1@localhost/overlay/leaves-things-behind/1 | set to 192.168.1.2:5514 | /v1/configs/Network Settings/Log to Syslog Server |
 
 ## Retries
@@ -1269,6 +1270,7 @@ Checks the runner reported outside any suite, which is its teardown after the la
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | settings: capture 127.0.0.1 | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 2 settings in 2 stores |
 | 0 | machine: resets skip the RAM test | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already set |
+| 0 | machine: the file browsers show stored names | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 127.0.0.1: '' -> 'Stored names' |
 | 0 | the machine keeps its own bus resources | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already set |
 | 0 | the cartridges fitted here are off the IEC bus | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | none declared or already off |
 | 0 | recovery: rm -f /FIXTURE/unhealthy | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | - |
@@ -1285,9 +1287,10 @@ Checks the runner reported outside any suite, which is its teardown after the la
 
 | # | Check | Verdict | Duration | Opened at | Closed at | Reported |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0 | settings: capture 127.0.0.1 | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 2 settings in 2 stores |
-| 0 | settings: capture localhost | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 2 settings in 2 stores |
+| 0 | settings: capture 127.0.0.1 | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 3 settings in 2 stores |
+| 0 | settings: capture localhost | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | 3 settings in 2 stores |
 | 0 | machine: resets skip the RAM test | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already set |
+| 0 | machine: the file browsers show stored names | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already set |
 | 0 | cartridge: the computer prefers its external cartridge | WARN | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | localhost did not answer for 'Cartridge Preference': GET its config API returned HTTP 404: b'{"errors": ["no such category"]}' |
 | 0 | cartridge: the computer's own drives are off | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | already off |
 | 0 | recovery: rm -f /FIXTURE/unhealthy | OK | 0.000s | 0000-00-00 00:00:00 | 0000-00-00 00:00:00 | - |

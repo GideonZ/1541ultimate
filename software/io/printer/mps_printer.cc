@@ -875,7 +875,7 @@ MpsPrinter::Print(const char * filename)
 
     if (error)
     {
-        DBGMSG("PNG encoder failed, abort saving");
+        printf("PNG encoder failed, page not saved\n");
 
         if (buffer)
             free(buffer);
@@ -898,7 +898,7 @@ MpsPrinter::Print(const char * filename)
     }
     else
     {
-        DBGMSG("Saving PNG failed");
+        printf("Saving PNG %s failed, page lost\n", filename);
     }
 #else
     int fhd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0666);

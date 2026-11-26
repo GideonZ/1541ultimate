@@ -30,6 +30,12 @@ CXXOPTIONS = -std=gnu++11 -g -O0 -w -pthread -include stdint.h '-DSLICED_TRANSFE
              -I$(PATH_SW)/io/command_interface -I$(PATH_SW)/filesystem \
              -I$(PATH_SW)/portable/riscv
 
+# make test SAN=1: AddressSanitizer with leak detection (what finds the Dos leaks and bad deletes)
+ifdef SAN
+CXXOPTIONS += -fsanitize=address -fno-omit-frame-pointer
+export ASAN_OPTIONS = detect_leaks=1
+endif
+
 # production sources, copied: <source dir>/<name>
 PROD    = filemanager/dos io/command_interface/control_target io/c64/reu_preloader
 SHADOW_SRCS = $(addprefix $(SHADOW)/,$(addsuffix .cc,$(notdir $(PROD))))
@@ -44,9 +50,15 @@ COMMON_OBJS = $(addprefix $(OUTPUT)/,$(notdir $(COMMON:.cc=.o)))
 DEPS    = $(SHADOW_HDRS) $(TESTDIR)/uci_fakes.h $(TESTDIR)/uci_test_util.h $(wildcard $(STUBS)/*.h) \
           $(wildcard $(PATH_SW)/components/*.h $(PATH_SW)/io/command_interface/*.h)
 
+# software/test/uci_targets/u64/*_test.cc: control_target.cc built with U64 (stubs_u64 first),
+# for the U64-only commands; linked with the same fakes
+U64TESTS = $(notdir $(basename $(wildcard $(TESTDIR)/u64/*_test.cc)))
+U64OPTIONS = -I$(TESTDIR)/stubs_u64 $(CXXOPTIONS) -DU64
+U64_OBJS = $(OUTPUT)/u64/control_target.o $(filter-out $(OUTPUT)/control_target.o,$(COMMON_OBJS))
+
 .PHONY: all test clean
 
-all: $(addprefix $(RESULT)/,$(TESTS))
+all: $(addprefix $(RESULT)/,$(TESTS)) $(addprefix $(RESULT)/u64_,$(U64TESTS))
 
 # copy rules: the copy is rebuilt whenever the production file changes
 define COPY_RULE
@@ -69,8 +81,20 @@ $(RESULT)/%: $(OUTPUT)/%.o $(COMMON_OBJS)
 	@mkdir -p $(RESULT)
 	$(CXX) $(CXXOPTIONS) -o $@ $^
 
+$(OUTPUT)/u64/control_target.o: $(SHADOW)/control_target.cc $(DEPS) $(wildcard $(TESTDIR)/stubs_u64/*.h)
+	@mkdir -p $(OUTPUT)/u64
+	$(CXX) $(U64OPTIONS) -c -o $@ $<
+
+$(OUTPUT)/u64/%_test.o: $(TESTDIR)/u64/%_test.cc $(DEPS) $(wildcard $(TESTDIR)/stubs_u64/*.h)
+	@mkdir -p $(OUTPUT)/u64
+	$(CXX) $(U64OPTIONS) -c -o $@ $<
+
+$(RESULT)/u64_%: $(OUTPUT)/u64/%.o $(U64_OBJS)
+	@mkdir -p $(RESULT)
+	$(CXX) $(U64OPTIONS) -o $@ $^
+
 test: all
-	@rc=0; for t in $(TESTS); do $(RESULT)/$$t || rc=1; done; exit $$rc
+	@rc=0; for t in $(TESTS) $(addprefix u64_,$(U64TESTS)); do $(RESULT)/$$t || rc=1; done; exit $$rc
 
 clean:
 	@rm -rf $(OUTPUT) $(RESULT)
