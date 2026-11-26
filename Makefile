@@ -93,7 +93,6 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/socketdma test
 	@$(MAKE) -C target/pc/linux/syslog test
 	@$(MAKE) -C target/pc/linux/ucitargets test
-	@$(MAKE) -C target/pc/linux/wifidedicated test
 	@$(MAKE) -C target/pc/linux/wifitls test
 	@$(MAKE) -C software/userinterface/tests
 

@@ -19,7 +19,6 @@
 #include "u64_config.h"
 #endif
 #include "init_function.h"
-#include "wifi_dedicated.h"
 #include "wifi_tls.h"
 #include "wifi_random.h"
 

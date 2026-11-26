@@ -1,5 +1,5 @@
 // wifi_tls.cc: the TLS calls to the WiFi module, what goes into each request and what is taken from each answer.
-// The waiting is wifi_dedicated_call's. Free of FreeRTOS calls, so that the checks can be tested on the host.
+// The sending and the waiting are wifi_call's. Free of FreeRTOS calls, so that the checks can be tested on the host.
 
 #include <stddef.h>
 #include <string.h>
@@ -7,7 +7,8 @@
 extern "C" {
     #include "cmd_buffer.h"
 }
-#include "wifi_dedicated.h"
+#include "wifi_call.h"
+#include "wifi_random.h" // wifi_module_ready
 #include "wifi_tls.h"
 
 // The wire layouts of rpc_tls.h, byte for byte.
@@ -121,10 +122,12 @@ static_assert(WIFI_TLS_HANDSHAKING == TLS_STATE_HANDSHAKING, "states differ");
 static_assert(WIFI_TLS_ESTABLISHED == TLS_STATE_ESTABLISHED, "states differ");
 static_assert(WIFI_TLS_CLOSED == TLS_STATE_CLOSED, "states differ");
 static_assert(WIFI_TLS_FAILED == TLS_STATE_FAILED, "states differ");
-static_assert(WIFI_TLS_BUSY == DEDICATED_BUSY, "codes differ");
-static_assert(WIFI_TLS_NO_MODULE == DEDICATED_NO_MODULE, "codes differ");
-static_assert(WIFI_TLS_FOREIGN == DEDICATED_FOREIGN, "codes differ");
-static_assert(WIFI_TLS_UNSENT == DEDICATED_UNSENT, "codes differ");
+static_assert(WIFI_TLS_BUSY == WIFI_CALL_BUSY, "codes differ");
+static_assert(WIFI_TLS_FOREIGN == WIFI_CALL_FOREIGN, "codes differ");
+static_assert(WIFI_TLS_UNSENT == WIFI_CALL_UNSENT, "codes differ");
+static_assert((WIFI_CALL_CANCELLED != WIFI_TLS_TOO_LONG) && (WIFI_CALL_CANCELLED != WIFI_TLS_AGAIN) &&
+              (WIFI_CALL_RESTARTED != WIFI_TLS_TOO_LONG) && (WIFI_CALL_RESTARTED != WIFI_TLS_AGAIN),
+              "the ends of a call must not be a result of a take");
 
 static bool is_answer(const uint8_t *reply, int size, uint8_t command, uint16_t sequence)
 {
@@ -383,10 +386,23 @@ static int take_open(const uint8_t *reply, int size, uint16_t sequence, void *co
     return wifi_tls_take_open(reply, size, sequence, c->open->slot, c->esp_err, c->reason);
 }
 
-static void set_cancel(dedicated_call_t *call, const wifi_tls_cancel_t *cancel)
+static void set_cancel(wifi_call_t *call, const wifi_tls_cancel_t *cancel)
 {
     call->cancel = cancel ? cancel->cancelled : NULL;
     call->cancel_context = cancel ? cancel->context : NULL;
+    call->use_deadline = cancel ? cancel->use_deadline : false;
+    call->deadline = cancel ? cancel->deadline : 0;
+}
+
+// Without the module application nothing can answer, so this fails at once rather than on a timeout. A call
+// that was cancelled, or that a module restart ended, is a call that got no answer.
+static int tls_call(const wifi_call_t *call)
+{
+    if (!wifi_module_ready()) {
+        return WIFI_TLS_NO_MODULE;
+    }
+    int result = wifi_call(call);
+    return ((result == WIFI_CALL_CANCELLED) || (result == WIFI_CALL_RESTARTED)) ? WIFI_TLS_BUSY : result;
 }
 
 int wifi_tls_open(const wifi_tls_open_t *open, uint32_t timeout_ms, const wifi_tls_cancel_t *cancel, int *esp_err,
@@ -398,9 +414,9 @@ int wifi_tls_open(const wifi_tls_open_t *open, uint32_t timeout_ms, const wifi_t
         return WIFI_TLS_TOO_LONG;
     }
     open_call_t args = { open, esp_err, reason };
-    dedicated_call_t call = { "TLS Open", CMD_TLS_OPEN, timeout_ms, fill_open, take_open, &args, NULL, NULL };
+    wifi_call_t call = { "TLS Open", CMD_TLS_OPEN, timeout_ms, fill_open, take_open, &args, NULL, NULL, false, 0 };
     set_cancel(&call, cancel);
-    return wifi_dedicated_call(&call);
+    return tls_call(&call);
 }
 
 typedef struct {
@@ -449,9 +465,9 @@ int wifi_tls_step(uint8_t slot, uint16_t tag, wifi_tls_step_t *step, uint32_t ti
         return WIFI_TLS_TOO_LONG;
     }
     step_call_t args = { slot, tag, step };
-    dedicated_call_t call = { "TLS Step", CMD_TLS_STEP, timeout_ms, fill_step, take_step, &args, NULL, NULL };
+    wifi_call_t call = { "TLS Step", CMD_TLS_STEP, timeout_ms, fill_step, take_step, &args, NULL, NULL, false, 0 };
     set_cancel(&call, cancel);
-    return wifi_dedicated_call(&call);
+    return tls_call(&call);
 }
 
 typedef struct {
@@ -487,9 +503,9 @@ int wifi_tls_close(uint8_t slot, uint16_t tag, uint8_t *ct_out, uint16_t room, u
     *esp_err = 0;
     *ct_out_len = 0;
     session_call_t args = { slot, tag, NULL, ct_out, room, ct_out_len, esp_err };
-    dedicated_call_t call = { "TLS Close", CMD_TLS_CLOSE, timeout_ms, fill_session, take_close, &args, NULL, NULL };
+    wifi_call_t call = { "TLS Close", CMD_TLS_CLOSE, timeout_ms, fill_session, take_close, &args, NULL, NULL, false, 0 };
     set_cancel(&call, cancel);
-    return wifi_dedicated_call(&call);
+    return tls_call(&call);
 }
 
 static int take_stats(const uint8_t *reply, int size, uint16_t sequence, void *context)
@@ -503,9 +519,9 @@ int wifi_tls_stats(uint8_t slot, uint16_t tag, wifi_tls_stats_t *stats, int *esp
 {
     *esp_err = 0;
     session_call_t args = { slot, tag, stats, NULL, 0, NULL, esp_err };
-    dedicated_call_t call = { "TLS Stats", CMD_TLS_STATS, timeout_ms, fill_session, take_stats, &args, NULL, NULL };
+    wifi_call_t call = { "TLS Stats", CMD_TLS_STATS, timeout_ms, fill_session, take_stats, &args, NULL, NULL, false, 0 };
     set_cancel(&call, cancel);
-    return wifi_dedicated_call(&call);
+    return tls_call(&call);
 }
 
 static int fill_close_all(uint8_t *request, void *context)
@@ -521,9 +537,9 @@ static int take_close_all(const uint8_t *reply, int size, uint16_t sequence, voi
 int wifi_tls_close_all(int *esp_err, uint32_t timeout_ms)
 {
     *esp_err = 0;
-    const dedicated_call_t call = { "TLS Close All", CMD_TLS_CLOSE_ALL, timeout_ms, fill_close_all,
-                                    take_close_all, esp_err, NULL, NULL };
-    return wifi_dedicated_call(&call);
+    const wifi_call_t call = { "TLS Close All", CMD_TLS_CLOSE_ALL, timeout_ms, fill_close_all,
+                                    take_close_all, esp_err, NULL, NULL, false, 0 };
+    return tls_call(&call);
 }
 
 typedef struct {
@@ -559,7 +575,7 @@ int wifi_tls_set_ca(const uint8_t *der, uint16_t der_len, uint16_t ca_tag, int *
         return WIFI_TLS_TOO_LONG;
     }
     set_ca_call_t args = { der, der_len, ca_tag, esp_err, reject };
-    dedicated_call_t call = { "TLS Set CA", CMD_TLS_SET_CA, timeout_ms, fill_set_ca, take_set_ca, &args, NULL, NULL };
+    wifi_call_t call = { "TLS Set CA", CMD_TLS_SET_CA, timeout_ms, fill_set_ca, take_set_ca, &args, NULL, NULL, false, 0 };
     set_cancel(&call, cancel);
-    return wifi_dedicated_call(&call);
+    return tls_call(&call);
 }
