@@ -893,6 +893,13 @@ static void test_call_send_only(void)
     CHECK(uart.transmitted == 2 && blocking_waits == 1);
     check_clean();
 
+    // The answer that comes before the call is over (the module is fast) is freed, not left in the notification
+    call_setup();
+    uart.on_transmit = answer_now;
+    CHECK(wifi_call(&call) == WIFI_CALL_SENT);
+    CHECK(takes == 0 && uart.buffers_free == 1 && blocking_waits == 0);
+    check_clean();
+
     // Not sent: no buffer, no slot, the UART refused it
     call_setup();
     uart.buffers_free = 0;
