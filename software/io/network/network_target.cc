@@ -15,6 +15,7 @@
 #include <stdio.h>
 #if U64 >= 1
 #include "wifi_random.h"
+#include "wifi_call.h"
 #endif
 #include <stddef.h>
 #include <string.h>
@@ -270,6 +271,10 @@ void NetworkTarget :: cancel_job(void)
     }
     portEXIT_CRITICAL();
     job = NULL;
+#if NET_TLS
+    // A call that waits for the module asks its cancel function now, instead of when its wait ends
+    wifi_wake(worker);
+#endif
     if (wake) {
         wake_worker();
     }
@@ -829,6 +834,9 @@ void NetworkTarget :: c64_reset(void)
 {
     cancel_job();
     resets++;
+#if NET_TLS
+    wifi_wake(worker); // the count is what the call asks for, so it is woken again after it
+#endif
     wake_worker();
 }
 
