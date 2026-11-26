@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from collections.abc import Iterator
@@ -29,15 +30,18 @@ from report import (  # noqa: E402
     Failure, check_fail, check_ok, check_skip, check_start, detail)
 from ui_backend import MODE_TELNET, make_backend  # noqa: E402
 
-# The Debug scenarios inspect the debugger footer, whose original Telnet
-# fixture is a 24-row session.  The suite is intentionally Telnet-only: its
-# natural-exit liveness checks must observe the C64 without an Overlay/Freeze
-# UI owning the live screen.
+# Rows the Debug scenarios search for the monitor: a Telnet session has 24, and
+# the 25th row of the Overlay and Freeze screen only holds the menu's key hints.
 HEIGHT = 24
 # The Debug scenarios accept either footer. monitor_test.py keeps the two apart,
 # because its own checks read CPU banking out of the first one; the Debug
 # scenarios only need to find the row, and on a U2+L the monitor draws the
 # VIC-only form instead.
+# The Debug keys that run or reset the C64, which can take the menu off the
+# screen, and how long it may take to come back.
+_RUN_KEYS = frozenset(("D", "T", "U", "K", "G", "CTRL_R", "CTRL_X"))
+_MENU_RETURN_SECONDS = 8.0
+_MENU_GONE = "menu screen unavailable"
 STATUS_LINE_RE = re.compile(
     f"{core.STATUS_LINE_RE.pattern}|{core.U2_STATUS_LINE_RE.pattern}")
 find_status_line = core.find_any_status_line
@@ -49,6 +53,7 @@ wait_for_rest_byte = core.wait_for_rest_byte
 parse_memory_row = core.parse_memory_row
 ensure_hex_width = core.ensure_hex_width
 ensure_status = core.ensure_status
+monitor_is_up = core.monitor_is_up
 
 
 class SkipCheck(Exception):
@@ -151,6 +156,51 @@ class MonitorSession(core.MonitorSession):
                                telnet_host=host, telnet_port=port)
         super().__init__(backend)
         self.sock = _LegacySocket(self)
+
+    def capture(self) -> Snapshot:
+        # Continue with no breakpoint closes the Overlay or Freeze menu so the
+        # program runs. A closed menu reads as a blank screen: no monitor, no Dbg.
+        try:
+            return super().capture()
+        except Failure as exc:
+            if _MENU_GONE not in str(exc):
+                raise
+        if self.backend.menu_closed():
+            return Snapshot([" " * 40] * 25, [], "menu closed")
+        return super().capture()  # drawn again between the two reads
+
+    def send_char(self, ch: str, *, settle: bool = False,
+                  expect_redraw: bool = True) -> Snapshot:
+        try:
+            return super().send_char(ch, settle=settle, expect_redraw=expect_redraw)
+        except Failure as exc:
+            if ch not in _RUN_KEYS or _MENU_GONE not in str(exc):
+                raise
+        return self._menu_back()
+
+    def send_key(self, key: str, *, settle: bool = False,
+                 expect_redraw: bool = True) -> Snapshot:
+        try:
+            return super().send_key(key, settle=settle, expect_redraw=expect_redraw)
+        except Failure as exc:
+            if key not in _RUN_KEYS or _MENU_GONE not in str(exc):
+                raise
+        return self._menu_back()
+
+    def _menu_back(self) -> Snapshot:
+        # The menu leaves the screen while a debug command runs the CPU or the
+        # monitor is rebuilt after a reset, and is drawn again afterwards.
+        # Continue with no breakpoint leaves it closed.
+        deadline = time.monotonic() + _MENU_RETURN_SECONDS
+        while self.backend.menu_closed() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        return self.capture()
+
+    def leave_monitor(self) -> None:
+        """C=+O, then close the menu so the C64 runs on Overlay and Freeze too."""
+        if not self.backend.menu_closed():
+            self.send_key("CTRL_O")
+            self.backend.release_machine()
 
 
 class _LegacySocket:

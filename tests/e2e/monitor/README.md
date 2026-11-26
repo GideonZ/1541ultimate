@@ -240,11 +240,12 @@ time, so name them explicitly.
 
 ### `machine-code-monitor-debug`
 
-21 semantic groups, about 95 checks, over Telnet. Its liveness checks read the
-C64's own screen and jiffy clock while the machine is meant to be running, so an
-Overlay or Freeze UI holding the machine would invalidate them. It is `manual`
-because of what it costs, about 40 minutes on an Ultimate 64, most of it spent
-running programs on the 6510 and waiting for them to stop.
+21 semantic groups, about 95 checks, over Telnet, Overlay or Freeze (`-m all`
+runs the three in turn). An open Overlay or Freeze menu holds the C64 stopped,
+so a check that watches the C64 run closes the menu first and opens it again
+afterwards. It is `manual` because of what it costs, about 40 minutes per mode
+on an Ultimate 64, most of it spent running programs on the 6510 and waiting for
+them to stop.
 
 ### `machine-code-monitor-matrix`
 

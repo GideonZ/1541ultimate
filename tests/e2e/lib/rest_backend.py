@@ -328,6 +328,12 @@ class RestBackend(Backend):
         self._close_menu()
         self._open_menu()
 
+    def menu_closed(self) -> bool:
+        return not self._menu_open()
+
+    def release_machine(self) -> None:
+        self._close_menu()
+
     def _in_file_browser(self) -> bool:
         """Whether a path is on the status row. The launcher shows key hints
         there; a C64 Ultimate settings screen keeps the browser's path."""

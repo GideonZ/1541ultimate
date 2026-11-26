@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# E2E: Verifies machine-code monitor Debug mode stepping and breakpoints through Telnet.
+# E2E: Verifies machine-code monitor Debug mode stepping and breakpoints over Telnet, Overlay and Freeze.
 
 """End-to-end test for Machine Code Monitor Debug mode (DBG-* feature IDs).
 
-Uses the same telnet entry point and CLI options as ``monitor_test.py`` so the
-two suites are interchangeable. Verifies the full Debug mode stack: header/
+Uses the same entry point and CLI options as ``monitor_test.py`` so the two
+suites are interchangeable. Verifies the full Debug mode stack: header/
 footer composition, key routing, breakpoint toggle and list popup, RETURN
 navigation preservation, Edit+Debug composition, the BRK trampoline
 orchestrator (Go, Over, Trace, Out), and patch hygiene on cleanup.
@@ -15,10 +15,12 @@ CLI options mirror monitor_test.py exactly so the same automation hooks work.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import re
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -761,7 +763,13 @@ def _wait_for_blank_debug_context(session: mt.MonitorSession,
         if "Dbg" not in header:
             time.sleep(0.1)
             continue
-        parsed = _parse_footer_values(_footer_value_line(session, timeout=0.0))
+        try:
+            parsed = _parse_footer_values(_footer_value_line(session, timeout=0.0))
+        except mt.Failure:
+            # An Overlay or Freeze monitor is rebuilt after the reset, so its
+            # header can be on screen before its footer.
+            time.sleep(0.1)
+            continue
         if not any(parsed[field] for field in ("pc", "sp", "ac", "xr", "yr", "sr", "irq", "nmi")):
             return
         time.sleep(0.1)
@@ -774,6 +782,10 @@ def _reset_c64_core(rest_host: str, timeout: float = 20.0) -> None:
     # late or not at all, and the only evidence either way is whether the KERNAL
     # reached its READY prompt. One resend distinguishes a reset that was missed
     # from a machine that cannot come back, and the second failure says which.
+    # An open Overlay or Freeze menu holds the C64, and the firmware refuses a
+    # REST reset while the monitor is open on that menu, so close it first.
+    if mt.TestConfig.session is not None:
+        mt.TestConfig.session.backend.release_machine()
     for attempt in (1, 2, 3):
         if attempt == 1:
             # Let the debugger's own teardown finish before the machine is
@@ -903,6 +915,26 @@ def _assert_safe_banking_display_hygiene(rest_host: str, session: mt.MonitorSess
                               minimum_values=2)
 
 
+@contextlib.contextmanager
+def _c64_running() -> Iterator[None]:
+    """Close an open Overlay or Freeze menu while a check watches the C64 run:
+    the menu holds the C64 stopped. Telnet leaves it running. Closing the menu
+    closes the monitor too, so a monitor that was open is opened again."""
+    session = mt.TestConfig.session
+    held = session is not None and session.backend.reopens_menu \
+        and not session.backend.menu_closed()
+    monitor_was_open = held and mt.monitor_is_up(session.capture())
+    if held:
+        session.backend.release_machine()
+    try:
+        yield
+    finally:
+        if monitor_was_open:
+            session.enter_monitor()
+        elif held:
+            session.backend.ensure_ready()
+
+
 def _force_safe_cpu_port(rest_host: str, context: str) -> None:
     # Some destructive banking regressions deliberately run with $0001 low bits
     # clear, which can keep KERNAL/I/O hidden across a raw C64 reset. Restore only
@@ -951,7 +983,10 @@ def _reset_monitor_and_c64(rest_host: str, session: mt.MonitorSession,
                            timeout: float = 8.0) -> None:
     _reopen_monitor(session)
     _send_ctrl_r(session)
-    _wait_for_c64_ready(rest_host, timeout)
+    if not session.backend.reopens_menu:
+        # The monitor C=+R reopens on an Overlay or Freeze menu holds the C64
+        # before BASIC is up, so only Telnet can watch this reset finish.
+        _wait_for_c64_ready(rest_host, timeout)
     # C=+R tears down the live Debug session, but the REST reset path is the
     # deterministic core reset used by standalone hardware runs.
     _reset_c64_core(rest_host, timeout)
@@ -992,23 +1027,25 @@ def _jiffy_keeps_advancing(rest_host: str, *, min_distinct: int = 4,
                            gap: float = 0.04, timeout: float = 4.0):
     """Oracle 1: KERNAL IRQ is live. Returns (ok, sorted_observed_values)."""
     seen = set()
-    deadline = time.time() + timeout
-    while time.time() < deadline and len(seen) < min_distinct:
-        seen.add(mt.read_rest_memory(rest_host, JIFFY_LO, 1)[0])
-        time.sleep(gap)
+    with _c64_running():
+        deadline = time.time() + timeout
+        while time.time() < deadline and len(seen) < min_distinct:
+            seen.add(mt.read_rest_memory(rest_host, JIFFY_LO, 1)[0])
+            time.sleep(gap)
     return len(seen) >= min_distinct, sorted(seen)
 
 
 def _basic_editor_consumes_keystroke(rest_host: str, *, timeout: float = 3.0):
     """Oracle 2: the BASIC editor main loop is live. Inject 'A' into the KERNAL
     keyboard buffer; a running editor drains NDX -> 0 (consume + echo)."""
-    mt.write_rest_memory(rest_host, KBD_BUFFER, bytes([0x41]))   # PETSCII 'A'
-    mt.write_rest_memory(rest_host, KBD_NDX, bytes([0x01]))
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if mt.read_rest_memory(rest_host, KBD_NDX, 1)[0] == 0:
-            return True
-        time.sleep(0.05)
+    with _c64_running():
+        mt.write_rest_memory(rest_host, KBD_BUFFER, bytes([0x41]))   # PETSCII 'A'
+        mt.write_rest_memory(rest_host, KBD_NDX, bytes([0x01]))
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if mt.read_rest_memory(rest_host, KBD_NDX, 1)[0] == 0:
+                return True
+            time.sleep(0.05)
     return False
 
 
@@ -1098,7 +1135,7 @@ def prove_monitor_exit_basic_liveness_and_reentry(
       4. re-enter the monitor (C=+O) and prove a NOP Debug step still works
     """
     _ensure_no_debug(session)
-    session.send_key("CTRL_O")          # close the monitor (natural exit)
+    session.leave_monitor()             # natural exit
     time.sleep(0.3)
 
     jiffy_ok, stream = _jiffy_keeps_advancing(rest_host) if require_jiffy else (True, [])
@@ -1865,6 +1902,49 @@ def _pc_wait_budget(after_go: bool = False) -> float:
     return 60.0 if after_go else 20.0
 
 
+def _step_out_to(session: mt.MonitorSession, expected_pc: str) -> dict:
+    """Step Out until the debugger stops at `expected_pc`.
+
+    While an Overlay or Freeze menu holds the C64, Step Out of a ROM frame walks
+    the CPU one instruction at a time and stops after 8192 of them, so a long
+    frame takes further Step Outs. Over Telnet one reaches the caller."""
+    if not session.backend.reopens_menu:
+        session.send_char("U")
+        return _wait_for_pc(session, expected_pc)
+    stops: list[str] = []
+    for _ in range(32):
+        before = _stopped_footer(session)
+        session.send_char("U")
+        parsed = _stopped_footer(session, changed_from=before)
+        if parsed.get("pc", "").upper() == expected_pc.upper():
+            return parsed
+        stops.append(parsed.get("pc", ""))
+    raise mt.Failure(f"Step Out did not reach {expected_pc}; stops={stops}")
+
+
+def _stopped_footer(session: mt.MonitorSession, changed_from: dict | None = None,
+                    timeout: float = 30.0) -> dict:
+    """The Debug footer once it shows a PC that has held for a second, and, when
+    `changed_from` is given, once it differs from that or 10 seconds have passed."""
+    started = time.time()
+    last: dict = {}
+    since = started
+    while time.time() - started < timeout:
+        try:
+            parsed = _parse_footer_values(_footer_value_line(session, timeout=0.0))
+        except mt.Failure:
+            parsed = {}
+        now = time.time()
+        if parsed != last:
+            last, since = parsed, now
+        elif parsed.get("pc") and now - since >= 1.0 and (
+                parsed != changed_from or now - started >= 10.0):
+            return parsed
+        time.sleep(0.2)
+    raise mt.Failure(f"The Debug footer did not come to rest: {last!r}\n"
+                     f"{session.capture().text()}")
+
+
 def _wait_for_go_pc(session: mt.MonitorSession, expected_pc: str) -> dict:
     """Wait for the stop a Go produces, on the budget a Go needs.
 
@@ -1887,10 +1967,16 @@ def _wait_for_pc(session: mt.MonitorSession, expected_pc: str,
     except Exception:                                       # noqa: BLE001
         pc_before = ""
     last = None
+    values = ""
     while time.time() < deadline:
         snap = session.capture()
         _assert_no_debug_modal_snapshot(snap, f"Waiting for PC {expected_pc}")
-        values = _footer_value_line(session, timeout=0.0)
+        try:
+            values = _footer_value_line(session, timeout=0.0)
+        except mt.Failure:
+            # A cartridge redraws its menu at each stop; read it again.
+            time.sleep(0.1)
+            continue
         parsed = _parse_footer_values(values)
         last = parsed
         if parsed["pc"].upper() == expected_pc.upper():
@@ -1914,12 +2000,17 @@ def _wait_for_pc_register(session: mt.MonitorSession, expected_pc: str,
     except Exception:                                       # noqa: BLE001
         pc_before = ""
     last = None
+    values = ""
     register = register.lower()
     while time.time() < deadline:
         snap = session.capture()
         _assert_no_debug_modal_snapshot(
             snap, f"Waiting for PC {expected_pc} {register.upper()}={expected_value}")
-        values = _footer_value_line(session, timeout=0.0)
+        try:
+            values = _footer_value_line(session, timeout=0.0)
+        except mt.Failure:
+            time.sleep(0.1)
+            continue
         parsed = _parse_footer_values(values)
         last = parsed
         if (parsed["pc"].upper() == expected_pc.upper() and
@@ -2435,15 +2526,16 @@ def prove_stop_debug_exit_resumes_current_context(rest_host: str,
     _assert_no_debug_modal_snapshot(snap, context)
     if "Dbg" in _wait_header(session, lambda line: "Dbg" not in line):
         raise mt.Failure(f"{context}: ESC did not leave Debug before monitor exit")
-    session.send_key("CTRL_O")
+    session.leave_monitor()
 
     after_exit = before_exit
-    deadline = time.time() + 2.0
-    while time.time() < deadline:
-        time.sleep(0.1)
-        after_exit = mt.read_rest_memory(rest_host, 0xD021, 1)[0]
-        if after_exit != before_exit:
-            break
+    with _c64_running():
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            time.sleep(0.1)
+            after_exit = mt.read_rest_memory(rest_host, 0xD021, 1)[0]
+            if after_exit != before_exit:
+                break
     if after_exit == before_exit:
         raise mt.Failure(
             f"{context}: $D021 did not change after Stop Debugging + Exit; "
@@ -2919,8 +3011,7 @@ def run_deep_kernal_basic_trace_tests(rest_host: str, session: mt.MonitorSession
         _wait_for_go_pc(session, "E005")
         _assert_no_debug_modal(session, "deep trace current BASIC breakpoint skip")
 
-        session.send_char("U")
-        _wait_for_pc(session, "C754")
+        _step_out_to(session, "C754")
         session.send_char("D")
         parsed = _wait_for_pc(session, "C755")
         if parsed["ac"] != "5A":
@@ -3009,10 +3100,11 @@ def _select_monitor_view(session: mt.MonitorSession, bank: int,
 def _assert_rest_byte_changes(rest_host: str, address: int, context: str,
                               minimum_values: int = 3) -> None:
     seen = set()
-    deadline = time.time() + 4.0
-    while time.time() < deadline and len(seen) < minimum_values:
-        seen.add(mt.read_rest_memory(rest_host, address, 1)[0])
-        time.sleep(0.05)
+    with _c64_running():
+        deadline = time.time() + 4.0
+        while time.time() < deadline and len(seen) < minimum_values:
+            seen.add(mt.read_rest_memory(rest_host, address, 1)[0])
+            time.sleep(0.05)
     if len(seen) < minimum_values:
         raise mt.Failure(
             f"{context}: ${address:04X} did not keep changing; "
@@ -3022,16 +3114,17 @@ def _assert_rest_byte_changes(rest_host: str, address: int, context: str,
 def _assert_rest_region_keeps_changing(rest_host: str, address: int, length: int,
                                        context: str, minimum_cells: int = 2,
                                        timeout: float = 4.0) -> None:
-    previous = mt.read_rest_memory(rest_host, address, length)
     changed_cells: set[int] = set()
-    deadline = time.time() + timeout
-    while time.time() < deadline and len(changed_cells) < minimum_cells:
-        time.sleep(0.08)
-        current = mt.read_rest_memory(rest_host, address, length)
-        for offset, (before, after) in enumerate(zip(previous, current)):
-            if before != after:
-                changed_cells.add(offset)
-        previous = current
+    with _c64_running():
+        previous = mt.read_rest_memory(rest_host, address, length)
+        deadline = time.time() + timeout
+        while time.time() < deadline and len(changed_cells) < minimum_cells:
+            time.sleep(0.08)
+            current = mt.read_rest_memory(rest_host, address, length)
+            for offset, (before, after) in enumerate(zip(previous, current)):
+                if before != after:
+                    changed_cells.add(offset)
+            previous = current
     if len(changed_cells) < minimum_cells:
         raise mt.Failure(
             f"{context}: ${address:04X}-${address + length - 1:04X} did not keep "
@@ -3164,7 +3257,11 @@ def run_banked_breakpoint_tests(rest_host: str, session: mt.MonitorSession) -> N
 
         _ensure_no_debug(session)
         _select_monitor_view(session, 7, "select KERNAL monitor view")
-        mt.ensure_status(session, "C5O7 $A:BAS $D:I/O $E:KRN VIC")
+        # Telnet reads the running program's $01 beside the view bank. An open
+        # Overlay or Freeze menu holds the C64, so its status row shows the view.
+        mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC"
+                         if session.backend.reopens_menu
+                         else "C5O7 $A:BAS $D:I/O $E:KRN VIC")
         session.goto("E000")
         session.send_char("A")
         row = _disassembly_row(session.capture(), 0xE000)
@@ -3589,8 +3686,13 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         session.send_char("A")
         session.send_char("D")
         session.send_char("P")
-        _wait_for_screen_text(session, "BRK RAM, CPU KRN; not mapped now")
-        session.send_key("ENTER")
+        # The monitor warns when it knows the CPU maps another store. With the
+        # C64 held by an Overlay or Freeze menu it may not know, and says nothing.
+        if not session.backend.reopens_menu:
+            _wait_for_screen_text(session, "BRK RAM, CPU KRN; not mapped now")
+            session.send_key("ENTER")
+        elif "not mapped now" in session.capture().text():
+            session.send_key("ENTER")
         row = _disassembly_row(session.capture(), 0xE003)
         if "[BRK" not in row:
             raise mt.Failure(f"$E003 RAM breakpoint was not set: {row!r}")
@@ -3788,7 +3890,36 @@ def run_side_effect_step_tests(rest_host: str, session: mt.MonitorSession) -> No
             raise mt.Failure(f"JMP-target store side effect missing: {side.hex()}")
         _ensure_no_debug(session)
 
+    with mt.check("Debug: Over of a BASIC routine loads its ROM data", u2=False,
+                  u2_reason="U64 CPU-visible BASIC ROM stepping is required"):
+        mt.skip_unsupported()
+        # LDA #$BC; LDY #$B9; JSR $BBA2 (MOVFM, FAC1 := the five bytes at A/Y).
+        # $B9BC holds the constant 1.0 in BASIC ROM. Over an Overlay or Freeze
+        # menu the routine is stepped while the C64 is held.
+        loader = bytes([0xA9, 0xBC, 0xA0, 0xB9, 0x20, 0xA2, 0xBB, 0xEA])
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0xC7C0, loader)
+        mt.write_rest_memory(rest_host, 0x0061, bytes(5))
+        session.goto("C7C0")
+        session.send_char("A")
+        session.send_char("D")
+        for expected in ("C7C2", "C7C4", "C7C7"):
+            session.send_char("D")
+            _wait_for_pc(session, expected)
+        constant = mt.read_rest_memory(rest_host, 0xB9BC, 5)
+        # MOVFM sets the implied leading mantissa bit; the sign goes to $66.
+        wanted = bytes([constant[0], constant[1] | 0x80]) + constant[2:]
+        fac = mt.read_rest_memory(rest_host, 0x0061, 5)
+        if fac != wanted:
+            raise mt.Failure(
+                f"MOVFM from $B9BC left FAC1 {fac.hex()}, expected {wanted.hex()}")
+        _ensure_no_debug(session)
+
     with mt.check("Debug: Trace JSR enters before subroutine side effect, then Over executes it"):
+        _reset_c64_core(rest_host)
+        mt.write_rest_memory(rest_host, 0xC100, program)
+        mt.write_rest_memory(rest_host, 0xC130, subroutine)
         mt.write_rest_memory(rest_host, 0xC181, bytes([0x00]))
         _reopen_monitor(session)
         session.goto("C105")
@@ -3912,12 +4043,13 @@ def run_jsr_runcursor_rts_tests(rest_host: str, session: mt.MonitorSession) -> N
 def _resumed_loop_oracle(rest_host: str, address: int):
     """Build a progress oracle: the resumed loop must keep mutating `address`."""
     def runs() -> bool:
-        b0 = mt.read_rest_memory(rest_host, address, 1)[0]
-        deadline = time.time() + 2.5
-        while time.time() < deadline:
-            time.sleep(0.1)
-            if mt.read_rest_memory(rest_host, address, 1)[0] != b0:
-                return True
+        with _c64_running():
+            b0 = mt.read_rest_memory(rest_host, address, 1)[0]
+            deadline = time.time() + 2.5
+            while time.time() < deadline:
+                time.sleep(0.1)
+                if mt.read_rest_memory(rest_host, address, 1)[0] != b0:
+                    return True
         return False
     return runs
 
@@ -4003,7 +4135,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         session.send_char("D")
         _step_and_assert_pc(session, "D", 0xC301, "low-RAM hygiene step")
         _ensure_no_debug(session)
-        session.send_key("CTRL_O")          # natural exit, no reset
+        session.leave_monitor()             # natural exit, no reset
         time.sleep(1.0)
         after = mt.read_rest_memory(rest_host, 0x0800, 0x0800)
         changed = [0x0800 + i for i in range(0x0800) if after[i] != pattern[i]]
@@ -4021,7 +4153,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
             time.sleep(0.5)
             control_before = mt.read_rest_memory(rest_host, 0x0800, 0x0800)
             _reopen_monitor(session)
-            session.send_key("CTRL_O")
+            session.leave_monitor()
             time.sleep(1.0)
             control_after = mt.read_rest_memory(rest_host, 0x0800, 0x0800)
             control_changed = [
@@ -4266,8 +4398,7 @@ def main() -> int:
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
-    add_mode_argument(parser, default=os.environ.get("U64_MODE", "telnet"),
-                      choices=("telnet",))
+    add_mode_argument(parser, default=os.environ.get("U64_MODE", "telnet"))
     parser.add_argument("--target", choices=("u64", "u2"),
                         default=os.environ.get("U64_MONITOR_TARGET"),
                         help="Target hardware. 'u2' skips U64-only features (REST API, "

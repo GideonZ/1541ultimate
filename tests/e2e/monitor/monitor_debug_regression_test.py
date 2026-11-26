@@ -217,10 +217,8 @@ SPLIT_CELLS: tuple[Cell, ...] = (
          "every recorded u2 matrix ledger holds this single row"),
 )
 
-# Semantic coverage that no matrix cell can produce. `monitor_debug_test.py` is
-# pinned to Telnet on purpose: its liveness oracles read the C64's own screen
-# and jiffy while the machine is meant to be running, which an Overlay or
-# Freeze UI holding the machine would invalidate.
+# Semantic coverage that no matrix cell can produce. The gate runs these groups
+# over Telnet, which leaves the C64 running while the monitor is open.
 U64_GROUPS: tuple[Group, ...] = (
     Group("exit-liveness-reentry",
           "Leaving Debug and closing the monitor with no reset. Every matrix "

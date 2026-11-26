@@ -331,6 +331,13 @@ class Backend:
         """Close the on-device menu and open it again on the file browser."""
         raise NotImplementedError
 
+    def menu_closed(self) -> bool:
+        """Whether the on-device menu is closed. A Telnet session is its own UI."""
+        return False
+
+    def release_machine(self) -> None:
+        """Close the on-device menu, which holds the C64 stopped while it is open."""
+
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
 

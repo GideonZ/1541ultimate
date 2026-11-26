@@ -7,7 +7,7 @@ The machine code monitor debugger has three registered E2E suites:
 | suite | what it runs | measured wall clock on a U64 |
 | --- | --- | --- |
 | `machine-code-monitor` | 27 checks of the monitor itself, no debugger | 9-27 min |
-| `machine-code-monitor-debug` | 21 semantic groups, ~95 checks, Telnet only | 28-50 min |
+| `machine-code-monitor-debug` | 21 semantic groups, ~95 checks, over Telnet, Overlay or Freeze | 28-50 min per mode |
 | `machine-code-monitor-matrix` | 5 memory modes x 3 UI transports x 3 repetitions = 45 cells, plus a closing random-program run | 74-82 min for a clean 45/45 |
 
 Running all three before a merge is over two hours of hardware time. Two of the
@@ -244,10 +244,10 @@ result. What the selection cuts is how many transports a mode is repeated on.
 
 ### Semantic groups, Telnet
 
-`monitor_debug_test.py` is pinned to Telnet deliberately: its liveness oracles
-read the C64's own screen and jiffy clock while the machine is meant to be
-running, and an Overlay or Freeze UI holding the machine invalidates all of
-them.
+The gate runs these groups over Telnet, which leaves the C64 running while the
+monitor is open. `./run-tests -s machine-code-monitor-debug -m all` runs them
+over Overlay and Freeze too, where the suite closes the menu for each check that
+watches the C64 run.
 
 | group | what only this group has | defect it detects |
 | --- | --- | --- |
