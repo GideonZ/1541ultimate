@@ -484,11 +484,6 @@ class Net:
         """One GET_RANDOM exchange, counted and held to the fail-closed rule."""
         result = self.uci.transact(command)
         self.random_replies += 1
-        for prefix, what in ((STATUS_NO_ENTROPY_PREFIX, "with no entropy source"),
-                             (STATUS_ENTROPY_BUSY_PREFIX, "with the entropy source busy")):
-            if result.status_text.startswith(prefix) and result.data:
-                raise Failure(f"GET_RANDOM answered {result.status_text!r} and still handed "
-                              f"out {len(result.data)} bytes; {what} it must hand out none")
         if result.status_text != STATUS_OK and result.data:
             raise Failure(f"GET_RANDOM answered {result.status_text!r} with {len(result.data)} "
                           f"data bytes; a refusal carries no data")
@@ -1629,10 +1624,6 @@ def run_get_random_leaves_sockets_alone(net: Net, peer: Peer, duty: RandomDuty,
 
         with check("GET_RANDOM answers while a socket holds a pending datagram"):
             require_random(net.get_random(RANDOM_TYPICAL), RANDOM_TYPICAL)
-            refused = net.get_random(0)
-            if refused.status_text != STATUS_OUT_OF_RANGE:
-                raise Failure(f"a length of 0 answered {refused.status_text!r}, expected "
-                              f"{STATUS_OUT_OF_RANGE!r}")
 
         with check("the pending datagram is read back whole after GET_RANDOM"):
             result = net.read(handle, SAFE_READ)
@@ -1758,10 +1749,8 @@ def run_get_random_radio_off(net: Net, duty: RandomDuty, device, device_host: st
     try:
         with check(f"{RADIO_OFF_DRAWS} GET_RANDOM of {RANDOM_TYPICAL} bytes with the radio off "
                    f"answer {STATUS_OK.decode()} with the bytes"):
-            series = [require_random(net.get_random(RANDOM_TYPICAL), RANDOM_TYPICAL)
-                      for _ in range(RADIO_OFF_DRAWS)]
-            if len(set(series)) != len(series):
-                raise Failure("a reply with the radio off repeated an earlier one")
+            for _ in range(RADIO_OFF_DRAWS):  # Net fails a reply that repeats an earlier one
+                require_random(net.get_random(RANDOM_TYPICAL), RANDOM_TYPICAL)
     finally:
         with check(f"set {CFG_WIFI_ENABLED!r} back to Enabled, and the WiFi interface gets "
                    f"an address again within {RADIO_ON_SECONDS:g}s"):

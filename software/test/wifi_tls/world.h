@@ -1,34 +1,44 @@
-// The scripted world the host tests run wifi_dedicated.cc in: module replies, receive interrupt, tick, buffer pool and
-// resets. Every decision comes from one generator, so two implementations that make the same calls in the same
-// order see the same world; they are compared on the trace of those calls.
+// The scripted world the host tests run wifi_tls.cc in: the module, and wifi_call, which sends a request to it and
+// hands the answer to the caller's take. The real wifi_call (wifi_cmd.cc) is tested in test/wifi_reply; here it
+// is a stand-in with the same contract, so that what wifi_tls.cc puts into each request and makes of each result
+// can be checked on its own. Every decision comes from one generator.
 #ifndef WORLD_H_
 #define WORLD_H_
 
 #include <string>
-#include "wifi_cmd.h"
+#include "wifi_call.h"
+#include "rpc_calls.h"
+extern "C" {
+    #include "cmd_buffer.h"
+}
+
+// The reply slot the stand-in puts in the header of each request.
+#define WORLD_THREAD 3
 
 // Builds a reply of the given kind into rx, as an answer to the last request
 // sent (req, req_size; req_size is -1 when nothing has been sent). kind 0 is
 // the right answer; the others are up to the maker.
 typedef void (*world_maker_t)(command_buf_t *rx, const uint8_t *req, int req_size, int kind);
 
-// Starts a new world from seed. With calm set nothing fails and the first
-// wait delivers exactly one right answer.
-void world_reset(uint32_t seed, world_maker_t maker, bool calm);
+// What the module does with the request.
+enum world_outcome_t {
+    WORLD_ANSWERS,    // the maker's answer is handed to take
+    WORLD_SILENT,     // no answer: BUSY once cancel (if any) has been asked
+    WORLD_RESTARTS    // the module restarts during the wait
+};
+
+void world_reset(uint32_t seed, world_maker_t maker);
 uint32_t world_rand(uint32_t n);
 
+extern uint16_t sequence_nr;      // the sequence of the next request
 extern bool world_ready;          // what wifi_module_ready answers
-extern bool world_no_buffer;      // GetBuffer fails, even when calm
-extern bool world_no_transmit;    // TransmitPacket fails, even when calm
+extern bool world_no_buffer;      // there is no buffer: UNSENT
+extern bool world_no_transmit;    // the UART refuses the request: UNSENT
+extern world_outcome_t world_outcome;
 extern std::string world_trace;   // every call, in order
-extern int world_suspended;       // vTaskSuspendAll minus xTaskResumeAll
 extern int world_transmits;       // requests that went out
-extern int world_isr_calls;       // replies the interrupt handled
-extern int world_frees;           // FreeBuffer calls
-extern int world_free_unsuspended; // of those, made with the scheduler not suspended
-extern bool world_stale_next;     // the next reply the interrupt queues is tagged with a pre-reset generation
-size_t world_queued(void);        // replies still in dedicated_replies
-void world_deliver_now(void);     // the receive interrupt hands over an answer now
-void world_reset_maker(world_maker_t maker); // answers from now on come from maker
+extern int world_calls;           // calls of wifi_call
+extern wifi_call_t world_last;    // the last call's arguments
+extern int world_cancel_asked;    // times the stand-in asked the call's cancel function
 
 #endif /* WORLD_H_ */

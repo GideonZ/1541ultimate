@@ -4,7 +4,7 @@
  * wifi_radio.c (the one place that starts and stops the radio of the U64 and U2+L modules)
  * against a chip stub that counts the Wi-Fi starts and stops and can be told to fail them,
  * and radio_boot.c (the radio's state across a restart of the module), and a stub of the entropy gate
- * (radio_entropy.c has its own test, target/pc/linux/radioentropy).
+ * (radio_entropy.c has its own test, radio_entropy_test.c).
  */
 
 #include <stdio.h>
@@ -175,27 +175,21 @@ TEST(Radio, boot_decisions)
 }
 
 // A GET_RANDOM draw that overlaps a stop is refused: the radio no longer counts as on once the
-// stop begins, and the epoch has moved, also when the stop fails
-TEST(Radio, a_stop_moves_the_epoch_first)
+// stop begins; a stop that fails makes it count again
+TEST(Radio, a_stop_ends_the_radio_first)
 {
     reset();
     radio_start();
-    uint32_t e = radio_epoch();
     on_during_stop = 1;
     radio_stop();
     CHECK(!on_during_stop, "off while stopping");
-    CHECK(radio_epoch() == e + 1, "one stop, one step");
     radio_start();
-    CHECK(radio_epoch() == e + 1, "a start does not move it");
     stop_result = ESP_FAIL_CODE;
     radio_stop();
-    CHECK(radio_epoch() == e + 2, "a failed stop moves it too");
-    radio_stop();
-    CHECK(radio_epoch() == e + 3, "and so does its retry");
+    CHECK(radio_is_on(), "a failed stop leaves it on");
     stop_result = 0;
     radio_stop();
-    radio_stop();
-    CHECK(radio_epoch() == e + 4, "a stop while off does not");
+    CHECK(!radio_is_on(), "its retry stops it");
 }
 
 // A gate that is not free in time changes nothing; every chip call is made inside it
@@ -208,9 +202,8 @@ TEST(Radio, busy_gate_changes_nothing)
     gate_result = 0;
     radio_start();
     gate_result = 0x107;
-    uint32_t e = radio_epoch();
     CHECK(radio_stop() == 0x107, "on a stop too");
-    CHECK(radio_is_on() && (stops == 0) && (radio_epoch() == e), "still on, epoch kept");
+    CHECK(radio_is_on() && (stops == 0), "still on");
     gate_result = 0;
     radio_stop();
     CHECK((chip_in_gate == starts + stops) && (gate_held == 0), "chip calls inside the gate, gate released");

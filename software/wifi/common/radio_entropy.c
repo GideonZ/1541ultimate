@@ -45,11 +45,6 @@ entropy_source_t entropy_source(void)
     return source;
 }
 
-uint32_t entropy_epoch(void)
-{
-    return radio_epoch();
-}
-
 static bool expired(uint32_t deadline)
 {
     return (int32_t)(re_port_now_ms() - deadline) >= 0;
@@ -381,21 +376,14 @@ int radio_entropy_serve_get_random(void *data, int size, void (*fill)(void *, si
         // A radio change or a read of the voltages holds the source. Nothing is drawn.
         resp->esp_err = RPC_ERR_ENTROPY_BUSY;
     } else {
-        uint32_t epoch = entropy_epoch();
         entropy_source_t src = entropy_source();
         resp->source = src;
         if (src == ENTROPY_NONE) {
             resp->esp_err = RE_ESP_ERR_INVALID_STATE;
         } else {
             fill(resp->data, length);
-            // The gate keeps the radio from changing while it is held; this is a second guard
-            if ((entropy_source() == ENTROPY_NONE) || (entropy_epoch() != epoch)) {
-                resp->source = ENTROPY_NONE;
-                resp->esp_err = RE_ESP_ERR_INVALID_STATE;
-            } else {
-                resp->esp_err = 0;
-                resp->length = length;
-            }
+            resp->esp_err = 0;
+            resp->length = length;
         }
         radio_entropy_release_shared();
     }

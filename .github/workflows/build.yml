@@ -197,7 +197,7 @@ jobs:
           -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project $IDF6_IMAGE make host_tests_idf6
 
       # The UCI TLS commands against stand-ins for FreeRTOS, the UART, lwIP and the
-      # WiFi module: the module calls, the dedicated channel and the network target
+      # WiFi module: the module calls and the network target
       # (network_target.cc, network_target_tls.cc) itself. Needs no device and no network beyond loopback.
       - name: Test UCI TLS Sockets
         run: |

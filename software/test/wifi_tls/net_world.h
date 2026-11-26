@@ -183,6 +183,7 @@ struct FakeModule {
     bool ca_loaded;
     // CLOSE
     int close_result;    // forced; -1 for normal
+    uint32_t close_delay_ms; // CLOSE is answered this long after it is sent; a cancel before that ends the call BUSY
     int close_alls;
     // steps
     std::deque<Forced> forced;
@@ -197,6 +198,8 @@ struct FakeModule {
                          // (the engine's skipped-warning WANT_READ case, tls_engine.c:503-505)
 };
 extern FakeModule world_module;
+extern void *world_wake_task;     // the task of the last one
+extern int world_wakes;           // wifi_wake calls: the network target tells a waiting call that something happened
 
 void world_reset(void);
 int world_count(int cmd);

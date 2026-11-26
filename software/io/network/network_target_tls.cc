@@ -277,6 +277,13 @@ static bool tls_cancelled(void *context)
     return c->use_deadline && reached(c->deadline);
 }
 
+// What the module call is given: the predicate, and the deadline, which ends its one wait there.
+static wifi_tls_cancel_t tls_cancel_of(tls_cancel_context_t *c)
+{
+    wifi_tls_cancel_t cancel = { tls_cancelled, c, c->use_deadline, c->deadline };
+    return cancel;
+}
+
 TlsSocket *NetworkTarget :: tls_find(int socketnr)
 {
     for (int i = 0; i < NET_MAX_TLS; i++) {
@@ -400,7 +407,7 @@ void NetworkTarget :: tls_cleanup_close(TlsSocket *e)
         return;
     }
     tls_cancel_context_t context = { false, 0, true };
-    wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+    wifi_tls_cancel_t cancel = tls_cancel_of(&context);
     uint16_t notify_len;
     int esp_err;
     int result = wifi_tls_close(e->slot, e->tag, tls_ct_out, sizeof(tls_ct_out), &notify_len, &esp_err,
@@ -416,7 +423,7 @@ void NetworkTarget :: tls_close_entry(TlsSocket *e, bool send_notify)
 {
     if (e->module_live && !reset_only()) {
         tls_cancel_context_t context = { false, 0, true };
-        wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+        wifi_tls_cancel_t cancel = tls_cancel_of(&context);
         uint16_t notify_len = 0;
         int esp_err;
         int result = wifi_tls_close(e->slot, e->tag, tls_ct_out, sizeof(tls_ct_out), &notify_len, &esp_err,
@@ -434,7 +441,7 @@ void NetworkTarget :: tls_close_entry(TlsSocket *e, bool send_notify)
 int NetworkTarget :: tls_run_step(TlsSocket *e, void *step, uint32_t deadline, bool use_deadline)
 {
     tls_cancel_context_t context = { use_deadline, deadline };
-    wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+    wifi_tls_cancel_t cancel = tls_cancel_of(&context);
     int result;
     for (int i = 0; ; i++) {
         result = wifi_tls_step(e->slot, e->tag, (wifi_tls_step_t *)step, TLS_STEP_RPC_MS, &cancel);
@@ -642,7 +649,7 @@ Message *NetworkTarget :: tls_prepare(TlsSocket *e, uint8_t trust, uint8_t flags
     open.sni_len = (uint8_t)name_len;
 
     tls_cancel_context_t context = { true, earlier(tick_after(TLS_OPEN_RPC_MS), total) };
-    wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+    wifi_tls_cancel_t cancel = tls_cancel_of(&context);
     int esp_err;
     uint8_t reason;
     int result;
@@ -824,7 +831,7 @@ Message *NetworkTarget :: tls_handshake(TlsSocket *e, uint32_t total)
 
     // What the reply reports is the module's, never guessed here.
     tls_cancel_context_t context = { true, deadline };
-    wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+    wifi_tls_cancel_t cancel = tls_cancel_of(&context);
     wifi_tls_stats_t stats;
     int esp_err;
     int result = wifi_tls_stats(e->slot, e->tag, &stats, &esp_err, TLS_STATS_RPC_MS, &cancel);
@@ -1122,7 +1129,7 @@ void NetworkTarget :: trust_ca(Message *command, Message **reply, Message **stat
         return;
     }
     tls_cancel_context_t context = { false, 0 };
-    wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+    wifi_tls_cancel_t cancel = tls_cancel_of(&context);
     int esp_err;
     uint8_t reject;
     int result;
@@ -1190,7 +1197,7 @@ void NetworkTarget :: tls_info(Message *command, Message **reply, Message **stat
                 info_valid = false; // the module restarted
             }
             tls_cancel_context_t context = { false, 0 };
-            wifi_tls_cancel_t cancel = { tls_cancelled, &context };
+            wifi_tls_cancel_t cancel = tls_cancel_of(&context);
             wifi_tls_stats_t stats;
             int esp_err;
             int result = wifi_tls_stats(WIFI_TLS_SLOT_GLOBAL, 0, &stats, &esp_err, TLS_STATS_RPC_MS, &cancel);
@@ -1367,6 +1374,27 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
             int result = tls_run_step(e, &st, deadline, true);
             steps++;
             if (reset_now()) {
+                // The module takes the ciphertext of a step whether the answer or the cancel wins, so the next
+                // READ must not feed it again. An answer in hand is booked (as below) when nothing in it is still
+                // to be sent to the peer; otherwise, or when the outcome is unknown, the session fails for good
+                // (as a WRITE's does): data is neither lost nor read twice without a word. A step that was not
+                // sent (UNSENT) changed nothing.
+                if (result != WIFI_TLS_UNSENT) {
+                    if (((result == 0) || (result == WIFI_TLS_AGAIN)) && (st.ct_out_len == 0) &&
+                        (st.state == WIFI_TLS_ESTABLISHED)) {
+                        if (result == 0) {
+                            e->held_len = 0;
+                        }
+                        e->module_more = (st.pt_out_len != 0) || (result == WIFI_TLS_AGAIN);
+                        if (st.pt_out_len) {
+                            memcpy(e->rx, tls_pt, st.pt_out_len);
+                            e->rx_off = 0;
+                            e->rx_len = st.pt_out_len;
+                        }
+                    } else {
+                        tls_fail(e, "17,TLS MODULE NOT RESPONDING");
+                    }
+                }
                 break;
             }
             if ((result != 0) && (result != WIFI_TLS_AGAIN)) {
@@ -1433,7 +1461,8 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
             }
         }
     }
-    if (e->rx_len) {
+    // An aborted command's reply is dropped, and a reset ends the session: plaintext taken now stays for the next READ
+    if (e->rx_len && !reset_now()) {
         int n = (e->rx_len < length) ? e->rx_len : length;
         memcpy(buffer, e->rx + e->rx_off, n);
         e->rx_off += n;
@@ -1445,7 +1474,7 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
         start_read_reply(n, &c_status_ok, reply, status);
         return;
     }
-    if (e->failed || (e->end != TLS_END_NONE)) {
+    if (!e->rx_len && (e->failed || (e->end != TLS_END_NONE))) {
         tls_end(e, reply, status);
         return;
     }

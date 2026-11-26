@@ -7,6 +7,9 @@
 
 #include <stdint.h>
 
+// The commands of the module's TLS calls, CMD_TLS_OPEN to CMD_TLS_SET_CA: an answer to one is never for the WiFi task
+#define WIFI_TLS_CMD_FIRST      0x30
+#define WIFI_TLS_CMD_LAST       0x35
 #define WIFI_TLS_MAX_SESSIONS   2    // the module's cap
 #define WIFI_TLS_MAX_SNI        253
 #define WIFI_TLS_STEP_MAX_IN    1536 // ct_in_len + pt_in_len in one step
@@ -64,21 +67,23 @@
 #define WIFI_TLS_ESP_NOT_SUPPORTED 0x106
 
 // What the calls below return besides 0.
-#define WIFI_TLS_BUSY      1 // sent, but no answer in time, or cancelled; the module may still act on it
+#define WIFI_TLS_BUSY      1 // sent, but no answer in time, or cancelled, or the module restarted; the module may still act on it
 #define WIFI_TLS_REFUSED   2 // the module answered with an error, which is in esp_err
 #define WIFI_TLS_INVALID   3 // the answer is not a well formed reply
 #define WIFI_TLS_NO_MODULE 4 // the module application is not running; nothing was sent
 #define WIFI_TLS_FOREIGN   5 // (from the checks only) not the answer to this request
-#define WIFI_TLS_UNSENT    6 // another request was outstanding, or no buffer; nothing was sent
+#define WIFI_TLS_UNSENT    6 // no buffer, no reply slot, another call waiting, or the UART refused it; nothing was sent
 #define WIFI_TLS_TOO_LONG  7 // the request does not fit; nothing was sent
 #define WIFI_TLS_AGAIN     8 // STEP only: the module had no room and did not take the input, but its
                              // output is handed over as for 0; send the same input again
 
-// Polled between the slices of a wait; true ends the wait with BUSY. NULL
-// for no cancelling.
+// Asked before the wait and each time another task wakes it (wifi_wake); true ends the call with BUSY. The
+// wait also ends at the deadline, a tick count, when use_deadline is set. NULL for no cancelling.
 typedef struct {
     bool (*cancelled)(void *context);
     void *context;
+    bool use_deadline;
+    uint32_t deadline;
 } wifi_tls_cancel_t;
 
 typedef struct {
@@ -169,7 +174,7 @@ int wifi_tls_take_close_all(const uint8_t *reply, int size, uint16_t sequence, i
 int wifi_tls_take_set_ca(const uint8_t *reply, int size, uint16_t sequence, int *esp_err, uint8_t *reject);
 
 // The UART buffer generation, which changes when the module restarts: every
-// session it held is then gone. In wifi_dedicated.cc.
+// session it held is then gone. In wifi_cmd.cc.
 uint32_t wifi_tls_generation(void);
 
 // Whether TLS calls can be sent at all (the module application runs and WiFi

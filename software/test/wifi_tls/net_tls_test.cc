@@ -61,13 +61,18 @@ static Res run(const bytes &command)
     if (net.is_quick(&m)) {
         net.parse_command(&m, &reply, &status);
     } else {
-        static volatile bool not_cancelled;
-        not_cancelled = false;
+        // The command the C64 waits for: an abort reaches it through the job, as it does on the device
+        static NetJob job;
+        memset(&job, 0, sizeof(job));
+        job.in_use = true;
+        job.opened = -1;
         net.close_sockets_after_reset();
-        net.cancel = &not_cancelled;
+        net.job = &job;
+        net.cancel = &job.cancel;
         net.opened_socket = -1;
         net.execute(&m, &reply, &status);
         net.cancel = NULL;
+        net.job = NULL;
         net.close_sockets_after_reset();
     }
     Res r;
@@ -775,6 +780,78 @@ static void expect_kept(int h, const bytes &cmd, const char *want, const char *w
           want, r.status.c_str());
 }
 
+// --- a cancel while the worker waits for the module -------------------------------------
+
+// The UCI Server task tells the waiting call (wifi_wake) that the job was cancelled or the C64 reset, so the call
+// asks its cancel function then: nothing polls, and the time the worker is held is what the cleanup takes.
+static void test_cancel_wakes_the_wait(void)
+{
+    printf("A cancel or a reset ends the wait for the module at once\n");
+    fresh();
+    world_module.open_delay_ms = 3000; // the OPEN RPC is answered 3 s from now
+    world_abort_at = world_tick + 104; // 520 ms in: not at the end of a 100 ms slice
+    int wakes = world_wakes;
+    world_wake_task = NULL;
+    Res r = run(open_cmd(0, 0, "example.com"));
+    uint32_t late = (world_tick - world_abort_at) * 5;
+    check(world_wakes == wakes + 1 && world_wake_task == &world_wake_task,
+          "abort: the waiting worker is woken once, by name (%d)", world_wakes - wakes);
+    check(late <= 10, "abort: the OPEN RPC wait ends at the abort, not at the end of a slice (%u ms late)", late);
+    check(world_count(0x30) == 1 && world_count(0x32) == 1 && world_open_sockets() == 0,
+          "abort: the module is told to CLOSE what the OPEN may have started");
+    world_abort_at = 0xFFFFFFFF;
+
+    fresh();
+    world_module.open_delay_ms = 3000;
+    world_reset_at = world_tick + 104;
+    wakes = world_wakes;
+    r = run(open_cmd(0, 0, "example.com"));
+    late = (world_tick - world_reset_at) * 5;
+    check(world_wakes > wakes && world_wake_task == &world_wake_task,
+          "reset: the waiting worker is woken, by name (%d)", world_wakes - wakes);
+    check(late <= 10, "reset: the OPEN RPC wait ends at the reset, not at the end of a slice (%u ms late)", late);
+    world_reset_at = 0xFFFFFFFF;
+
+    // The CLOSE that cleans up after an aborted OPEN stops for a reset only. A reset that comes while it
+    // waits finds no job to cancel, and wakes the worker all the same.
+    fresh();
+    world_module.open_delay_ms = 3000;
+    world_module.close_delay_ms = 900;
+    world_abort_at = world_tick + 104;
+    world_reset_at = world_tick + 144; // 200 ms after the abort, in the CLOSE
+    r = run(open_cmd(0, 0, "example.com"));
+    late = (world_tick - world_reset_at) * 5;
+    check(late <= 10, "a reset during the cleanup CLOSE of an aborted OPEN ends the wait at once (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+    world_reset_at = 0xFFFFFFFF;
+
+    // A call that is not answered ends at the handshake deadline, in the same block, not at its own timeout
+    fresh();
+    for (int i = 0; i < 3; i++) {
+        world_module.forced.push_back(Forced());
+        world_module.forced.back().delay_ms = 4900; // answered, but slowly: 14.7 s in
+    }
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    uint32_t t0 = world_ms();
+    r = run(open_cmd(0, 0, "example.com"));
+    uint32_t spent = world_ms() - t0;
+    check(r.status == "15,TLS HANDSHAKE TIMEOUT" && spent >= 14900 && spent <= 15300,
+          "a STEP that is not answered ends at the handshake deadline, 0.3 s into its 5 s (%u ms, %s)", spent,
+          r.status.c_str());
+
+    // Woken, and nothing to cancel: the wait goes on to the answer
+    fresh();
+    world_module.open_delay_ms = 1000;
+    world_abort_at = world_tick + 50;
+    world_abort_hook = [] { world_wakes++; };
+    r = run(open_cmd(0, 0, "example.com"));
+    world_abort_hook = [] { net.abort(0); };
+    world_abort_at = 0xFFFFFFFF;
+    check(r.status != "15,TLS HANDSHAKE TIMEOUT" && world_count(0x30) == 1,
+          "a wake that cancels nothing does not end the call (%s)", r.status.c_str());
+}
+
 // --- an abort during OPEN, START_TLS and the CA upload ---------------------------------------
 
 // The job's cancel flag is set by the UCI Server task on an abort. The worker has to be free within a slice,
@@ -934,6 +1011,83 @@ static void test_start_tls(void)
 }
 
 // --- READ, WRITE and CLOSE on a TLS handle -----------------------------------------------
+
+// --- an abort during a READ's step ----------------------------------------------------------
+
+// The module takes the ciphertext of a step whether the answer or the cancel wins. The next READ must not feed
+// the same records again: the session either goes on from the answer, or is failed, and says so.
+static int stepped_in(void)
+{
+    int total = 0;
+    for (const RpcCall &c : world_module.calls) {
+        if (c.cmd == 0x31) {
+            total += c.ct_in_len;
+        }
+    }
+    return total;
+}
+
+static void test_abort_during_read_step(void)
+{
+    printf("READ: an abort during the step leaves the session in step, or failed\n");
+
+    // The answer is in hand when the abort is noted: its plaintext is kept, and the ciphertext fed is not fed again
+    fresh();
+    int h = open_ok();
+    bytes rec = record('D', 100, 5);
+    server_push(h, EV_DATA, rec);
+    world_module.calls.clear();
+    Forced f = Forced();
+    f.delay_ms = 100;
+    world_module.forced.push_back(f);
+    world_abort_at = world_tick + 100 * 200 / 1000; // 5 ms ticks: the tick of the answer
+    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } }; // noted, with no wake
+    Res r = read_cmd(h, 1472);
+    world_abort_hook = [] { net.abort(0); };
+    world_abort_at = 0xFFFFFFFF;
+    check(header(r) == 0xFFFF && r.status == "02,NO DATA: " + num(EWOULDBLOCK),
+          "read abort: the aborted READ hands out nothing (its reply is dropped) (%d B, %s)", (int)r.data.size(), r.status.c_str());
+    std::string last;
+    bytes got = read_all(h, 1472, &last);
+    check(got == expected(5, 100), "read abort: the plaintext of the step is read once, after the abort (%d B, %s)",
+          (int)got.size(), last.c_str());
+    check(stepped_in() == (int)rec.size(), "read abort: the ciphertext is fed once (%d of %d B)", stepped_in(), (int)rec.size());
+
+    // A step that was never sent (UNSENT) changes nothing: the session goes on
+    fresh();
+    h = open_ok();
+    server_push(h, EV_DATA, record('D', 100, 8));
+    f = Forced();
+    f.result = WIFI_TLS_UNSENT;
+    f.delay_ms = 100;
+    world_module.forced.push_back(f);
+    world_abort_at = world_tick + 100 * 200 / 1000;
+    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } };
+    r = read_cmd(h, 1472);
+    world_abort_hook = [] { net.abort(0); };
+    world_abort_at = 0xFFFFFFFF;
+    got = read_all(h, 1472, &last);
+    check(got == expected(8, 100), "read abort: an UNSENT step leaves the session whole (%d B, %s)", (int)got.size(), last.c_str());
+
+    // The abort comes first: nobody knows what the module did, so the session fails and says so
+    fresh();
+    h = open_ok();
+    server_push(h, EV_DATA, record('D', 100, 6));
+    world_module.calls.clear();
+    f = Forced();
+    f.delay_ms = 1000;
+    world_module.forced.push_back(f);
+    world_abort_at = world_tick + 50;
+    r = read_cmd(h, 1472);
+    world_abort_at = 0xFFFFFFFF;
+    r = read_cmd(h, 1472);
+    check(header(r) == 0 && r.status == "17,TLS MODULE NOT RESPONDING",
+          "read abort: an outcome nobody knows fails the session (%s)", r.status.c_str());
+    check(stepped_in() == (int)record('D', 100, 6).size(), "read abort: and the records are not fed again (%d B)", stepped_in());
+    r = write_cmd(h, S("x"));
+    check(header(r) == 0xFFFF && r.status == "17,TLS MODULE NOT RESPONDING", "read abort: WRITE -> the same");
+    check(close_cmd(h).status == "00,OK" && !sock(h).open, "read abort: CLOSE frees the handle");
+}
 
 static void test_read(void)
 {
@@ -1841,7 +1995,8 @@ int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
     world_reset_hook = [] { net.c64_reset(); };
-    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } };
+    world_abort_hook = [] { net.abort(0); };
+    net.worker = (TaskHandle_t)&world_wake_task;
     test_info();
     test_open();
     test_grammar();
@@ -1849,10 +2004,12 @@ int main(int argc, char **argv)
     test_classify();
     test_dns_connect();
     test_reset_during_open();
+    test_cancel_wakes_the_wait();
     test_start_tls();
     test_abort_during_open();
     test_reset_during_start();
     test_read();
+    test_abort_during_read_step();
     test_write();
     test_close();
     test_latch();
