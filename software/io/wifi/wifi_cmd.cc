@@ -257,6 +257,8 @@ void wifi_command_init(void)
 #endif
     esp32.uart->SetReceiveCallback(wifi_rx_isr);
     esp32.uart->EnableIRQ(true);
+    // The pool reset above is a restart for a call that waits: no reply will come, and it need not wait it out
+    wifi_wake(wifi_wait_owner);
 }
 
 
