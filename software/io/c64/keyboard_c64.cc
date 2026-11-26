@@ -111,14 +111,8 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     shift_prev = 0xFF;
     scan_paused = 0;
     scan_timer = 0;
-    deferred_scans = 0;
-    last_key_mtrx = 0xFF;
-    last_key_shift = 0xFF;
-    last_release_ms = 0;
 #if KEYBOARD_C64_TIMER_SCAN
-    // The repeat delays count scans. getch() scanned every 4 ticks; this
-    // scans every KEYBOARD_C64_SCAN_PERIOD_TICKS, so scale them to keep the
-    // same repeat rate in wall-clock time.
+    // The delays count scans; scale them to this timer's period.
     repeat_speed = (repeat_speed * 4) / KEYBOARD_C64_SCAN_PERIOD_TICKS;
     first_delay = (first_delay * 4) / KEYBOARD_C64_SCAN_PERIOD_TICKS;
     scan_timer = xTimerCreate("KbScan", KEYBOARD_C64_SCAN_PERIOD_TICKS, pdTRUE, this,
@@ -128,6 +122,7 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     }
 #endif
     delay_count = first_delay;
+    armed = true;
 }
 
 Keyboard_C64 :: ~Keyboard_C64()
@@ -141,10 +136,8 @@ Keyboard_C64 :: ~Keyboard_C64()
 #endif
 }
 
-// Runs in the timer service task, above the network tasks, so a request being
-// served does not hold the scan off either. The host says whether the CIA may
-// be touched at all: only while the machine is stopped and its I/O is the
-// cartridge's, never between restore_io() and resume().
+// Runs in the timer service task, above the network tasks, so a request cannot hold the scan
+// off. The CIA is touched only while the host has the machine stopped with cartridge I/O.
 void Keyboard_C64 :: scan_timer_callback(void *timer)
 {
 #if KEYBOARD_C64_TIMER_SCAN
@@ -161,7 +154,6 @@ void Keyboard_C64 :: scan_timer_callback(void *timer)
     if (keyboard->host->keyboard_scan_deferred()) {
         // The CIA may not be at its address this instant; the key state stays
         // what it was, so a held key is not reported again on the next tick.
-        keyboard->deferred_scans++;
         return;
     }
     keyboard->scan();
@@ -307,11 +299,9 @@ void Keyboard_C64 :: scan(void)
                 col = (col << 1) | 1;
             }
         } else if (!software_joy_only) { // no key pressed
-            if (mtrx_prev != 0xFF) {
-                last_release_ms = getMsTimer();
-            }
             mtrx_prev = 0xFF;
             shift_prev = 0xFF;
+            armed = true;
 #if U64 == 2
     MATRIX_WASD_TO_JOY = wasd_to_joy;
     BLING_RX_FLAGS = 0x00; // reenable shift lock
@@ -336,6 +326,11 @@ void Keyboard_C64 :: scan(void)
     if(!key) { // no sensible key pressed, clear history
         mtrx_prev = 0xFF;
         shift_prev = 0xFF;
+        armed = armed || !joy; // only modifiers held, e.g. SHIFT LOCK
+        return;
+    }
+
+    if(!armed) {
         return;
     }
 
@@ -353,29 +348,29 @@ void Keyboard_C64 :: scan(void)
         return;
     } else {  // first time this key was pressed
         delay_count = first_delay;
-        // A key seen again within ~120 ms of its release cannot be a second
-        // host tap: the REST keyboard tap holds 40 ms and the debugger issues
-        // one command per step, seconds apart. It is a scan that read RAM
-        // instead of the CIA (a DMA mode window not covered by the deferral)
-        // and reported the still-held key as released then pressed again.
-        // Logged as the canary for that race; the value is the gap in ms.
-        uint16_t since = (uint16_t)(getMsTimer() - last_release_ms);
-        if (mtrx == last_key_mtrx && shift_flag == last_key_shift && since < 40) {
-            printf("KB: spurious re-press %02X/%02X after %ums\n",
-                   mtrx, shift_flag, (unsigned)since);
-        }
         mtrx_prev = mtrx;
         shift_prev = shift_flag;
-        last_key_mtrx = mtrx;
-        last_key_shift = shift_flag;
     }
 
 //    printf("%b ", key);
+    push_key(key);
+}
+
+// The timer scan and the user interface task (push_head) both add keys; getch() is
+// the only reader and the only writer of key_tail.
+void Keyboard_C64 :: push_key(int key)
+{
+#if KEYBOARD_C64_TIMER_SCAN
+    portENTER_CRITICAL();
+#endif
     int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
     if(next_head != key_tail) {
         key_buffer[key_head] = key;
         key_head = next_head;
     }
+#if KEYBOARD_C64_TIMER_SCAN
+    portEXIT_CRITICAL();
+#endif
 }
 
 int Keyboard_C64 :: getch(void)
@@ -405,11 +400,7 @@ int Keyboard_C64 :: getch(void)
 void Keyboard_C64 :: push_head(int c)
 {
     // For now, we only support push tail, alas
-    int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
-    if(next_head != key_tail) {
-        key_buffer[key_head] = c;
-        key_head = next_head;
-    }
+    push_key(c);
 }
 
 void Keyboard_C64 :: wait_free(void)
@@ -460,9 +451,27 @@ void Keyboard_C64 :: set_delays(int initial, int repeat)
     repeat_speed = repeat;
 }
 
+void Keyboard_C64 :: ignore_held_input(void)
+{
+    // One step, so the timer scan cannot queue a key between the disarm and
+    // the drop. Like clear_buffer(), it drops from the reading end only.
+#if KEYBOARD_C64_TIMER_SCAN
+    portENTER_CRITICAL();
+#endif
+    armed = false;
+    mtrx_prev = 0xFF;
+    shift_prev = 0xFF;
+    key_tail = key_head;
+#if KEYBOARD_C64_TIMER_SCAN
+    portEXIT_CRITICAL();
+#endif
+}
+
 void Keyboard_C64 :: clear_buffer(void)
 {
-    key_head = key_tail = 0;
+    // Dropped from the reading end, the only end this task owns, so a key the
+    // scan adds meanwhile is neither lost nor read twice.
+    key_tail = key_head;
     // getch() falls through to the USB keyboard, so its queued input has to go
     // too. Keys injected through the input API are left alone.
     system_usb_keyboard.clear_pending_input();

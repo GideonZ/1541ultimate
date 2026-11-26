@@ -31,7 +31,7 @@ repository-root `run-tests` all use it.
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 | `../ruff.toml` | Which lint rules this tree is held to, and for each one that is off, either the reason or the finding that removes it |
 
-Nine registered suites live here as well, because each checks the test tree
+Ten registered suites live here as well, because each checks the test tree
 or the build rather than the device and so needs no hardware. They run first,
 where a failure lands as a clear message instead of as a confusing one later.
 The runner is handed no device for them, so it skips the health sweep and the
@@ -41,6 +41,7 @@ UI-state gate around each one:
 | --- | --- |
 | `check_transport_usage.py` | No suite has grown its own HTTP client again |
 | `esp_depends_test.py` | Every ESP32 project CI caches is covered by the cache key, so a stale binary cannot be handed back forever |
+| `u64ctrl_ca_test.py` | u64ctrl's network recovery trusts the committed Mozilla root list (ISRG X1/X2 in, the removed emSign roots out), and the ESP32 cache key hashes it |
 | `input_batching_test.py` | A `machine:input` request never exceeds either of the device's two limits, the event count and the body size |
 | `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
 | `openapi_contract_test.py` | The response validator agrees with the committed documents in `doc/api` |
@@ -52,7 +53,46 @@ UI-state gate around each one:
 `observability_test.py` also runs as `make observability_test` and as a step in
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
 no device and no network beyond loopback. `lint_test.py` is wired the same way,
-as `make lint_test` and as the `Check Tests Lint` step.
+as `make lint_test` and as the `Test Lint of the Tests Tree` step.
+
+`u64ctrl_ca_test.py` also runs as the `Test u64ctrl Recovery CA List` step in the same workflow, in a stock
+Python image with no packages.
+
+## Where the runner's code is
+
+`run-tests` is the entry point. It holds the two things most changes touch: the
+`SUITES` registry, where a suite is registered (see
+[tests/e2e/README.md](../e2e/README.md)), and the orchestration that runs it,
+which is `run_one_attempt`, `run_suite`, `run_targets`, `main` and the UI-state
+gate. Everything the orchestration calls is in the `tests/lib/runtests/`
+package, one module per concern:
+
+| To change | Edit |
+| --- | --- |
+| A command-line option, the help page, or how targets and modes are read from them | `runtests/cli.py` |
+| Whether a new option is passed on to the child run of each target | `runtests/children.py`; `runner_policy_test.py` fails when an option is in neither the forwarded nor the excluded list |
+| How a multi-target run starts, schedules and stops its children | `runtests/children.py` |
+| An exit status, or how a run's results become one | `runtests/exits.py` |
+| What a suite result or a run's options contain | `runtests/model.py` |
+| How the device is probed, recovered, and how its settings are captured and restored | `runtests/device.py` |
+| How the device's own log is collected and checked | `runtests/syslog.py` |
+| The screen recorder's options, start and stop | `runtests/recording.py` |
+| Where a failed attempt's capture and per-attempt files are written | `runtests/capture.py` |
+| Where each suite's console output is logged | `runtests/console.py` |
+| What a run records about the checkout, host and harness files | `runtests/identity.py` |
+| The end-of-run summary and its stale-gate report | `runtests/summary.py` |
+| The repository root, the categories and the modes | `runtests/constants.py` |
+
+A module imports only from modules earlier in this order: `constants`,
+`model`, `exits`, `identity`, `console`, `device`, then the rest.
+
+A timing constant is read by the module that defines it, for example
+`runtests.device.DEVICE_RECOVERY_POLL_SECONDS` or
+`runtests.syslog.SYSLOG_READY_SECONDS`. A test that shortens one assigns it on
+that module, as `SCRIPTED_RUNNER_CONSTANTS` in `observability/support.py` does.
+A test that replaces a function the orchestration calls, such as
+`ui_state_gate` or `child_command`, assigns it on the loaded `run-tests`
+module, because the orchestration looks it up there.
 
 ## The lint
 

@@ -31,8 +31,10 @@ void emit_store(ConfigStore *st, JSON_Object *pobj, ArgsURI &args)
                 if (i->definition->type == CFG_TYPE_ENUM) {
                     JSON_List *list = JSON::List();
                     ob->add("values", list);
+                    // the list starts at 0 even when min is higher; from min on it follows the item's list order
                     for(int j=0;j <= i->definition->max; j++) {
-                        list->add(i->definition->items[j]);
+                        int v = (j >= i->definition->min) ? i->listedValue(j - i->definition->min) : j;
+                        list->add(i->definition->items[v]);
                     }
                     ob->add("default", i->definition->items[i->definition->def]);
                 } else if (i->definition->type == CFG_TYPE_VALUE) {
@@ -167,7 +169,7 @@ API_DOC(GET, configs, none,
                 "no path it lists the category names. With a category it gives the current value "
                 "of every item in it. With a category and an item it describes each matching item "
                 "in full: the current value, the default, and either the accepted values of an "
-                "enumeration or the range and format of a number.\n"
+                "enumeration, in the order the menu lists them, or the range and format of a number.\n"
                 "\n"
                 "Both path elements are patterns, so `drive*` selects every category whose name "
                 "starts with `drive` and `*bus*` selects every item with `bus` in its name. "

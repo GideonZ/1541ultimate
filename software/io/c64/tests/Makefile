@@ -10,7 +10,7 @@ all: $(BUILD)/c64CrtTest
 # The cartridge type constants and cart_def, taken from c64.h itself.
 $(BUILD)/cart_defs.h: ../c64.h
 	mkdir -p $(BUILD)
-	sed -n -e '/^#define \(CART_\|VARIANT_\)/p' -e '/^typedef struct _cart/,/^} cart_def;/p' $< > $@
+	sed -n -e '/^#define CART_/p' -e '/^#define VARIANT_/p' -e '/^typedef struct _cart/,/^} cart_def;/p' $< > $@
 
 $(BUILD)/c64CrtTest: c64_crt_test.cc c64_crt_host.h ../c64_crt.cc ../c64_crt.h $(BUILD)/cart_defs.h
 	$(CXX) $(CXXFLAGS) c64_crt_test.cc ../c64_crt.cc $(SRC)/components/mystring.cc -o $@

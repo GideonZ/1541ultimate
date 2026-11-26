@@ -16,7 +16,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 from report import Failure
 from collections.abc import Sequence
-from report import detail
+from report import warn
 import pacing
 import re
 import time
@@ -30,6 +30,17 @@ from backend import (Backend, FRAME_CHARS, Snapshot,
 # backend.py because this is the only reader: it describes a listing row, and
 # only a Browser reads listing rows.
 SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
+
+# How often a keystroke the browser reads back is sent before it gives up, and
+# how long it waits for the screen to answer one. One lost key needs one retry;
+# three attempts leave room for a second loss without spinning on a dead UI.
+EDIT_FIELD_ATTEMPTS = 3
+EDIT_FIELD_ECHO_SECONDS = 2.0
+# How long a popup button or an overlay's ENTER may leave the screen unchanged
+# before the key counts as lost. Longer than a typing echo, because the key can
+# start work that holds the UI with the popup still drawn, a large delete among
+# them, and pressing again then would answer the next question as well.
+ACTION_ECHO_SECONDS = 6.0
 
 
 class Browser:
@@ -381,6 +392,80 @@ class Browser:
                 return matches(self.selected_text())
         return False
 
+    def menu_frame(self) -> tuple[int, int, int, int]:
+        """The frame of the list the cursor keys move, for a menu drawn in a frame.
+
+        A popup is the only framed list on screen, but a C64 Ultimate draws its
+        settings in the middle one of three framed panels, beside a device list with a
+        highlight of its own. There the list is the one whose highlight a cursor key
+        moves, so one key is pressed to find it, and pressed back.
+        """
+        before = self._framed_selections()
+        if len(before) == 1:
+            return next(iter(before))
+        for key, back in (("DOWN", "UP"), ("UP", "DOWN")):
+            self.press(key)
+            after = self._framed_selections()
+            moved = [frame for frame in after if frame in before and after[frame] != before[frame]]
+            if moved:
+                self.press(back)
+                if len(moved) == 1:
+                    return moved[0]
+                break
+        raise Failure(f"cannot tell which of {len(before)} framed lists the cursor moves; "
+                      f"screen was:\n{self.screen()}")
+
+    def _framed_selections(self, frame: tuple[int, int, int, int] | None = None,
+                           timeout: float = 5.0) -> dict:
+        """framed_selections once a highlighted list (the one in `frame`) is drawn.
+
+        The screen goes quiet between the parts of a redraw when the device is busy, so a
+        read can land before the highlight has been drawn.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            selections = self.backend.framed_selections()
+            if (frame in selections) if frame is not None else selections:
+                return selections
+            if time.monotonic() >= deadline:
+                return selections
+            time.sleep(0.25)
+
+    def framed_selection(self, frame: tuple[int, int, int, int]) -> tuple[int, str, list[str]]:
+        """The highlighted entry of the list in `frame`: (index, text, entries)."""
+        selections = self._framed_selections(frame)
+        if frame not in selections:
+            raise Failure(f"no highlighted list in the frame {frame}; screen was:\n{self.screen()}")
+        return selections[frame]
+
+    def select_framed_entry(self, label: str, max_steps: int = 64) -> tuple[tuple[int, int, int, int], str]:
+        """Put the cursor of the menu on the entry starting with `label`: (frame, entry).
+
+        A list longer than its frame scrolls, and only the cells inside the frame say
+        which entry is highlighted, so the cursor is walked one row at a time and read
+        back after every key: down to the end, then up to the top. The entry is the
+        whole text, a value column included.
+        """
+        frame = self.menu_frame()
+        for direction in ("DOWN", "UP"):
+            previous = None
+            for _ in range(max_steps):
+                _index, text, _entries = self.framed_selection(frame)
+                if text.startswith(label):
+                    return frame, text
+                if text == previous:
+                    # The key moved nothing, so this end of the list is reached, unless
+                    # the redraw was late: read once more before deciding.
+                    time.sleep(0.5)
+                    if self.framed_selection(frame)[1] == previous:
+                        break
+                    text = self.framed_selection(frame)[1]
+                    if text.startswith(label):
+                        return frame, text
+                previous = text
+                self.press(direction)
+        raise Failure(f"no entry starting with {label!r} in the menu; screen was:\n{self.screen()}")
+
     def enter(self) -> None:
         self.press("RIGHT")
 
@@ -473,12 +558,30 @@ class Browser:
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
     def open_context_menu(self) -> list[str]:
-        before = self.rows()
-        self.press("ENTER")
-        labels = self.wait_for_overlay(before)
-        if not labels:
-            raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
-        return labels
+        """Open the selected entry's context menu, and return its labels.
+
+        A cartridge can let the ENTER pass unseen, as fill_edit_field describes,
+        and the browser then stays exactly as it was. ENTER goes again only then,
+        and only once the screen has stayed unchanged for ACTION_ECHO_SECONDS
+        rather than the shorter overlay-draw wait: a menu that is merely slow to
+        draw would take a second ENTER as the choice of its first item. A screen
+        that changed into something other than a context menu is reported as it
+        is, without a second ENTER.
+        """
+        for attempt in range(2):
+            before = self.rows()
+            self.press("ENTER")
+            labels = self.wait_for_overlay(before)
+            if not labels and self._screen_changes(before):
+                labels = self.overlay_items(before)
+                if not labels:
+                    break
+            if labels:
+                if attempt:
+                    warn("the context-menu key had to be pressed twice; the first one "
+                         "did not reach the machine")
+                return labels
+        raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
 
     def choose_overlay_item(self, labels: list[str], label: str) -> None:
         """Select `label` in an open overlay, by the shortest key sequence.
@@ -501,7 +604,48 @@ class Browser:
             self.type_menu_char(character)
         if delta:
             self.press_many("DOWN" if delta > 0 else "UP", abs(delta))
-        self.press("ENTER")
+        self._settle_overlay_selection(labels, label)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            before = self.rows()
+            self.press("ENTER")
+            if self._screen_changes(before):
+                return
+            warn(f"ENTER on {label!r} changed nothing on screen, so it was lost; "
+                 f"pressing it again (attempt {attempt + 2})")
+        raise Failure(f"ENTER on {label!r} changed nothing after {EDIT_FIELD_ATTEMPTS} "
+                      f"presses; screen was:\n{self.screen()}")
+
+    def _settle_overlay_selection(self, labels: list[str], label: str) -> None:
+        """Make sure `label` is the highlighted item before it is activated.
+
+        A navigation key the cartridge did not see leaves another item
+        highlighted, and ENTER would then run that one instead, which can be
+        Delete as easily as anything else. The cursor is walked from where it
+        actually is, and each correction is reported.
+        """
+        wanted = labels.index(label)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            try:
+                shown = self.selected_text()
+            except Failure:
+                # A transport that cannot find one marked row inside a framed
+                # overlay says so by raising, as Telnet does; that is a highlight
+                # this cannot read, not a failure of the action.
+                return
+            at = next((index for index, item in enumerate(labels)
+                       if shown and item.split("||", 1)[0].strip() == shown.split("  ")[0].strip()),
+                      None)
+            if at == wanted:
+                return
+            if at is None:
+                # The highlight cannot be read here; leave the navigation as it
+                # was sent.
+                return
+            warn(f"{shown!r} was highlighted where {label!r} was navigated to, so a "
+                 f"key was lost; moving the cursor again (attempt {attempt + 2})")
+            self.press_many("DOWN" if wanted > at else "UP", abs(wanted - at))
+        raise Failure(f"could not highlight {label!r} in the overlay; it shows "
+                      f"{self.selected_text()!r}")
 
     def invoke_context_action(self, label: str) -> None:
         self.choose_overlay_item(self.open_context_menu(), label)
@@ -538,8 +682,8 @@ class Browser:
             categories = self.wait_for_overlay(before)
             if categories:
                 if attempt:
-                    detail("the task-menu key had to be pressed twice; the "
-                           "first one did not reach the machine")
+                    warn("the task-menu key had to be pressed twice; the "
+                         "first one did not reach the machine")
                 return categories
         return []
 
@@ -571,8 +715,33 @@ class Browser:
         so the key goes through the navigation transform: typed raw on a
         machine set to WASD Cursors it moves the highlight left instead of
         pressing the button.
+
+        A cartridge can let the key pass unseen, as fill_edit_field describes,
+        and a popup answered by nothing just stays up. A button always changes
+        the screen, so a screen left exactly as it was means the key was lost,
+        and it is pressed again and reported. A popup still on screen is not
+        that signal: answering one can open another with the same buttons, and
+        pressing again there would answer a question nobody asked.
         """
-        self.type_menu_char(key)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            before = self.rows()
+            self.type_menu_char(key)
+            if self._screen_changes(before):
+                return
+            warn(f"popup key {key!r} changed nothing on screen, so it was lost; "
+                 f"pressing it again (attempt {attempt + 2})")
+        raise Failure(f"popup key {key!r} changed nothing on screen after "
+                      f"{EDIT_FIELD_ATTEMPTS} presses; screen was:\n{self.screen()}")
+
+    def _screen_changes(self, before: list[str]) -> bool:
+        """Whether the screen moves away from `before` within ACTION_ECHO_SECONDS."""
+        deadline = time.monotonic() + ACTION_ECHO_SECONDS
+        while True:
+            if self.rows() != before:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
 
     def wait_for_text(self, text: str, timeout: float = 8.0) -> None:
         deadline = time.monotonic() + timeout
@@ -598,15 +767,51 @@ class Browser:
         transport can send KEY_CLEAR the whole buffer goes in one keystroke
         whatever its length, which is the difference between one key and up to
         64 on a machine that drains injected keys at 100ms each.
+
+        The field is read back before it is accepted, because a lost key would
+        rename a file to something nobody typed: measured on a U2+L under load,
+        "qmenu2.tst" arrived as "qenu2.tst". A field that does not show the
+        text is typed again, and each retype is reported as a warning, so a
+        lost key is never absorbed silently.
         """
-        if clear_taps:
-            clear = self.backend.clear_field_key
-            if clear:
-                self.press(clear)
-            else:
-                self.press_many("BACKSPACE", clear_taps)
-        self.type_text(text)
+        for attempt in range(EDIT_FIELD_ATTEMPTS):
+            if clear_taps or attempt:
+                self._clear_field(max(clear_taps, len(text) + 4))
+            before = self.rows()
+            self.type_text(text)
+            if self._field_shows(before, text):
+                break
+            warn(f"the edit field did not show {text!r} after it was typed, so a "
+                 f"keystroke was lost; typing it again (attempt {attempt + 2})")
+        else:
+            raise Failure(f"the edit field never showed {text!r} after "
+                          f"{EDIT_FIELD_ATTEMPTS} attempts; screen was:\n{self.screen()}")
         self.press("ENTER")
+
+    def _clear_field(self, taps: int) -> None:
+        clear = self.backend.clear_field_key
+        if clear:
+            self.press(clear)
+        else:
+            self.press_many("BACKSPACE", taps)
+
+    def _field_shows(self, before: list[str], text: str) -> bool:
+        """Whether a row the typing changed now carries `text`.
+
+        Only changed rows count, so a name already visible in the listing
+        behind the field cannot stand in for the field itself.
+        """
+        wanted = text.lower()
+        deadline = time.monotonic() + EDIT_FIELD_ECHO_SECONDS
+        while True:
+            after = self.rows()
+            changed = [row for index, row in enumerate(after)
+                       if index >= len(before) or row != before[index]]
+            if any(wanted in row.lower() for row in changed):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
 
     def recover_to(self, directory: str) -> None:
         """Dismiss whatever is open and end up in `directory`.

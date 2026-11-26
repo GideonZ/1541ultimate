@@ -12,6 +12,7 @@
 #define BUTTON_ON 5
 #define BUTTON_OFF 6
 #define BUTTON_ON2 7
+#define BUTTON_RECOVERY 8 // switch on and recover the firmware; never sent to the application
 
 void start_button_handler(int initial);
 BaseType_t extern_button_event(uint8_t button);

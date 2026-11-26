@@ -9,6 +9,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "endianness.h"
+#include "eth_tx_frame.h"
 
 #define DEBUG_RAW_PKT 0
 #define DEBUG_INVALID_PKT 0
@@ -102,6 +103,10 @@ UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbD
     this->prodID = prodID;
 
     dataBuffersBlock = new uint8_t[1536 * NUM_AX_BUFFERS];
+    // Reached through BIT31 like the receive pool, so that it lands in
+    // uncached space on any target that turns the data cache on.
+    txBufferBlock = new uint8_t[AX_HEADER_LEN + AX_MAX_PACKET_LEN];
+    txBuffer = &txBufferBlock[BIT31];
 
     for (int i=0; i < NUM_AX_BUFFERS; i++) {
         freeBuffers.push(&dataBuffersBlock[BIT31 + 1536 * i]); // set bit 31, so that it is non-cacheable
@@ -113,6 +118,7 @@ UsbAx88772Driver :: ~UsbAx88772Driver()
 	if(netstack)
 		releaseNetworkStack(netstack);
 	delete[] dataBuffersBlock;
+	delete[] txBufferBlock;
 }
 
 UsbDriver * UsbAx88772Driver :: test_driver(UsbInterface *intf)
@@ -604,13 +610,17 @@ err_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 		return ERR_CONN;
 	//dump_hex(buffer, 32);
 
-	uint8_t *size = buffer - 4;
-    size[0] = uint8_t(pkt_len & 0xFF);
-    size[1] = uint8_t(pkt_len >> 8);
-    size[2] = size[0] ^ 0xFF;
-    size[3] = size[1] ^ 0xFF;
 
-	host->bulk_out(&bulk_out_pipe, size, pkt_len + 4);
+	// The adapter wants a four byte length header in front of the frame, and
+	// the buffers lwIP passes here have no headroom for it (ETH_PAD_SIZE is 0).
+	// bulk_out() returns only when the transfer is done, so one buffer is enough.
+	int to_send = ax88772_tx_block(buffer, pkt_len, txBuffer,
+	                               AX_HEADER_LEN + AX_MAX_PACKET_LEN);
+	if (to_send < 0) {
+		return ERR_ARG;
+	}
+
+	host->bulk_out(&bulk_out_pipe, txBuffer, to_send);
 
 	return ERR_OK;
 }

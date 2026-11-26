@@ -461,6 +461,16 @@ def check_monitor_reads_the_address_typed(page):
 
     await_quiet(page.device)
     page.device.clear()
+    with check("h 0000 ffff 60 reads all 64 KB, $FFFF included"):
+        page.command("h 0000 ffff 60")
+        call = await_call(page.device, readmem)
+        if call is None:
+            raise Failure("no read arrived; the page sent %r" % rest_calls(page.device))
+        expect("the address", call.params.get("address"), "0")
+        expect("the length", call.params.get("length"), "65536")
+
+    await_quiet(page.device)
+    page.device.clear()
     with check("f 1e00 1e01 ff fills from $1e00"):
         page.command("f 1e00 1e01 ff")
         call = await_call(page.device, "/v1/machine:writemem")

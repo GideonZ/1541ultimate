@@ -52,7 +52,7 @@ import report
 
 # Importing a tier is what registers its cases, and in tier order so CASES
 # is in the order run_cases takes them. All four, so this file runs what it
-# always ran: `make observability_test`, the Check Observability Harness step
+# always ran: `make observability_test`, the Test Observability Harness step
 # in .github/workflows/build.yml, and the `observability` suite in run-tests
 # all invoke exactly this.
 import pure_test  # noqa: E402,F401  (tier 1)

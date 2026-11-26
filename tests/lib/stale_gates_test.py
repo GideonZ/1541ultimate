@@ -62,9 +62,9 @@ stale_gates = load_stale_gates()
 
 # A real entry, used rather than an invented name so this exercises the table
 # this run will actually read, not a fixture that happens to look like it.
-FIX = machine.TELNET_SEND_TOLERATES_SLOW_PEER
+FIX = machine.KEY_INJECTION_LOSES_NO_CHARACTER
 FIX_MACHINE = machine.U2
-LABEL = "a Telnet session survives a screen it cannot drain"
+LABEL = "every character of a typed argument reaches the monitor"
 
 
 @contextlib.contextmanager

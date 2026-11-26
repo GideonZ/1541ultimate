@@ -15,6 +15,7 @@
 
 class SubsysCommand;
 class Action;
+class UserInterface;
 
 typedef SubsysResultCode_e (*actionFunction_t)(SubsysCommand *cmd);
 typedef SubsysResultCode_e (*directFunction_t)(Action *action, void *context);
@@ -81,6 +82,8 @@ public:
 	virtual const char *getName() {
 		return (const char *)actionName;
 	}
+
+    virtual const char *getDisplayName(UserInterface *ui) { return getName(); }
 
 	const void *getObject(void) {
 	    return object;

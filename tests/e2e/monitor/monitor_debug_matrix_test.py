@@ -204,7 +204,7 @@ def validate_debug_alerts(alerts=DEBUG_ALERTS) -> list[str]:
 def validate_manual_text(text: str) -> list[str]:
     """doc/machine_code_monitor.md must explain Debug stepping in plain language."""
     problems: list[str] = []
-    required = ("Dbg", "breakpoint+Go", "RAM under ROM")
+    required = ("Dbg", "Set a breakpoint and press `G`", "RAM under ROM")
     for token in required:
         if token not in text:
             problems.append(f"manual missing required phrase {token!r}")

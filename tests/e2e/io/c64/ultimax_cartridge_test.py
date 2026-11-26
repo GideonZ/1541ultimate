@@ -50,6 +50,7 @@ import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
 import streams                                                  # noqa: E402
+import targets                                                  # noqa: E402
 from api import UltimateApi                                     # noqa: E402
 from PIL import Image                                           # noqa: E402
 from report import (Failure, check, detail, format_exception,   # noqa: E402
@@ -61,6 +62,23 @@ SUITE = "ultimax_cartridge_test"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CARTRIDGE = SCRIPT_DIR / "jupiter_lander.crt"
 REFERENCE = SCRIPT_DIR / "jupiter_lander.png"
+# The video core the reference was captured on. An older core draws the same
+# game screen with different pixels: core 1.4F scores exactly 72.66% against
+# it, the same on every run, which is a picture that cannot match rather than a
+# cartridge that did not start. A newer core is expected to draw it the way this
+# one does, so it runs the check rather than skipping it.
+REFERENCE_CORE = "1.50"
+
+
+def core_order(version: str | None) -> int | None:
+    """A core version as a number that sorts as the versions do, or None.
+
+    The digits are hexadecimal, which is how 1.4F comes before 1.50.
+    """
+    try:
+        return int((version or "").replace(".", ""), 16)
+    except ValueError:
+        return None
 
 # F1 starts the game from the cartridge's title screen. The cartridge scans the
 # keyboard itself, so a tap sent before it starts is read by nothing: measured,
@@ -208,6 +226,16 @@ def run(args) -> str:
     """Run the check. Returns the reason the suite skipped, or an empty string."""
     reference, size, palette = golden_frame()
     device = UltimateApi(args.host, args.password or None, args.timeout)
+    # The picture comes from the machine with the VIC, which for a cartridge
+    # target is the computer, so that is the core the reference has to match.
+    video = targets.resolve(args.host).video_host
+    info = UltimateApi(video, args.password or None, args.timeout).info()
+    core = info.extra.get("core_version")
+    order = core_order(core if isinstance(core, str) else None)
+    if order is not None and order < core_order(REFERENCE_CORE):
+        return (f"{REFERENCE.name} was captured on video core {REFERENCE_CORE} and "
+                f"{video} runs the older core {core}, which draws the game screen "
+                f"differently")
     capture = VicStreamCapture(args.host)
     started = False
     try:

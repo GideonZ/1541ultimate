@@ -25,6 +25,7 @@
  */
 
 #include "filetype_prg.h"
+#include "x00_wrapper.h"
 #include "directory.h"
 #include "filemanager.h"
 #include "c1541.h"
@@ -47,10 +48,9 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_prg(FileType :: getFi
 #define PRGFILE_MOUNT_RUN 0x2203
 #define PRGFILE_MOUNT_REAL_RUN 0x2204
 
-FileTypePRG :: FileTypePRG(BrowsableDirEntry *n, bool hdr)
+FileTypePRG :: FileTypePRG(BrowsableDirEntry *n)
 {
     node = n;
-    has_header = hdr;
 }
 
 FileTypePRG :: ~FileTypePRG()
@@ -59,17 +59,15 @@ FileTypePRG :: ~FileTypePRG()
 
 int FileTypePRG::fetch_context_items(IndexedList<Action *> &list)
 {
-    int mode = (has_header) ? 1 : 0;
-
     int count = 0;
     C64 *machine = C64::getMachine();
     if (!machine->exists()) {
         return 0;
     }
 
-    list.append(new Action("Run", FileTypePRG::execute_st, PRGFILE_RUN, mode));
-    list.append(new Action("Load", FileTypePRG::execute_st, PRGFILE_LOAD, mode));
-    list.append(new Action("DMA", FileTypePRG::execute_st, PRGFILE_DMAONLY, mode));
+    list.append(new Action("Run", FileTypePRG::execute_st, PRGFILE_RUN, 0));
+    list.append(new Action("Load", FileTypePRG::execute_st, PRGFILE_LOAD, 0));
+    list.append(new Action("DMA", FileTypePRG::execute_st, PRGFILE_DMAONLY, 0));
     count += 3;
 
     if (!c1541_A)
@@ -88,8 +86,7 @@ int FileTypePRG::fetch_context_items(IndexedList<Action *> &list)
     }
 
     if (image) {
-        // if this file is inside of a disk image. Note that header mode gets lost; this is OK
-        // since there are no Pxx files inside of a disk image
+        // This file is inside a disk image, and the mode carries the image type.
         list.append(new Action("Mount & Run", FileTypePRG::execute_st, PRGFILE_MOUNT_RUN, image));
         count++;
         list.append(new Action("Real Run", FileTypePRG::execute_st, PRGFILE_MOUNT_REAL_RUN, image));
@@ -103,28 +100,14 @@ FileType *FileTypePRG :: test_type(BrowsableDirEntry *obj)
 {
 	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "PRG")==0)
-        return new FileTypePRG(obj, false);
-    if(inf->extension[0] == 'P') {
-        if(isdigit(inf->extension[1]) && isdigit(inf->extension[2])) {
-            return new FileTypePRG(obj, true);
-        }
+        return new FileTypePRG(obj);
+    // A P00 file and its kin hold a CBM program behind a header, which the loader
+    // moves past, so the browser offers the same actions for them (SI-144).
+    char type_letter = 0;
+    if (x00_extension(inf->extension, &type_letter) && (type_letter == 'P')) {
+        return new FileTypePRG(obj);
     }
     return NULL;
-}
-
-bool FileTypePRG :: check_header(File *f, bool has_header)
-{
-    static char p00_header[0x1A]; 
-
-    if(!has_header)
-        return true;
-    uint32_t bytes_read;
-    FRESULT res = f->read(p00_header, 0x1A, &bytes_read);
-    if(res != FR_OK)
-        return false;
-    if(strncmp(p00_header, "C64File", 7))
-        return false;
-    return true;        
 }
 
 SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
@@ -161,42 +144,35 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
     const char *name = cmd->filename.c_str();
     printf("DMA Load.. %s\n", name);
     FileManager *fm = FileManager :: getFileManager();
+    // Opened only to tell a missing file from a load that will run. The C64 subsystem opens it
+    // again for the DMA load and skips an x00 header itself (SI-144).
     FRESULT fres = fm->fopen(cmd->path.c_str(), name, FA_READ, &file);
     if (file) {
-        // The file is opened here only to validate the P00 header; the C64 subsystem
-        // opens it again itself to perform the DMA load. Closing it here keeps the
-        // handle from leaking on every Run/Load/DMA action.
-        bool header_ok = check_header(file, (cmd->mode == 1));
         fm->fclose(file);
         file = NULL;
 
-        if (header_ok) {
+        if (run_code & RUNCODE_MOUNT_BIT) {
+            printf("Runcode mount bit set. trying to find mount point '%s' resulted: ", cmd->path.c_str());
+            FileInfo info(32);
+            fres = fm->fstat(cmd->path.c_str(), info);
+            printf("%s\n", FileSystem::get_error_string(fres));
 
-            if (run_code & RUNCODE_MOUNT_BIT) {
-                printf("Runcode mount bit set. trying to find mount point '%s' resulted: ", cmd->path.c_str());
-                FileInfo info(32);
-                fres = fm->fstat(cmd->path.c_str(), info);
-                printf("%s\n", FileSystem::get_error_string(fres));
-
-                printf("Mounting %s to drive A\n", cmd->path.c_str());
-                drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, cmd->mode, 0, cmd->path.c_str());
-                drive_command->execute();
-                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_MNT, run_code, cmd->path.c_str(), cmd->filename.c_str());
-            } else if (run_code) {
-                SubsysResultCode_e ret = ConfigIO :: S_load_associated_config(cmd);
-                if (ret == SSRET_CANNOT_OPEN_FILE) {
-                    ret = ConfigIO :: S_load_associated_config_usr(cmd);
-                };
-                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
-            } else {
-                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_RAW, run_code, cmd->path.c_str(), cmd->filename.c_str());
-            }
-            c64_command->execute();
-            if (cmd->user_interface) {
-                cmd->user_interface->menu_response_to_action = menu_action;
-            }
+            printf("Mounting %s to drive A\n", cmd->path.c_str());
+            drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_D64, cmd->mode, 0, cmd->path.c_str());
+            drive_command->execute();
+            c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_MNT, run_code, cmd->path.c_str(), cmd->filename.c_str());
+        } else if (run_code) {
+            SubsysResultCode_e ret = ConfigIO :: S_load_associated_config(cmd);
+            if (ret == SSRET_CANNOT_OPEN_FILE) {
+                ret = ConfigIO :: S_load_associated_config_usr(cmd);
+            };
+            c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
         } else {
-            printf("Header of P00 file not correct.\n");
+            c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_RAW, run_code, cmd->path.c_str(), cmd->filename.c_str());
+        }
+        c64_command->execute();
+        if (cmd->user_interface) {
+            cmd->user_interface->menu_response_to_action = menu_action;
         }
     } else {
         printf("Error opening file. %s\n", FileSystem::get_error_string(fres));

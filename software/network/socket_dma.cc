@@ -22,6 +22,7 @@
 #include "filetype_crt.h"
 #include "network_config.h"
 #include "product.h"
+#include "socket_keepalive.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -65,6 +66,13 @@ static void socket_dma_set_timeouts(int socket_fd)
     setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
     setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
 }
+
+// The 1 s receive timeout only lets the task notice dmaEnabled. A client may pause
+// longer than that mid-message (WiFi retries, a flash erase, a slow card), so a
+// message is given up only after this long without any progress.
+#ifndef SOCKET_DMA_STALL_MS
+#define SOCKET_DMA_STALL_MS 30000
+#endif
 
 extern cart_def sid_cart;
 extern cart_def boot_cart;
@@ -350,19 +358,39 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     return ok;
 }
 
-int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
+// Reads exactly 'length' bytes. Returns 'length', 0 when the peer closed before
+// the first byte, or -1 when the connection failed, ended mid-message, stalled for
+// SOCKET_DMA_STALL_MS, or the service was disabled. While 'idle' (an authenticated
+// client between commands) there is no limit before the first byte; keepalive reaps
+// dead peers.
+int SocketDMA::readSocket(int socket, void *buffer, int length, volatile bool *enabled, bool idle)
 {
     int received = 0;
     uint8_t *buf = (uint8_t *)buffer;
-    while (max_remain > 0) {
-        int current = (max_remain > 8192) ? 8192 : max_remain;
-        int n = recv(socket, buf, current, 0);
-        if (n <= 0) {
-            return (received > 0) ? received : n;
+    TickType_t last = xTaskGetTickCount();
+    while (received < length) {
+        int current = length - received;
+        if (current > 8192) {
+            current = 8192;
         }
-        buf += n;
-        max_remain -= n;
-        received += n;
+        int n = recv(socket, buf + received, current, 0);
+        if (n > 0) {
+            received += n;
+            last = xTaskGetTickCount();
+            continue;
+        }
+        if (n == 0) {
+            return (received == 0) ? 0 : -1;
+        }
+        if ((errno != EAGAIN && errno != EWOULDBLOCK) || !*enabled) {
+            return -1;
+        }
+        if (idle && (received == 0)) {
+            continue;
+        }
+        if ((xTaskGetTickCount() - last) * portTICK_PERIOD_MS >= SOCKET_DMA_STALL_MS) {
+            return -1;
+        }
     }
     return received;
 }
@@ -460,6 +488,7 @@ void SocketDMA::dmaThread(void *a)
 		}
 
         socket_dma_set_timeouts(newsockfd);
+        net_enable_client_keepalive(newsockfd);
 
 		uint32_t addr = cli_addr.sin_addr.s_addr;
 		your_ip[3] = addr >> 24;
@@ -478,19 +507,23 @@ void SocketDMA::dmaThread(void *a)
 		if (!*password)
 	            authenticated = true;
 		while(daemon->dmaEnabled) {
-	        n = recv(newsockfd, buf, 2, 0);
+	        // Only a client that may send commands may wait for ever between them; one that
+	        // still has to authenticate gets the stall limit, so it cannot hold the only slot.
+	        n = readSocket(newsockfd, buf, 2, &daemon->dmaEnabled, authenticated);
 	        if (n <= 0) {
 	            break;
 	        }
-	        // assume n = 2
 	        uint16_t cmd = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
 
 	        if ((cmd & 0xFF00) != 0xFF00) {
 	            printf("Illegal command: %04x\n", cmd);
 	            continue;
 	        }
+	        if (!authenticated && cmd != SOCKET_CMD_AUTHENTICATE) {
+	            break;  // performCommand refuses it; do not read its payload first
+	        }
 
-	        n = recv(newsockfd, buf, 2, 0);
+	        n = readSocket(newsockfd, buf, 2, &daemon->dmaEnabled, false);
             if (n <= 0) {
                 break;
             }
@@ -498,19 +531,36 @@ void SocketDMA::dmaThread(void *a)
 	        uint32_t len32 = len;
 
 	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG) || (cmd == SOCKET_CMD_RUN_CRT)) {
-	            n = recv(newsockfd, buf+2, 1, 0);
+	            n = readSocket(newsockfd, buf+2, 1, &daemon->dmaEnabled, false);
+	            if (n <= 0) {
+	                break;
+	            }
                 len32 |= (((uint32_t)buf[2]) << 16);
 	        }
 	        if (len32 > SOCKET_BUFFER_SIZE) {
-	            len32 = SOCKET_BUFFER_SIZE;
+	            // Too big for the buffer: skip the payload so it is not parsed as commands.
+	            printf("Payload of %u bytes too large for command %04x\n", (unsigned int)len32, cmd);
+	            while (len32 > 0) {
+	                uint32_t part = (len32 > SOCKET_BUFFER_SIZE) ? SOCKET_BUFFER_SIZE : len32;
+	                n = readSocket(newsockfd, mempntr, part, &daemon->dmaEnabled, false);
+	                if (n <= 0) {
+	                    break;
+	                }
+	                len32 -= part;
+	            }
+	            if (n <= 0) {
+	                break;
+	            }
+	            continue;
 	        }
 	        if (len32) {
-	            n = readSocket(newsockfd, mempntr, len32);
+	            // Never act on a partial payload: the C64 would run bytes that never arrived.
+	            n = readSocket(newsockfd, mempntr, len32, &daemon->dmaEnabled, false);
+	            if (n <= 0) {
+	                break;
+	            }
 	        }
-	        if (n <= 0) {
-	            break;
-	        }
-            if (!performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr, authenticated)) {
+            if (!performCommand(newsockfd, load_buffer, len32, cmd, len32, &cli_addr.sin_addr, authenticated)) {
                 break;
             }
 		}
@@ -568,7 +618,7 @@ void SocketDMA::identThread(void *a)
         }
         while(daemon->identEnabled) {
             // Receive client's message:
-            int n = recvfrom(sockfd, client_message, sizeof(client_message), 0,
+            int n = recvfrom(sockfd, client_message, sizeof(client_message) - 1, 0,
                 (struct sockaddr*)&cli_addr, &client_struct_length);
             if (!daemon->identEnabled) {
                 break;
@@ -582,9 +632,7 @@ void SocketDMA::identThread(void *a)
             }
             printf("Received Ident Request from IP: %s and port: %i\n",
                 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
-            if (n > 0) {
-                client_message[n] = 0;
-            }
+            client_message[n] = 0;
 
             const char *hostname = networkConfig.cfg->get_string(CFG_NETWORK_HOSTNAME);
 

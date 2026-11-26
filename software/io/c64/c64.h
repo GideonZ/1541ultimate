@@ -2,6 +2,8 @@
 #define C64_H
 
 #include <stdio.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
 #include "host.h"
 #include "integer.h"
 #include "keyboard.h"
@@ -285,7 +287,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t *char_set; //[CHARSET_SIZE];
     uint8_t vic_backup[NUM_VICREGS];
     uint32_t ram_backup[BACKUP_SIZE/4];
-    uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
+    uint32_t screen_backup[COLOR_SIZE/4]; // $0400-$07FF while frozen
     uint32_t color_backup[COLOR_SIZE/4];
     uint8_t cia_backup[8];
     uint8_t stop_mode;
@@ -345,8 +347,10 @@ class C64 : public GenericHost, ConfigurableObject
     static void hard_stop(void);
     void resume(void);
     void freeze(void);
+    void freeze_locked(void);
+    void unfreeze_locked(void);
     void measure_timing(uint8_t *buffer);
-    virtual void get_all_memory(uint8_t *) { /* NOT YET IMPLEMENTED */ };
+    virtual void get_all_memory(uint8_t *);
     virtual void clear_ram(void) { /* NOT YET IMPLEMENTED */ };
     static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
@@ -381,8 +385,10 @@ public:
     
     /* Generic Host */
     void take_ownership(HostClient *client) {
+    	lock_ownership();
     	this->client = client;
     	freeze();
+    	unlock_ownership();
     }
     // Runs a short stub on the live 6510 through the NMI vector to read
     // $00/$01, then restores everything it touched. Returns false when the
@@ -398,8 +404,42 @@ public:
         return true;
     }
     void release_ownership(void) {
+    	lock_ownership();
     	unfreeze();
     	this->client = 0;
+    	unlock_ownership();
+    }
+
+    // Serialises freeze() and unfreeze() against everything that picks its way to the C64's
+    // memory by isFrozen (REST readmem/writemem) or that undoes a freeze (REST machine:reset).
+    // freeze() sets Ultimax in stop() well before it sets isFrozen, and a DMA that looks in
+    // between copies from a bus with nothing mapped. Recursive, as these nest, and separate
+    // from the subsystem's mutex, which the REST path already holds when it gets here. The
+    // holder runs bounded work under it: the stop, memory copies, and in the file loads and
+    // cartridge starts file I/O, wait_ms() and restoreCart(), which can take about 5 s. It
+    // never waits on the menu task or on anything that takes this lock, so it cannot be part
+    // of a cycle. A REST caller is bounded at 2 s (below); the menu task waits on.
+    //
+    // The REST and UCI side asks with a bound and reports failure, instead of hanging a request
+    // on a holder that is stuck: lock_ownership(ticks) returns false and logs once. The overload
+    // without a bound is for the freeze and unfreeze themselves, which cannot be declined; it
+    // logs once if the holder takes more than 2 s, and keeps waiting.
+    bool lock_ownership(TickType_t ticks) {
+    	if (xSemaphoreTakeRecursive(ownershipLock, ticks) == pdTRUE)
+    		return true;
+    	printf("C64: ownership lock busy for more than %d ms\n", (int)(ticks * portTICK_PERIOD_MS));
+    	return false;
+    }
+    void lock_ownership(void) {
+    	if (xSemaphoreTakeRecursive(ownershipLock, OWNERSHIP_WAIT) == pdTRUE)
+    		return;
+    	printf("C64: ownership lock still held after 2 s, waiting on\n");
+    	while (xSemaphoreTakeRecursive(ownershipLock, OWNERSHIP_WAIT) != pdTRUE)
+    		;
+    }
+    static const TickType_t OWNERSHIP_WAIT = 2000 / portTICK_PERIOD_MS;
+    void unlock_ownership(void) {
+    	xSemaphoreGiveRecursive(ownershipLock);
     }
 
     void checkButton(void);
@@ -528,6 +568,7 @@ public:
     friend class U64Machine;  // U64Machine is a derived class that may use internals of C64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
     friend class SoftIECTarget; // UCI target that performs DMA load
+    friend class ControlTarget; // SAVEMEM saves through get_all_memory
 };
 
 // extern C64 *c64;

@@ -36,7 +36,7 @@ import profiles  # noqa: E402
 import rest as rest_lib
 import targets
 from report import (Failure, check, detail, format_exception, section,
-                    suite_fail, suite_ok)
+                    suite_fail, suite_ok, warn)
 from ui_backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
                         BOX_TOP_LEFT, BOX_TOP_RIGHT, BOX_VERTICAL,
                         SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
@@ -240,7 +240,7 @@ def run_machine_checks() -> None:
     try:
         with check("the table decides which machine skips a tagged check"):
             # Both entries list the Ultimate II+ only.
-            for name in (machine.TELNET_SEND_TOLERATES_SLOW_PEER,
+            for name in (machine.KEY_INJECTION_LOSES_NO_CHARACTER,
                          machine.IDENT_SWITCHES_LIVE):
                 for product, expected in (("Ultimate 64 Elite", True),
                                           ("C64 Ultimate", True),
@@ -266,13 +266,13 @@ def run_machine_checks() -> None:
             # on. The reason carries the tag to pass to --assume-fix and the
             # machine and version to compare against the table.
             lagging = machine.classify("Ultimate II+L", "3.15")
-            reason = lagging.missing_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER)
-            for needle in ("telnet-send-tolerates-slow-peer", "Ultimate II+L", "3.15"):
+            reason = lagging.missing_fix(machine.KEY_INJECTION_LOSES_NO_CHARACTER)
+            for needle in ("key-injection-loses-no-character", "Ultimate II+L", "3.15"):
                 if reason is None or needle not in reason:
                     raise Failure(f"expected {needle!r} in the skip reason, "
                                   f"got {reason!r}")
             current = machine.classify("C64 Ultimate", "1.2.0")
-            if current.missing_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER) is not None:
+            if current.missing_fix(machine.KEY_INJECTION_LOSES_NO_CHARACTER) is not None:
                 raise Failure("a machine that has the fix was given a reason to skip")
 
         with check("skip_without_fix answers True only where the check cannot run"):
@@ -283,17 +283,17 @@ def run_machine_checks() -> None:
             # the report library holds it back and only the answer is visible.
             lagging = machine.classify("Ultimate II+L", "3.15")
             current = machine.classify("C64 Ultimate", "1.2.0")
-            if not lagging.skip_without_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER, "fixture"):
+            if not lagging.skip_without_fix(machine.KEY_INJECTION_LOSES_NO_CHARACTER, "fixture"):
                 raise Failure("a machine without the fix was not skipped")
-            if current.skip_without_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER, "fixture"):
+            if current.skip_without_fix(machine.KEY_INJECTION_LOSES_NO_CHARACTER, "fixture"):
                 raise Failure("a machine with the fix was skipped anyway")
 
         with check("an assumed fix runs the checks it gates, which is how a "
                    "backport is found"):
             machine.forget_assumptions()
             lagging = machine.classify("Ultimate II+L", "3.15")
-            machine.assume(machine.TELNET_SEND_TOLERATES_SLOW_PEER)
-            if not lagging.has_fix(machine.TELNET_SEND_TOLERATES_SLOW_PEER):
+            machine.assume(machine.KEY_INJECTION_LOSES_NO_CHARACTER)
+            if not lagging.has_fix(machine.KEY_INJECTION_LOSES_NO_CHARACTER):
                 raise Failure("the assumed fix still skipped its checks")
             if lagging.has_fix(machine.IDENT_SWITCHES_LIVE):
                 raise Failure("assuming one fix ran the checks of another")
@@ -306,16 +306,16 @@ def run_machine_checks() -> None:
         with check("an assumption list is parsed as a list, and a typo is refused"):
             machine.forget_assumptions()
             listed = machine.parse_assumptions(
-                f"{machine.TELNET_SEND_TOLERATES_SLOW_PEER}, "
+                f"{machine.KEY_INJECTION_LOSES_NO_CHARACTER}, "
                 f"{machine.IDENT_SWITCHES_LIVE}")
-            if listed != {machine.TELNET_SEND_TOLERATES_SLOW_PEER,
+            if listed != {machine.KEY_INJECTION_LOSES_NO_CHARACTER,
                           machine.IDENT_SWITCHES_LIVE}:
                 raise Failure(f"expected both fixes, got {sorted(listed)}")
             # A misspelt name that was quietly ignored would leave the checks
             # skipped, which is the answer the flag was run to get past, and
             # the run would look exactly like one where the fix had not landed.
             try:
-                machine.parse_assumptions("telnet-send-tolerates-slow-pee")
+                machine.parse_assumptions("key-injection-loses-no-characte")
             except machine.UnknownFix:
                 pass
             else:
@@ -891,6 +891,28 @@ def seek_to(backend: Backend, entry_rows: Sequence[int], character: str,
         snapshot = backend.capture()
 
 
+def move_to_path(backend: Backend, key: str, arrived) -> str:
+    """Press `key` and return the browser path once `arrived` accepts it.
+
+    A key injected into a cartridge target reaches it through the host's
+    keyboard matrix, some time after the request returns. The key is pressed
+    again, once, only when the path has not changed within
+    SEEK_TIMEOUT_SECONDS, and that is reported as a warning.
+    """
+    start = path_row(backend.capture())
+    path = path_row(backend.send_key(key))
+    for attempt in range(2):
+        deadline = time.monotonic() + SEEK_TIMEOUT_SECONDS
+        while not arrived(path) and path == start and time.monotonic() < deadline:
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+            path = path_row(backend.capture())
+        if arrived(path) or path != start or attempt:
+            return path
+        warn(f"{key} left the path at {start!r}; pressing it again")
+        path = path_row(backend.send_key(key))
+    return path
+
+
 def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
     with check("root browser is visible on connect"):
         snapshot = backend.capture()
@@ -949,10 +971,10 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
         # already appears as a row label at the root, so this checks the
         # browser's own path indicator rather than screen content generally.
         seek_to(backend, entry_rows, "t", "Temp")
-        entered_path = path_row(backend.send_key("RIGHT"))
+        entered_path = move_to_path(backend, "RIGHT", lambda path: path.startswith("/Temp"))
         if not entered_path.startswith("/Temp"):
             raise Failure(f"quick-seek on 't' + RIGHT did not enter /Temp: path was {entered_path!r}")
-        left_path = path_row(backend.send_key("LEFT"))
+        left_path = move_to_path(backend, "LEFT", lambda path: path == "/")
         if left_path != "/":
             raise Failure(f"LEFT did not return to the root path: {left_path!r}")
 

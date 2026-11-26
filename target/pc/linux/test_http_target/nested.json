@@ -1,0 +1,25 @@
+[
+  {
+    "batters": {
+      "batter": [
+        {"type": "Regular"},
+        {"type": "Chocolate"},
+        {"type": "Blueberry"}
+      ]
+    }
+  },
+  {
+    "batters": {"batter": [{"type": "Regular"}]},
+    "topping": [
+      {"type": "None"},
+      {"type": "Glazed"},
+      {"type": "Sugar"},
+      {"type": "Chocolate"}
+    ]
+  },
+  {
+    "batters": {
+      "batter": [{"type": "Regular"}, {"type": "Chocolate"}]
+    }
+  }
+]

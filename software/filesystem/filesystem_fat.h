@@ -29,8 +29,9 @@ class DirectoryFAT : public Directory
 		inf->extension[0] = toupper(inf->extension[0]);
         inf->extension[1] = toupper(inf->extension[1]);
         inf->extension[2] = toupper(inf->extension[2]);
-		if(inf->lfname) {
+		if(inf->lfname && inf->lfsize) {
 			strncpy(inf->lfname, fi->fname, inf->lfsize);
+			inf->lfname[inf->lfsize - 1] = 0; // a longer name is cut, not left unterminated
 		}
 	}
 
@@ -96,6 +97,7 @@ public:
     bool    init(void);              // Initialize file system
     FRESULT format(const char *name);// Format!
     FRESULT get_free (uint32_t *e, uint32_t *cs);  // Get number of free sectors on the file system
+    FRESULT get_total(uint32_t *e, uint32_t *cs);  // Get number of clusters on the file system
     bool    is_writable();           // by default a file system is not writable, unless we implement it
     FRESULT sync(void); 			 // by default we can't write, and syncing is thus always successful
 
@@ -107,6 +109,7 @@ public:
     FRESULT file_open(const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
     FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
     FRESULT file_delete(const char *path); // deletes a file
+    FRESULT file_attrib(const char *path, uint8_t attrib, uint8_t mask);
 
     bool     needs_sorting() { return true; }
 };

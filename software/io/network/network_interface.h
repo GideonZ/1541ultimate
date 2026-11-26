@@ -124,6 +124,7 @@ public:
     bool is_link_up() { return if_up; }
     void set_mac_address(uint8_t *mac);
     bool input(void *raw_buffer, uint8_t *payload, int pkt_size);
+    bool input_copy(uint8_t *payload, int pkt_size);
 
     void init_callback();
 
@@ -135,9 +136,11 @@ public:
 
 	void getIpAddr(uint8_t *a);
 	void getMacAddr(uint8_t *a);
+	void getNetifName(char *name, int size);
 	void setIpAddr(uint8_t *a);
 	char *getIpAddrString(char *buf, int buflen);
 	bool peekArpTable(uint32_t ipToQuery, uint8_t *mac);
+	bool bindSocket(int socket);
 
 	// callbacks
 	static void statusCallback(struct netif *);

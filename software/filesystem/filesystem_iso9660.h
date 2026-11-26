@@ -87,7 +87,7 @@
                  number of bytes
 
 */
-#pragma pack(1)
+#pragma pack(push, 1)
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 struct t_directory_record
     {
@@ -196,7 +196,7 @@ struct t_aligned_directory_record {
     char identifier[256];
 } __attribute__((packed));
 
-#pragma pack(4)
+#pragma pack(pop)
 
 const uint8_t c_volume_key[8] = { 0x01, 0x43, 0x44, 0x30, 0x30, 0x31, 0x01, 0x00 };
 

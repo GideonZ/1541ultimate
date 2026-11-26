@@ -5,6 +5,7 @@ import struct
 import time
 from collections.abc import Callable
 
+import http_probe
 from connection_runtime import (
     ProbeExecutionContext,
     ProbeOutcome,
@@ -15,6 +16,7 @@ from connection_runtime import (
 
 
 CONTROL_PORT = 64
+SOCKET_CMD_DMAWRITE = 0xFF06
 SOCKET_CMD_IDENTIFY = 0xFF0E
 SOCKET_CMD_AUTHENTICATE = 0xFF1F
 SOCKET_CMD_READFLASH = 0xFF75
@@ -148,41 +150,63 @@ def write_restore_debug_register(settings: RuntimeSettings) -> str:
     return f"debug_reg_restored=0x{restored:02X} temporary=0x{candidate:02X}"
 
 
-def surface_operations(surface: ProbeSurface) -> tuple[tuple[str, Callable[[RuntimeSettings], str]], ...]:
+def write_memory_verify(settings: RuntimeSettings, address: int, value: int) -> str:
+    """Write one byte of C64 memory over DMA, then read it back over HTTP."""
+    sock = open_socket(settings)
+    try:
+        sock.sendall(command_frame(SOCKET_CMD_DMAWRITE, struct.pack("<HB", address, value)))
+        # The socket answers a write with nothing and runs its commands in order, so the
+        # reply to the identify that follows is what says the write has been done.
+        identify_from_socket(sock)
+    finally:
+        sock.close()
+    return http_probe.memory_write_readback(settings, f"{address:04X}", value)
+
+
+def surface_operations(
+    surface: ProbeSurface, *, runner_id: int = 1, data_streams: bool = True,
+) -> tuple[tuple[str, Callable[[RuntimeSettings], str]], ...]:
+    """What each surface sends. The debug register exists only on a machine with data streams."""
     if surface == ProbeSurface.SMOKE:
         return (("dma_identify", identify),)
-    if surface == ProbeSurface.READWRITE:
-        return (
-            ("dma_identify", identify),
-            ("dma_debug_register", read_debug_register),
-            ("dma_flash_page_size", read_flash_page_size),
-            ("dma_flash_page_count", read_flash_page_count),
-            ("dma_debug_register_write_restore", write_restore_debug_register),
-        )
-    return (
+    operations = (
         ("dma_identify", identify),
-        ("dma_debug_register", read_debug_register),
         ("dma_flash_page_size", read_flash_page_size),
         ("dma_flash_page_count", read_flash_page_count),
     )
+    if data_streams:
+        operations += (("dma_debug_register", read_debug_register),)
+    if surface != ProbeSurface.READWRITE:
+        return operations
+    address = http_probe.probe_write_address(runner_id, "dma")
+    operations += (
+        ("dma_write_probe_a5", lambda settings: write_memory_verify(settings, address, 0xA5)),
+        ("dma_write_probe_5a", lambda settings: write_memory_verify(settings, address, 0x5A)),
+    )
+    if data_streams:
+        operations += (("dma_debug_register_write_restore", write_restore_debug_register),)
+    return operations
 
 
 def run_probe(settings: RuntimeSettings, correctness, *, context: ProbeExecutionContext | None = None) -> ProbeOutcome:
     del correctness
     if context is not None:
         return run_selected_surface_operation(
-            "dma", context, settings, surface_operations(context.surface))
+            "dma", context, settings,
+            surface_operations(context.surface, runner_id=context.runner_id,
+                               data_streams=settings.data_streams))
 
     started_at = time.perf_counter_ns()
     try:
         sock = open_socket(settings)
         try:
-            identify_detail = identify_from_socket(sock)
-            debug_detail = read_debug_register_from_socket(sock)
+            detail = identify_from_socket(sock)
+            if settings.data_streams:
+                detail += " " + read_debug_register_from_socket(sock)
         finally:
             sock.close()
         elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
-        return ProbeOutcome("OK", f"{identify_detail} {debug_detail}", elapsed_ms)
+        return ProbeOutcome("OK", detail, elapsed_ms)
     except Exception as error:
         elapsed_ms = (time.perf_counter_ns() - started_at) / 1_000_000.0
         return ProbeOutcome("FAIL", f"dma failed: {error}", elapsed_ms)

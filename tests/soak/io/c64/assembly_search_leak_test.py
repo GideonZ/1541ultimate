@@ -105,7 +105,7 @@ def query_and_open_entry(device) -> bool:
     # fields the form draws follows the service, so a literal label works on
     # one machine and not the next. See tests/e2e/lib/search_form.py.
     device.form.edit(device.form.first_field())
-    device.form.type_text(a64.SEARCH_TERM)
+    device.form.enter_text(a64.SEARCH_TERM)
     device.form.confirm()
     device.form.submit()
 

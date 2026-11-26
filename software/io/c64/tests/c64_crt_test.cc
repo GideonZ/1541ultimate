@@ -353,6 +353,68 @@ static void test_mirroring(void)
     CHECK(all_ff(r.at(3 * 32 * K), 4 * MB - 3 * 32 * K), "C128: memory after the image is not $FF");
 }
 
+// The chip packet for one bank and load address in a saved CRT file.
+static const uint8_t *saved_chip(const std::vector<uint8_t> &file, uint16_t bank, uint16_t load, uint16_t *size_out)
+{
+    size_t pos = 0x40;
+    while (pos + 16 <= file.size()) {
+        const uint8_t *h = file.data() + pos;
+        if (memcmp(h, "CHIP", 4)) {
+            break;
+        }
+        uint32_t packet = (uint32_t(h[4]) << 24) | (uint32_t(h[5]) << 16) | (uint32_t(h[6]) << 8) | h[7];
+        if ((packet < 16) || (pos + packet > file.size())) {
+            break;
+        }
+        if ((((h[10] << 8) | h[11]) == bank) && (((h[12] << 8) | h[13]) == load)) {
+            *size_out = (h[14] << 8) | h[15];
+            return h + 16;
+        }
+        pos += packet;
+    }
+    return NULL;
+}
+
+// Saving must leave the cartridge the C64 is running alone, and the file must
+// carry the EAPI the cartridge came with, not the one the firmware patched in.
+static void test_save_keeps_memory(void)
+{
+    for (int i = 0; i < 768; i++) {
+        _eapi_65_start[i] = uint8_t(0x10 + (i & 7));
+    }
+    Crt crt(32);
+    crt.header(1, 0, 0);
+    crt.chip(0, 0x8000, 0x2000).chip(0, 0xA000, 0x2000).chip(1, 0x8000, 0x2000).chip(1, 0xA000, 0x2000);
+
+    // The EAPI of the cartridge sits at $B800, which is bank 0 at $A000 plus $1800.
+    std::vector<uint8_t> &romh = crt.chips[1].data;
+    const uint8_t signature[4] = { 'e', 'a', 'p', 'i' };
+    memcpy(&romh[0x1800], signature, 4);
+    for (int i = 4; i < 768; i++) {
+        romh[0x1800 + i] = uint8_t(0xC0 + (i & 0x1F));
+    }
+    std::vector<uint8_t> original_eapi(romh.begin() + 0x1800, romh.begin() + 0x1800 + 768);
+
+    Loaded r = load(crt, MB);
+    CHECK(r.rc == SSRET_OK, "EasyFlash with EAPI: load returned %d", r.rc);
+    CHECK(!memcmp(r.at(0x3800), _eapi_65_start, 768), "the firmware's EAPI is not in cartridge memory after loading");
+
+    std::vector<uint8_t> file;
+    File out(&file);
+    SubsysResultCode_e rc = C64_CRT::save_crt(&out);
+    CHECK(rc == SSRET_OK, "save returned %d", rc);
+    CHECK(!memcmp(r.at(0x3800), _eapi_65_start, 768), "saving replaced the EAPI in cartridge memory");
+
+    uint16_t size = 0;
+    const uint8_t *chip = saved_chip(file, 0, 0xA000, &size);
+    CHECK(chip && (size == 0x2000), "the saved file has no bank 0 chip at $A000");
+    if (chip && (size == 0x2000)) {
+        CHECK(!memcmp(chip + 0x1800, original_eapi.data(), 768), "the saved file carries the patched EAPI, not the original");
+        CHECK(!memcmp(chip, r.at(0x2000), 0x1800), "the bytes before the EAPI are not the ones in memory");
+        CHECK(!memcmp(chip + 0x1B00, r.at(0x3B00), 0x2000 - 0x1B00), "the bytes after the EAPI are not the ones in memory");
+    }
+}
+
 int main()
 {
     test_cartridge_types();
@@ -360,6 +422,7 @@ int main()
     test_packets();
     test_chip_placement();
     test_mirroring();
+    test_save_keeps_memory();
     fprintf(stderr, "c64_crt_test: %s (%d checks, %d failed)\n", failures ? "FAIL" : "OK", checks, failures);
     return failures ? 1 : 0;
 }

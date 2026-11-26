@@ -42,6 +42,16 @@ public:
 
     bool is_aborted() const { return aborted; }
 
+    // Discard collected files after collection has ended or been aborted.
+    void remove_files()
+    {
+        for (int i = 0; i < filenames.get_elements(); i++) {
+            if (filenames[i][0]) {
+                FileManager::getFileManager()->delete_file(filenames[i]);
+            }
+        }
+    }
+
     ~TempfileWriter()
     {
         // filenames were created with strdup, so we need to free them here

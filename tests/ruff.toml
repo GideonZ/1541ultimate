@@ -71,12 +71,12 @@ ignore = [
 # four cleanup-registration flags - where a holder object would be churn rather
 # than a clarification.
 [lint.per-file-ignores]
-"run-tests" = ["PLW0603"]
 "tests/lib/interactions.py" = ["PLW0603"]
 "tests/lib/machine.py" = ["PLW0603"]
 "tests/lib/observability/support.py" = ["PLW0603"]
 "tests/lib/report.py" = ["PLW0603"]
 "tests/lib/rest.py" = ["PLW0603"]
+"tests/lib/runtests/console.py" = ["PLW0603"]
 "tests/lib/runner_policy_test.py" = ["PLW0603"]
 "tests/soak/network/ftp_probe.py" = ["PLW0603"]
 "tests/soak/network/telnet_probe.py" = ["PLW0603"]

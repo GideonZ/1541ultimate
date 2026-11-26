@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import atexit
 import os
-import re
 import select
 import socket
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
 from typing import Any, Protocol
 from collections.abc import Callable
 
 import http_probe
+import ui_backend
+from browser import Browser
+from telnet_backend import TELNET_KEY_BYTES
 from connection_runtime import (
     ProbeCorrectness,
     ProbeExecutionContext,
@@ -42,19 +43,13 @@ WONT = 252
 WILL = 251
 SB = 250
 SE = 240
-TELNET_KEY_F2 = b"\x1b[12~"
 TELNET_KEY_DOWN = b"\x1b[B"
-TELNET_KEY_LEFT = b"\x1b[D"
 TELNET_KEY_RIGHT = b"\x1b[C"
-TELNET_KEY_UP = b"\x1b[A"
-TELNET_KEY_INCREASE = b"+"
-TELNET_KEY_DECREASE = b"-"
-TELNET_KEY_ESC = b"\x1b"
 TELNET_KEY_ENTER = b"\r"
 TELNET_FAILURE_MARKERS = (b"incorrect", b"failed", b"denied", b"invalid")
-TELNET_SAVE_FLASH_MARKERS = ("save changes to flash", "yes", "no")
 TELNET_PASSWORD_PROMPT = "password:"
-AUDIO_MIXER_WRITE_VALUE_PATTERN = re.compile(r"Vol UltiSid 1\s+(OFF|[+-]?\d+ dB|\d+ dB)")
+# What config_menu.cc asks when the settings menu closes on a change not yet in flash.
+SAVE_TO_FLASH_QUESTION = "Save changes to Flash?"
 
 
 class TelnetSocket(Protocol):
@@ -87,12 +82,42 @@ class PrefetchedTelnetSocket:
         return getattr(self._sock, name)
 
 
-@dataclass
 class TelnetRunnerSession:
-    sock: TelnetSocket
-    view_state: str = "unknown"
-    last_text: str = ""
-    menu_focus: str = "unknown"
+    """One runner's Telnet session: a raw socket, or a Browser for the settings menu.
+
+    The Browser opens a connection of its own and reads the screen cell by cell, which is
+    what finding the highlighted entry of a menu takes. At most one of the two is open,
+    so a runner never holds more than one of the device's Telnet sessions.
+    """
+
+    def __init__(self, settings: RuntimeSettings) -> None:
+        self.settings = settings
+        self._sock: TelnetSocket | None = None
+        self.browser: Browser | None = None
+        self.view_state = "unknown"
+        self.last_text = ""
+
+    @property
+    def sock(self) -> TelnetSocket:
+        if self._sock is None:
+            self._sock = connect(self.settings)
+        return self._sock
+
+    def open_browser(self) -> Browser:
+        if self.browser is None:
+            close_socket(self._sock)
+            self._sock = None
+            self.browser = ui_backend.make_browser(
+                "telnet", self.settings.host, self.settings.network_password or None,
+                telnet_port=self.settings.telnet_port)
+        return self.browser
+
+    def close(self) -> None:
+        close_socket(self._sock)
+        self._sock = None
+        if self.browser is not None:
+            self.browser.backend.close()
+            self.browser = None
 
 
 _TELNET_SESSION_LOCK = threading.Lock()
@@ -122,14 +147,14 @@ def cleanup_sessions() -> None:
         sessions = tuple(_TELNET_RUNNER_SESSIONS.values())
         _TELNET_RUNNER_SESSIONS.clear()
     for session in sessions:
-        close_socket(session.sock)
+        session.close()
 
 
 def drop_session(runner_id: int) -> None:
     with _TELNET_SESSION_LOCK:
         session = _TELNET_RUNNER_SESSIONS.pop(runner_id, None)
     if session is not None:
-        close_socket(session.sock)
+        session.close()
 
 
 def peek_session(runner_id: int) -> TelnetRunnerSession | None:
@@ -142,13 +167,11 @@ def get_session(settings: RuntimeSettings, runner_id: int) -> TelnetRunnerSessio
         existing = _TELNET_RUNNER_SESSIONS.get(runner_id)
     if existing is not None:
         return existing
-    sock = connect(settings)
-    session = TelnetRunnerSession(sock=sock)
+    session = TelnetRunnerSession(settings)
     register_cleanup()
     with _TELNET_SESSION_LOCK:
         existing = _TELNET_RUNNER_SESSIONS.get(runner_id)
         if existing is not None:
-            close_socket(sock)
             return existing
         _TELNET_RUNNER_SESSIONS[runner_id] = session
     return session
@@ -167,23 +190,6 @@ def looks_like_output(value: str) -> bool:
 def contains_any(value: bytes, markers: tuple[bytes, ...]) -> bool:
     lowered = value.lower()
     return any(marker in lowered for marker in markers)
-
-
-def normalize_text(text: str) -> str:
-    return " ".join(text.split()).strip().lower()
-
-
-def classify_view_state(text: str) -> tuple[str, str]:
-    lowered = text.lower()
-    if "vol ultisid 1" in lowered:
-        return "audio_mixer", "audio_mixer"
-    if "video configuration" in lowered and "audio mixer" in lowered and "speaker settings" not in lowered:
-        return "audio_video_menu", "audio_mixer"
-    if "audio mixer" in lowered and "speaker settings" in lowered:
-        if "video configuration" in lowered:
-            return "menu", "video_configuration"
-        return "menu", "audio_mixer"
-    return "unknown", "unknown"
 
 
 def strip_vt_text(value: bytes) -> str:
@@ -381,27 +387,6 @@ def require_text(text: str, *markers: str) -> str:
     return text
 
 
-def open_menu(sock) -> str:
-    read_until_idle(sock)
-    last_text = ""
-    for _ in range(3):
-        sock.sendall(TELNET_KEY_F2)
-        text = read_until_idle(sock, max_empty_reads=2, initial_timeout_s=TELNET_IDLE_TIMEOUT_S)
-        last_text = text or last_text
-        lowered = text.lower()
-        if "audio mixer" in lowered and "speaker settings" in lowered:
-            return f"visible_bytes={len(text.encode())}"
-        for _repaint in range(2):
-            sock.sendall(TELNET_KEY_ENTER)
-            text = read_until_idle(sock, max_empty_reads=2, initial_timeout_s=TELNET_IDLE_TIMEOUT_S)
-            last_text = text or last_text
-            lowered = text.lower()
-            if "audio mixer" in lowered and "speaker settings" in lowered:
-                return f"visible_bytes={len(text.encode())}"
-    text = require_text(last_text, "Audio Mixer", "Speaker Settings")
-    return f"visible_bytes={len(text.encode())}"
-
-
 def banner(sock) -> str:
     initial_text = read_until_idle(sock)
     if initial_text:
@@ -421,10 +406,6 @@ def smoke_connect(sock) -> str:
 def session_capture(session: TelnetRunnerSession, text: str, view_state: str | None = None) -> str:
     if text:
         session.last_text = text
-        inferred_view, inferred_focus = classify_view_state(text)
-        if view_state is None and inferred_view != "unknown":
-            session.view_state = inferred_view
-            session.menu_focus = inferred_focus
     if view_state is not None:
         session.view_state = view_state
     return text
@@ -447,31 +428,6 @@ def session_read(
     return session_capture(session, text, view_state=view_state)
 
 
-def session_send(
-    session: TelnetRunnerSession,
-    payload: bytes,
-    *,
-    view_state: str | None = None,
-    initial_timeout_s: float = TELNET_COMMAND_RESPONSE_TIMEOUT_S,
-) -> str:
-    session.sock.sendall(payload)
-    return session_read(session, max_empty_reads=1, view_state=view_state, initial_timeout_s=initial_timeout_s)
-
-
-def session_has_menu(session: TelnetRunnerSession) -> bool:
-    lowered = session.last_text.lower()
-    return "audio mixer" in lowered and "speaker settings" in lowered
-
-
-def session_has_audio_video_menu(session: TelnetRunnerSession) -> bool:
-    lowered = session.last_text.lower()
-    return "video configuration" in lowered and "audio mixer" in lowered and "speaker settings" not in lowered
-
-
-def session_has_audio_mixer(session: TelnetRunnerSession) -> bool:
-    return "vol ultisid 1" in session.last_text.lower()
-
-
 def session_smoke_connect(session: TelnetRunnerSession) -> str:
     text = session_read(session, max_empty_reads=1, view_state=session.view_state)
     if not text:
@@ -482,232 +438,78 @@ def session_smoke_connect(session: TelnetRunnerSession) -> str:
     return f"visible_bytes={len(text.encode())}"
 
 
-def session_open_menu(session: TelnetRunnerSession) -> str:
-    if session.view_state == "menu" and session_has_menu(session):
-        return f"visible_bytes={len(session.last_text.encode())}"
-    if session.view_state == "audio_video_menu" and session_has_audio_video_menu(session):
-        return f"visible_bytes={len(session.last_text.encode())}"
-    if session.view_state == "audio_mixer" and session_has_audio_mixer(session):
-        text = session_send(session, TELNET_KEY_LEFT)
-        if text:
-            lowered = text.lower()
-            if "audio mixer" in lowered and "speaker settings" in lowered:
-                session.last_text = text
-                session.view_state = "menu"
-                session.menu_focus = "audio_mixer"
-                return f"visible_bytes={len(text.encode())}"
-        session.view_state = "unknown"
-        session.menu_focus = "unknown"
-    session_read(session, max_empty_reads=1, view_state=session.view_state)
-    last_text = session.last_text
-    for attempt in range(3):
-        if attempt > 0:
-            reset_to_home(session.sock)
-            session.view_state = "unknown"
-            session.menu_focus = "unknown"
-            session.last_text = ""
-            session_read(session, max_empty_reads=1, view_state=session.view_state)
-            last_text = session.last_text or last_text
-        elif not last_text:
-            wake_text = session_send(session, TELNET_KEY_ENTER, initial_timeout_s=TELNET_IDLE_TIMEOUT_S)
-            last_text = wake_text or last_text
-        text = session_send(session, TELNET_KEY_F2, initial_timeout_s=TELNET_IDLE_TIMEOUT_S)
-        last_text = text or last_text
-        if text and (session_has_menu(session) or session_has_audio_video_menu(session)):
-            if session_has_menu(session):
-                session.view_state = "menu"
-                session.menu_focus = "video_configuration"
-            else:
-                session.view_state = "audio_video_menu"
-                session.menu_focus = "audio_mixer"
-            return f"visible_bytes={len(text.encode())}"
-        if not text:
-            for _repaint in range(2):
-                text = session_send(session, TELNET_KEY_ENTER, initial_timeout_s=TELNET_IDLE_TIMEOUT_S)
-                last_text = text or last_text
-                if text and (session_has_menu(session) or session_has_audio_video_menu(session)):
-                    break
-        if text and not (session_has_menu(session) or session_has_audio_video_menu(session)):
-            tail = session_read(session, max_empty_reads=2, view_state=session.view_state)
-            if tail:
-                text = f"{text} {tail}" if text else tail
-                session_capture(session, text)
-                last_text = text
-        if text and (session_has_menu(session) or session_has_audio_video_menu(session)):
-            if session_has_menu(session):
-                session.view_state = "menu"
-                session.menu_focus = "video_configuration"
-            else:
-                session.view_state = "audio_video_menu"
-                session.menu_focus = "audio_mixer"
-            return f"visible_bytes={len(text.encode())}"
-    text = require_text(last_text, "Audio Mixer", "Speaker Settings")
-    session.last_text = text
-    session.view_state = "menu"
-    session.menu_focus = "video_configuration"
-    return f"visible_bytes={len(text.encode())}"
+def settings_key(settings: RuntimeSettings) -> str:
+    return http_probe.identify_machine(settings).settings_key
 
 
-def session_open_audio_mixer(session: TelnetRunnerSession) -> str:
-    if session.view_state == "audio_mixer" and session_has_audio_mixer(session):
-        return session.last_text
-    last_error: RuntimeError | None = None
-    for attempt in range(3):
-        if attempt > 0 or session.view_state != "unknown":
-            reset_to_home(session.sock)
-            session.view_state = "unknown"
-            session.menu_focus = "unknown"
-            session.last_text = ""
-        if not session.last_text:
-            session_read(session, max_empty_reads=1, view_state=session.view_state)
-        text = session.last_text
-        try:
-            for payload in (TELNET_KEY_F2, TELNET_KEY_DOWN, TELNET_KEY_ENTER):
-                text = session_send(session, payload)
-                if "vol ultisid 1" in text.lower():
-                    break
-            if "vol ultisid 1" not in text.lower():
-                tail = session_read(session, max_empty_reads=1, view_state=session.view_state)
-                if tail:
-                    text = f"{text} {tail}" if text else tail
-                    session_capture(session, text)
-            text = require_text(text, "Vol UltiSid 1")
-            session.last_text = text
-            session.view_state = "audio_mixer"
-            session.menu_focus = "audio_mixer"
-            return text
-        except RuntimeError as error:
-            last_error = error
-        session.view_state = "unknown"
-        session.menu_focus = "unknown"
-        session.last_text = ""
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError("unable to open Audio Mixer")
+def open_settings(settings: RuntimeSettings, browser: Browser) -> list[str]:
+    """Open the settings menu over the file browser and return its categories."""
+    browser.press(settings_key(settings))
+    return browser.framed_selection(browser.menu_frame())[2]
 
 
-def session_refresh_audio_mixer(session: TelnetRunnerSession) -> str:
-    if session.view_state == "audio_mixer" and session_has_audio_mixer(session):
-        session_open_menu(session)
-    return session_open_audio_mixer(session)
+def open_setting(settings: RuntimeSettings, browser: Browser) -> tuple[tuple[int, int, int, int], str]:
+    """Put the settings menu's cursor on the probed setting: (menu frame, value shown)."""
+    browser.press(settings_key(settings))
+    browser.select_framed_entry(http_probe.SETTING_CATEGORY)
+    browser.enter()
+    frame, entry = browser.select_framed_entry(http_probe.SETTING_ITEM)
+    return frame, setting_value(entry)
 
 
-def session_extract_audio_mixer_value(session: TelnetRunnerSession, text: str) -> tuple[str, str]:
-    try:
-        return text, extract_audio_mixer_write_value(text)
-    except RuntimeError:
-        tail = session_read(session, max_empty_reads=2, view_state=session.view_state)
-        combined = text + tail if tail else text
-        try:
-            session.last_text = combined
-            return combined, extract_audio_mixer_write_value(combined)
-        except RuntimeError:
-            session.view_state = "unknown"
-            session.menu_focus = "unknown"
-            reopened = session_open_audio_mixer(session)
-            return reopened, extract_audio_mixer_write_value(reopened)
+def setting_value(entry: str) -> str:
+    value = entry[len(http_probe.SETTING_ITEM):].strip()
+    if not entry.startswith(http_probe.SETTING_ITEM) or not value:
+        raise RuntimeError(f"missing setting value in {entry!r}")
+    return http_probe.normalize_setting_value(value)
 
 
-def session_read_audio_mixer_item(session: TelnetRunnerSession, *, shared_state: Any | None = None) -> str:
-    with http_probe.audio_mixer_shared_lock(shared_state):
-        text = session_refresh_audio_mixer(session)
-        _text, current = session_extract_audio_mixer_value(session, text)
-        normalized_current = http_probe.remember_audio_mixer_value(shared_state, current)
-        return f"current={normalized_current}"
+def leave_settings(browser: Browser) -> None:
+    """Close the settings menu from a setting, declining to save a change to flash.
+
+    Declining keeps a long run from writing flash on every pass; connection_test puts the
+    setting back when the run ends. A machine whose Auto Save Config is Yes does not ask.
+    """
+    browser.press("LEFT")
+    browser.press("LEFT")
+    if SAVE_TO_FLASH_QUESTION in browser.screen():
+        browser.press_popup_button("n")
 
 
-def audio_mixer_write_right_steps(settings: RuntimeSettings, current: str, target: str) -> int:
-    _current_value, values, _body_bytes = http_probe.audio_mixer_item_state(settings)
-    normalized_values = tuple(http_probe.normalize_audio_mixer_value(value) for value in values)
-    normalized_current = http_probe.normalize_audio_mixer_value(current)
-    normalized_target = http_probe.normalize_audio_mixer_value(target)
-    if normalized_current not in normalized_values:
-        raise RuntimeError(f"unsupported Audio Mixer write current value: {current}")
-    if normalized_target not in normalized_values:
-        raise RuntimeError(f"unsupported Audio Mixer write target value: {target}")
-    current_index = normalized_values.index(normalized_current)
-    target_index = normalized_values.index(normalized_target)
-    return (target_index - current_index) % len(normalized_values)
+def session_open_settings(settings: RuntimeSettings, session: TelnetRunnerSession) -> str:
+    return f"categories={len(open_settings(settings, session.open_browser()))}"
 
 
-def audio_mixer_adjustment_sequence(settings: RuntimeSettings, current: str, target: str) -> tuple[bytes, int]:
-    _current_value, values, _body_bytes = http_probe.audio_mixer_item_state(settings)
-    normalized_values = tuple(http_probe.normalize_audio_mixer_value(value) for value in values)
-    normalized_current = http_probe.normalize_audio_mixer_value(current)
-    normalized_target = http_probe.normalize_audio_mixer_value(target)
-    if normalized_current not in normalized_values:
-        raise RuntimeError(f"unsupported Audio Mixer write current value: {current}")
-    if normalized_target not in normalized_values:
-        raise RuntimeError(f"unsupported Audio Mixer write target value: {target}")
-    current_index = normalized_values.index(normalized_current)
-    target_index = normalized_values.index(normalized_target)
-    if target_index < current_index:
-        return TELNET_KEY_DECREASE, current_index - target_index
-    return TELNET_KEY_INCREASE, target_index - current_index
+def session_read_setting(settings: RuntimeSettings, session: TelnetRunnerSession, *, shared_state: Any | None = None) -> str:
+    browser = session.open_browser()
+    with http_probe.setting_shared_lock(shared_state):
+        _frame, current = open_setting(settings, browser)
+        http_probe.remember_setting_value(shared_state, current)
+        leave_settings(browser)
+        return f"current={current}"
 
 
-def is_save_flash_dialog(text: str) -> bool:
-    lowered = text.lower()
-    return all(marker in lowered for marker in TELNET_SAVE_FLASH_MARKERS)
-
-
-def is_post_audio_mixer_state(text: str) -> bool:
-    lowered = text.lower()
-    return bool(lowered.strip()) and "vol ultisid 1" not in lowered and not is_save_flash_dialog(text)
-
-
-def session_save_changes_to_flash(session: TelnetRunnerSession) -> str:
-    first_left = session_send(session, TELNET_KEY_LEFT, view_state="unknown")
-    if is_save_flash_dialog(first_left):
-        confirmed = session_send(session, TELNET_KEY_ENTER, view_state="unknown")
-        return confirmed or first_left
-    if is_post_audio_mixer_state(first_left):
-        return first_left
-
-    second_left = session_send(session, TELNET_KEY_LEFT, view_state="unknown")
-    if is_save_flash_dialog(second_left):
-        confirmed = session_send(session, TELNET_KEY_ENTER, view_state="unknown")
-        return confirmed or second_left
-    if is_post_audio_mixer_state(second_left):
-        return second_left
-
-    dialog_text = second_left if is_save_flash_dialog(second_left) else first_left
-    tail = session_read(session, max_empty_reads=2, view_state="unknown")
-    if tail:
-        dialog_text = f"{dialog_text} {tail}".strip() if dialog_text else tail
-    if is_save_flash_dialog(dialog_text):
-        confirmed = session_send(session, TELNET_KEY_ENTER, view_state="unknown")
-        return confirmed or dialog_text
-    if is_post_audio_mixer_state(dialog_text):
-        return dialog_text
-    raise RuntimeError("missing telnet text: Save changes to Flash")
-
-
-def authoritative_audio_mixer_value(settings: RuntimeSettings, *, shared_state: Any | None = None) -> str:
-    current, _values, _body_bytes = http_probe.audio_mixer_item_state(settings)
-    return http_probe.remember_audio_mixer_value(shared_state, current)
-
-
-def session_write_audio_mixer_item(settings: RuntimeSettings, session: TelnetRunnerSession, target: str, *, shared_state: Any | None = None) -> str:
-    with http_probe.audio_mixer_shared_lock(shared_state):
-        text = session_refresh_audio_mixer(session)
-        text, current = session_extract_audio_mixer_value(session, text)
-        # Audio Mixer opens on Vol Master; Vol UltiSid 1 is the next row.
-        text = session_send(session, TELNET_KEY_DOWN, view_state="audio_mixer")
-        normalized_current = http_probe.remember_audio_mixer_value(shared_state, current)
-        normalized_target = http_probe.normalize_audio_mixer_value(target)
-        adjustment_key, steps = audio_mixer_adjustment_sequence(settings, current, target)
-        if normalized_current != normalized_target:
-            for _ in range(steps):
-                text = session_send(session, adjustment_key, view_state="audio_mixer")
-            text = session_save_changes_to_flash(session) or text
-            http_probe.stage_audio_mixer_value(shared_state, normalized_target)
-        normalized_authoritative = http_probe.verify_audio_mixer_value(settings, normalized_target, shared_state=shared_state)
-        session.last_text = text
-        session.view_state = "unknown"
-        session.menu_focus = "unknown"
-        adjustment = "increase" if adjustment_key == TELNET_KEY_INCREASE else "decrease"
-        return f"from={normalized_current} to={normalized_authoritative} adjustment={adjustment} steps={steps}"
+def session_write_setting(settings: RuntimeSettings, session: TelnetRunnerSession, target: str, *, shared_state: Any | None = None) -> str:
+    browser = session.open_browser()
+    with http_probe.setting_shared_lock(shared_state):
+        frame, current = open_setting(settings, browser)
+        http_probe.remember_setting_value(shared_state, current)
+        _current, values, _body_bytes = http_probe.setting_item_state(settings)
+        values = tuple(http_probe.normalize_setting_value(value) for value in values)
+        target = http_probe.normalize_setting_value(target)
+        if current not in values or target not in values:
+            raise RuntimeError(f"{http_probe.SETTING_ITEM}: {current} or {target} is not one of {values}")
+        steps = values.index(target) - values.index(current)
+        for _ in range(abs(steps)):
+            browser.type_char("+" if steps > 0 else "-")
+        shown = setting_value(browser.framed_selection(frame)[1])
+        if steps:
+            http_probe.stage_setting_value(shared_state, target)
+        leave_settings(browser)
+        if shown != target:
+            raise RuntimeError(f"verification mismatch: the menu shows {shown} after {steps:+d} steps to {target}")
+        updated = http_probe.verify_setting_value(settings, target, shared_state=shared_state)
+        return f"from={current} to={updated} steps={steps:+d}"
 
 
 def abort_after_sequence(settings: RuntimeSettings, *payloads: bytes, read_initial: bool = True) -> str:
@@ -744,20 +546,27 @@ def initial_read_classify(settings: RuntimeSettings) -> str:
         close_socket(sock)
 
 
+def settings_key_bytes(settings: RuntimeSettings) -> bytes:
+    return TELNET_KEY_BYTES[settings_key(settings)]
+
+
 def incomplete_operations(surface: ProbeSurface) -> tuple[tuple[str, Callable[[RuntimeSettings], str]], ...]:
     if surface == ProbeSurface.SMOKE:
         return (("telnet_initial_read_classify", initial_read_classify),)
     operations = (
-        ("telnet_f2_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2)),
-        ("telnet_partial_f2_prefix_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2[:2])),
+        ("telnet_settings_key_abort", lambda settings: abort_after_sequence(settings, settings_key_bytes(settings))),
+        # The first two bytes of an escape sequence, which the device holds while it waits
+        # for the rest.
+        ("telnet_partial_settings_key_abort", lambda settings: abort_after_sequence(settings, settings_key_bytes(settings)[:2])),
     )
     if surface == ProbeSurface.READ:
         return operations
     return (
         *operations,
-        ("telnet_audio_mixer_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_DOWN, TELNET_KEY_ENTER)),
-        ("telnet_right_arrow_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2, TELNET_KEY_RIGHT)),
-        ("telnet_f2_abort", lambda settings: abort_after_sequence(settings, TELNET_KEY_F2)),
+        ("telnet_settings_category_abort",
+         lambda settings: abort_after_sequence(settings, settings_key_bytes(settings), TELNET_KEY_DOWN, TELNET_KEY_ENTER)),
+        ("telnet_right_arrow_abort", lambda settings: abort_after_sequence(settings, settings_key_bytes(settings), TELNET_KEY_RIGHT)),
+        ("telnet_settings_key_abort", lambda settings: abort_after_sequence(settings, settings_key_bytes(settings))),
     )
 
 
@@ -773,122 +582,6 @@ def run_open_surface_operation(
         drop_session(runner_id)
 
 
-def reset_to_home(sock) -> None:
-    for _ in range(2):
-        sock.sendall(TELNET_KEY_ESC)
-        try:
-            read_until_idle(sock, max_empty_reads=1)
-        except RuntimeError:
-            continue
-
-
-def send_and_read(
-    sock,
-    payload: bytes,
-    *,
-    require_change: bool = False,
-    initial_timeout_s: float = TELNET_COMMAND_RESPONSE_TIMEOUT_S,
-) -> str:
-    before = normalize_text(read_until_idle(sock, initial_timeout_s=initial_timeout_s)) if require_change else ""
-    last_text = ""
-    for _ in range(2):
-        sock.sendall(payload)
-        text = read_until_idle(sock, initial_timeout_s=initial_timeout_s)
-        last_text = text
-        if not require_change:
-            return text
-        normalized = normalize_text(text)
-        if normalized and normalized != before:
-            return text
-    return last_text
-
-
-def nav_down(sock) -> str:
-    open_menu(sock)
-    text = send_and_read(sock, TELNET_KEY_DOWN)
-    text = send_and_read(sock, TELNET_KEY_DOWN) or text
-    text = require_text(text, "Audio Mixer", "Speaker Settings")
-    return f"visible_bytes={len(text.encode())}"
-
-
-def open_audio_mixer(sock) -> str:
-    open_menu(sock)
-    send_and_read(sock, TELNET_KEY_DOWN, require_change=True)
-    text = send_and_read(sock, TELNET_KEY_ENTER)
-    return require_text(text, "Vol UltiSid 1")
-
-
-def extract_audio_mixer_write_value(text: str) -> str:
-    match = AUDIO_MIXER_WRITE_VALUE_PATTERN.search(text)
-    if match is None:
-        raise RuntimeError("missing Audio Mixer write value")
-    return http_probe.normalize_audio_mixer_value(match.group(1))
-
-
-def focus_audio_mixer_write_item(sock) -> tuple[str, str]:
-    text = open_audio_mixer(sock)
-    return text, extract_audio_mixer_write_value(text)
-
-
-def read_audio_mixer_item(sock) -> str:
-    _text, current = focus_audio_mixer_write_item(sock)
-    return f"current={current}"
-
-
-def write_audio_mixer_item(settings: RuntimeSettings, sock, target: str) -> str:
-    text, current = focus_audio_mixer_write_item(sock)
-    text = send_and_read(sock, TELNET_KEY_DOWN)
-    adjustment_key, steps = audio_mixer_adjustment_sequence(settings, current, target)
-    for _ in range(steps):
-        text = send_and_read(sock, adjustment_key, require_change=True)
-    first_left = send_and_read(sock, TELNET_KEY_LEFT)
-    if is_save_flash_dialog(first_left):
-        text = send_and_read(sock, TELNET_KEY_ENTER)
-    elif is_post_audio_mixer_state(first_left):
-        text = first_left
-    else:
-        second_left = send_and_read(sock, TELNET_KEY_LEFT)
-        if is_save_flash_dialog(second_left):
-            text = send_and_read(sock, TELNET_KEY_ENTER)
-        elif is_post_audio_mixer_state(second_left):
-            text = second_left
-        else:
-            dialog_text = second_left if is_save_flash_dialog(second_left) else first_left
-            tail = read_until_idle(sock, max_empty_reads=2)
-            if tail:
-                dialog_text = f"{dialog_text} {tail}".strip() if dialog_text else tail
-            if is_save_flash_dialog(dialog_text):
-                text = send_and_read(sock, TELNET_KEY_ENTER)
-            elif is_post_audio_mixer_state(dialog_text):
-                text = dialog_text
-            else:
-                raise RuntimeError("missing telnet text: Save changes to Flash")
-    updated = extract_audio_mixer_write_value(text)
-    if updated != http_probe.normalize_audio_mixer_value(target):
-        raise RuntimeError(f"verification mismatch expected={target} got={updated}")
-    adjustment = "increase" if adjustment_key == TELNET_KEY_INCREASE else "decrease"
-    return f"from={current} to={updated} adjustment={adjustment} steps={steps}"
-
-
-def enter_speaker_settings(sock) -> str:
-    open_menu(sock)
-    send_and_read(sock, TELNET_KEY_DOWN)
-    send_and_read(sock, TELNET_KEY_DOWN)
-    text = send_and_read(sock, TELNET_KEY_ENTER)
-    text = require_text(text, "Speaker Enable")
-    return f"visible_bytes={len(text.encode())}"
-
-
-def exit_menu(sock) -> str:
-    open_menu(sock)
-    text = send_and_read(sock, TELNET_KEY_LEFT)
-    if "audio mixer" in text.lower() or "speaker settings" in text.lower():
-        text = send_and_read(sock, TELNET_KEY_ESC)
-    if text:
-        require_text(text)
-    return f"visible_bytes={len(text.encode())}"
-
-
 def surface_operations(
     surface: ProbeSurface,
     *,
@@ -897,12 +590,8 @@ def surface_operations(
 ) -> tuple[tuple[str, Callable[[RuntimeSettings, TelnetRunnerSession], str]], ...]:
     read_operations = (
         ("telnet_smoke_connect", lambda settings, session: session_smoke_connect(session)),
-        ("telnet_open_menu", lambda settings, session: session_open_menu(session)),
-        (
-            "telnet_open_audio_mixer",
-            lambda settings, session: f"visible_bytes={len(session_open_audio_mixer(session).encode())}",
-        ),
-        ("telnet_read_vol_ultisid_1", lambda settings, session: session_read_audio_mixer_item(session, shared_state=shared_state)),
+        ("telnet_open_settings", session_open_settings),
+        ("telnet_read_setting", lambda settings, session: session_read_setting(settings, session, shared_state=shared_state)),
     )
     if surface == ProbeSurface.SMOKE:
         return (("telnet_smoke_connect", lambda settings, session: session_smoke_connect(session)),)
@@ -910,8 +599,9 @@ def surface_operations(
         return read_operations
     return (
         *read_operations,
-        ("set_vol_ultisid_1_0_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "0 dB", shared_state=shared_state)),
-        ("set_vol_ultisid_1_plus_1_db", lambda settings, session: session_write_audio_mixer_item(settings, session, "+1 dB", shared_state=shared_state)),
+        *((f"set_setting_{value.lower()}",
+           lambda settings, session, value=value: session_write_setting(settings, session, value, shared_state=shared_state))
+          for value in http_probe.SETTING_TARGET_VALUES),
     )
 
 
@@ -950,11 +640,11 @@ def run_probe(
         started_at = time.perf_counter_ns()
         try:
             def surface_operation(current_settings: RuntimeSettings) -> str:
-                session = TelnetRunnerSession(sock=connect(current_settings))
+                session = TelnetRunnerSession(current_settings)
                 try:
                     return operation(current_settings, session)
                 finally:
-                    close_socket(session.sock)
+                    session.close()
 
             detail = run_surface_operation(
                 "telnet",

@@ -1,6 +1,7 @@
 #include "u64.h"
 #include "u64_machine.h"
 #include "FreeRTOS.h"
+#include "task.h"
 #include <string.h>
 
 namespace {
@@ -77,7 +78,7 @@ static void write_visible_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t
 }
 
 static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t cpu_port,
-                                    uint32_t *screen_backup, uint32_t *ram_backup)
+                                    uint32_t *screen_backup, uint32_t *ram_backup, uint32_t *color_backup)
 {
     uint8_t raw = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
 
@@ -97,6 +98,10 @@ static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uin
         if ((cpu_port & 0x03) == 0x00) {
             return raw;
         }
+        // While frozen the colour RAM holds the menu's colours; the C64's are in the backup.
+        if ((cpu_port & 0x04) && freezerMenu && address >= 0xD800 && address < 0xDC00) {
+            return ((uint8_t *)color_backup)[address - 0xD800];
+        }
         // Character ROM or I/O both resolve through the live visible aperture.
         return read_visible_byte(ram, freezerMenu, address, screen_backup, ram_backup);
     }
@@ -110,9 +115,13 @@ static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uin
 }
 
 static void write_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uint32_t address, uint8_t value, uint8_t cpu_port,
-                                  uint32_t *screen_backup, uint32_t *ram_backup)
+                                  uint32_t *screen_backup, uint32_t *ram_backup, uint32_t *color_backup)
 {
     if (address >= 0xD000 && address <= 0xDFFF && (cpu_port & 0x03) != 0x00 && (cpu_port & 0x04)) {
+        if (freezerMenu && address >= 0xD800 && address < 0xDC00) {
+            ((uint8_t *)color_backup)[address - 0xD800] = value;
+            return;
+        }
         write_visible_byte(ram, freezerMenu, address, value, screen_backup, ram_backup);
         return;
     }
@@ -169,20 +178,38 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     portEXIT_CRITICAL();
     if (!freezerMenu && stopped_it) {
         resume();
-    } else if (pb) {
+    } else if (pb && freezerMenu) {
         // if we were in freezer menu, the backup of the 1K-4K RAM should be used to restore memory
         memcpy(pb + 1024, screen_backup, 1024);
         memcpy(pb + 2048, ram_backup, 2048);
     }
 }
 
+// clear_ram and get_all_memory move all 64K through the C64 memory window, about 68 ms, with the
+// C64 stopped. They do it with the scheduler suspended rather than in a critical section: no other
+// task can touch the window or C64_DMA_MEMONLY meanwhile, which is the exclusion the critical
+// section gave, and interrupts are still served. With the C64 stopped, nothing it does can raise the
+// one interrupt that uses the window (U64Config::unlock_irq, raised by the C64's unlock write).
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
-    // Match the REST C64_DMA_RAW_READ path: stop the machine and read the visible C64 aperture directly.
-    bool stopped_it = false;
-    bool freezerMenu = before_memory_access(false, &stopped_it);
+    // RAM only: through the bus a frozen machine shows the freezer's Ultimax cart, a running one its ROMs and I/O.
+    bool freezerMenu = isFrozen;
+    bool stopped_it = (!freezerMenu && !is_stopped());
+    if (stopped_it) {
+        stop(false);
+    }
+    vTaskSuspendAll();
+    C64_DMA_MEMONLY = 1;
     memcpy(pb, (uint8_t *)C64_MEMORY_BASE, 65536);
-    after_memory_access(pb, freezerMenu, stopped_it);
+    C64_DMA_MEMONLY = 0;
+    xTaskResumeAll();
+    if (stopped_it) {
+        resume();
+    } else if (freezerMenu) {
+        // if we were in freezer menu, the backup of the 1K-4K RAM should be used to restore memory
+        memcpy(pb + 1024, screen_backup, 1024);
+        memcpy(pb + 2048, ram_backup, 2048);
+    }
 }
 
 void U64Machine :: read_block(uint16_t address, uint8_t *dst, uint32_t len)
@@ -212,7 +239,7 @@ void U64Machine :: read_cpu_block(uint16_t address, uint8_t *dst, uint32_t len, 
         dst[offset] = read_cpu_mapped_byte(ram, freezerMenu,
                                            (uint16_t)(address + offset),
                                            cpu_port, screen_backup,
-                                           ram_backup);
+                                           ram_backup, color_backup);
     }
     restore_cpu_port(ram, freezerMenu, saved_ddr, saved_port, screen_backup,
                      ram_backup);
@@ -383,7 +410,7 @@ void U64Machine :: poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port)
     uint8_t saved_serve = C64_SERVE_CONTROL;
 
     C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
-    write_cpu_mapped_byte(ram, freezerMenu, address, byte, cpu_port, screen_backup, ram_backup);
+    write_cpu_mapped_byte(ram, freezerMenu, address, byte, cpu_port, screen_backup, ram_backup, color_backup);
     C64_SERVE_CONTROL = saved_serve;
     after_memory_access(0, freezerMenu, stopped_it);
 }
@@ -415,11 +442,11 @@ void U64Machine :: clear_ram()
     if (!freezerMenu) {
         stop(false);
     }
-    portENTER_CRITICAL();
+    vTaskSuspendAll(); // see get_all_memory
     C64_DMA_MEMONLY = 1;
     memcpy((uint8_t*)ram, _raminit_bin_start, 65536);
     C64_DMA_MEMONLY = 0;
-    portEXIT_CRITICAL();
+    xTaskResumeAll();
     if (!freezerMenu) {
         resume();
     } else { // if we were in freezer menu, the backup of the 1K-4K RAM should be used

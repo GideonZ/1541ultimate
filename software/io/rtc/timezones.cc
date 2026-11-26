@@ -1,3 +1,6 @@
+#include <stdint.h>
+#include <ctype.h>
+
 typedef struct {
     const char *timezone;
     const char *utc;
@@ -5,11 +8,15 @@ typedef struct {
     const char *posix;
 } timezone_entry_t;
 
+// The index is the stored setting, so new zones are appended, never inserted;
+// zone_order below gives the order the menu and REST list them in.
+// Rules follow IANA tzdb 2026e, written in the POSIX TZ subset newlib parses:
+// alphabetic names only and no negative times.
 const timezone_entry_t zones[] = {
     { "AoE",   "UTC -12",   "US Baker Island", "AOE12" },
     { "NUT",   "UTC -11",   "America Samoa",   "NUT11" },
-    { "HST",   "UTC -10",   "Hawaii", "HST11HDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "MART",  "UTC -9:30", "French Polynesia", "MART9:30,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "HST",   "UTC -10",   "Hawaii", "HST10" },
+    { "TAHT",  "UTC -10",   "French Polynesia", "TAHT10" },
     { "AKST",  "UTC -9",    "Alaska", "ASKT9AKDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
     { "PDT",   "UTC -8",    "Los Angeles", "PST8PDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
     { "MST",   "UTC -7",    "Denver, Colorado", "MST7MDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
@@ -18,14 +25,16 @@ const timezone_entry_t zones[] = {
     { "EST",   "UTC -5",    "New York", "EST5EDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
     { "ART",   "UTC -3",    "Argentina", "ART3" },
     { "NDT",   "UTC -2:30", "Newfoundland", "NDT3:30NST,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "WGST",  "UTC -2",    "Greenland", "WGST3WGT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    // tzdb springs forward at 01:00 UTC with M3.5.0/-1; newlib cannot parse a
+    // negative time, so the change comes an hour late.
+    { "WGST",  "UTC -2",    "Greenland", "WGT2WGST,M3.5.0/0:00:00,M10.5.0/0:00:00" },
     { "CVT",   "UTC -1",    "Cabo Verde", "CVT1" },
-    { "GMT",   "UTC 0",     "Iceland", "GMT" },
-    { "BST",   "UTC +1",    "UK", "BST0GMT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "CEST",  "UTC +2",    "Western Europe", "CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "MSK",   "UTC +3",    "Greece", "MSK-3" },
+    { "GMT",   "UTC 0",     "Iceland", "GMT0" },
+    { "BST",   "UTC +1",    "UK", "GMT0BST,M3.5.0/1:00:00,M10.5.0/2:00:00" },
+    { "CEST",  "UTC +2",    "Western Europe", "CET-1CEST,M3.5.0/2:00:00,M10.5.0/3:00:00" },
+    { "EET",   "UTC +2",    "Greece", "EET-2EEST,M3.5.0/3:00:00,M10.5.0/4:00:00" },
     { "GST",   "UTC +4",    "Azerbaijan", "GST-4" },
-    { "IRDT",  "UTC +4:30", "Iran", "IRDT-3:30IRST,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "IRST",  "UTC +3:30", "Iran", "IRST-3:30" },
     { "UZT",   "UTC +5",    "Pakistan", "UZT-5" },
     { "IST",   "UTC +5:30", "India", "IST-5:30" },
     { "NPT",   "UTC +5:45", "Nepal", "NPT-5:45" },
@@ -33,16 +42,45 @@ const timezone_entry_t zones[] = {
     { "MMT",   "UTC +6:30", "Myanmar", "MMT-6:30" },
     { "WIB",   "UTC +7",    "Indonesia", "WIB-7" },
     { "CST",   "UTC +8",    "China", "CST-8" },
-    { "ACWST", "UTC +8:45", "Western Australia", "ACWST-8:45" },
+    { "AWST",  "UTC +8",    "Western Australia", "AWST-8" },
     { "JST",   "UTC +9",    "Japan", "JST-9" },
-    { "ACST",  "UTC +9:30", "Central Australia", "ACST-8:30ACDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "AEST",  "UTC +10",   "Eastern Australia", "AEST-9AEDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "LHST",  "UTC +10:30","Lord Howe Island", "LHST-9:30LHDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "ACST",  "UTC +9:30", "Central Australia", "ACST-9:30ACDT,M10.1.0/2:00:00,M4.1.0/3:00:00" },
+    { "AEST",  "UTC +10",   "Eastern Australia", "AEST-10AEDT,M10.1.0/2:00:00,M4.1.0/3:00:00" },
+    { "LHST",  "UTC +10:30","Lord Howe Island", "LHST-10:30LHDT-11,M10.1.0/2:00:00,M4.1.0/2:00:00" },
     { "SBT",   "UTC +11",   "Solomon Islands", "SBT-11" },
-    { "ANAT",  "UTC +12",   "New Zealand", "ANAT-12" },
-    { "CHAST", "UTC +12:45","Chatham Islands", "CHAST-11:45CHADT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
-    { "TOT",   "UTC +13",   "Tonga", "TOT-12TOST,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "NZST",  "UTC +12",   "New Zealand", "NZST-12NZDT,M9.5.0/2:00:00,M4.1.0/3:00:00" },
+    { "CHAST", "UTC +12:45","Chatham Islands", "CHAST-12:45CHADT,M9.5.0/2:45:00,M4.1.0/3:45:00" },
+    { "TOT",   "UTC +13",   "Tonga", "TOT-13" },
     { "LINT",  "UTC +14",   "Christmas Island", "LINT-14" },
+    { "HST",   "UTC -10",   "Aleutian Islands", "HST10HDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "MART",  "UTC -9:30", "Marquesas Islands", "MART9:30" },
+    { "GAMT",  "UTC -9",    "Gambier Islands", "GAMT9" },
+    { "PNT",   "UTC -8",    "Pitcairn Islands", "PNT8" },
+    { "CST",   "UTC -6",    "Mexico, C. America", "CST6" },
+    { "EAST",  "UTC -6",    "Easter Island", "EAST6EASST,M9.1.6/22:00:00,M4.1.6/22:00:00" },
+    { "COT",   "UTC -5",    "Colombia, Peru", "COT5" },
+    { "CST",   "UTC -5",    "Cuba", "CST5CDT,M3.2.0/0:00:00,M11.1.0/1:00:00" },
+    { "AST",   "UTC -4",    "Venezuela, Caribbean", "AST4" },
+    { "AST",   "UTC -4",    "Atlantic Canada", "AST4ADT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "CLT",   "UTC -4",    "Chile", "CLT4CLST,M9.1.6/24:00:00,M4.1.6/24:00:00" },
+    { "PMST",  "UTC -3",    "St Pierre, Miquelon", "PMST3PMDT,M3.2.0/2:00:00,M11.1.0/2:00:00" },
+    { "FNT",   "UTC -2",    "Fernando de Noronha", "FNT2" },
+    { "AZOT",  "UTC -1",    "Azores", "AZOT1AZOST,M3.5.0/0:00:00,M10.5.0/1:00:00" },
+    { "WET",   "UTC 0",     "Ireland, Portugal", "WET0WEST,M3.5.0/1:00:00,M10.5.0/2:00:00" },
+    { "WAT",   "UTC +1",    "West Africa", "WAT-1" },
+    { "SAST",  "UTC +2",    "South Africa", "SAST-2" },
+    { "EET",   "UTC +2",    "Eastern Europe", "EET-2EEST,M3.5.0/3:00:00,M10.5.0/4:00:00" },
+    { "EET",   "UTC +2",    "Egypt", "EET-2EEST,M4.5.5/0:00:00,M10.5.4/24:00:00" },
+    { "IST",   "UTC +2",    "Israel", "IST-2IDT,M3.4.4/26:00:00,M10.5.0/2:00:00" },
+    { "EET",   "UTC +2",    "Lebanon", "EET-2EEST,M3.5.0/0:00:00,M10.5.0/0:00:00" },
+    { "EET",   "UTC +2",    "Palestine", "EET-2EEST,M3.4.4/50:00:00,M10.4.4/50:00:00" },
+    { "MSK",   "UTC +3",    "Moscow, Istanbul", "MSK-3" },
+    { "AFT",   "UTC +4:30", "Afghanistan", "AFT-4:30" },
+    { "ACWST", "UTC +8:45", "Eucla, Australia", "ACWST-8:45" },
+    { "ACST",  "UTC +9:30", "Northern Territory", "ACST-9:30" },
+    { "AEST",  "UTC +10",   "Queensland", "AEST-10" },
+    { "NFT",   "UTC +11",   "Norfolk Island", "NFT-11NFDT,M10.1.0/2:00:00,M4.1.0/3:00:00" },
+    { "FJT",   "UTC +12",   "Fiji", "FJT-12" },
 };
 
 const char *zone_names[] = {
@@ -83,4 +121,75 @@ const char *zone_names[] = {
     "Chatham Islands",
     "Tonga",
     "Christmas Island",
+    "Aleutian Islands",
+    "Marquesas Islands",
+    "Gambier Islands",
+    "Pitcairn Islands",
+    "Mexico, C. America",
+    "Easter Island",
+    "Colombia, Peru",
+    "Cuba",
+    "Venezuela, Caribbean",
+    "Atlantic Canada",
+    "Chile",
+    "St Pierre, Miquelon",
+    "Fernando de Noronha",
+    "Azores",
+    "Ireland, Portugal",
+    "West Africa",
+    "South Africa",
+    "Eastern Europe",
+    "Egypt",
+    "Israel",
+    "Lebanon",
+    "Palestine",
+    "Moscow, Istanbul",
+    "Afghanistan",
+    "Eucla, Australia",
+    "Northern Territory",
+    "Queensland",
+    "Norfolk Island",
+    "Fiji",
 };
+
+// The menu lists the zones by standard UTC offset, ties in index order;
+// the index stays the stored value.
+uint8_t zone_order[sizeof(zones) / sizeof(zones[0])];
+
+// Minutes east of UTC in standard time: the offset after the first name of a
+// POSIX rule, which counts west as positive.
+static int zone_standard_offset(const char *posix)
+{
+    const char *p = posix;
+    while (isalpha((unsigned char)*p)) {
+        p++;
+    }
+    int sign = (*p == '-') ? 1 : -1;
+    if (*p == '-' || *p == '+') {
+        p++;
+    }
+    int hours = 0, minutes = 0;
+    while (isdigit((unsigned char)*p)) {
+        hours = 10 * hours + (*p++ - '0');
+    }
+    if (*p == ':') {
+        p++;
+        while (isdigit((unsigned char)*p)) {
+            minutes = 10 * minutes + (*p++ - '0');
+        }
+    }
+    return sign * (60 * hours + minutes);
+}
+
+// A stable insertion sort; it rebuilds the whole order on every call.
+void sort_zone_order(void)
+{
+    for (unsigned i = 0; i < sizeof(zone_order); i++) {
+        int offset = zone_standard_offset(zones[i].posix);
+        unsigned j = i;
+        for (; j > 0 && zone_standard_offset(zones[zone_order[j - 1]].posix) > offset; j--) {
+            zone_order[j] = zone_order[j - 1];
+        }
+        zone_order[j] = i;
+    }
+}

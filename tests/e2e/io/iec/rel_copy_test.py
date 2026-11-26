@@ -19,10 +19,11 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import ftp  # noqa: E402
+import kernal  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from config_snapshot import Snapshot  # noqa: E402
-from iec_agent import Agent  # noqa: E402
-from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step  # noqa: E402
+from iec_agent import Agent, restorable_path  # noqa: E402
+from report import Failure, check, detail, section, suite_fail, suite_ok, teardown_step, warn  # noqa: E402
 
 SUITE = "rel_copy_test"
 
@@ -67,10 +68,16 @@ def run(args):
         agent.start()
         started = True
         agent.call(1, 15)
-        agent.status((0, 73))
+        # An unchanged setting leaves the drive alone (SI-103b), so the error channel can hold
+        # an earlier suite's last error; it is reported, then UI gives a known state (SI-110).
+        left = agent.status(tuple(range(100)))
+        if int(left.split(",", 1)[0]) not in (0, 73):
+            warn(f"the drive's status was {left} before this suite")
+        agent.command("UI", allowed=(73,))
         agent.command("CD//")
         current = api.rest.json("/v1/drives")
         root = next(e["IEC Drive"]["partitions"][0]["path"] for e in current["drives"] if "IEC Drive" in e)
+        original_path = restorable_path(api, original_path, root)
         if not original_path.startswith(root):
             raise Failure("Cannot restore Software IEC path relative to its partition root")
         path = root.rstrip("/") + "/" + folder
@@ -182,10 +189,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     cli.add_device_arguments(parser)
     parser.add_argument("--evidence-dir", default="rel-copy-evidence")
+    kernal.add_arguments(parser)
     args = parser.parse_args()
     try:
-        if not run(args):
-            raise Failure("Copied REL files differ from expected bytes")
+        with kernal.selected(UltimateApi(args.host, args.password, args.timeout), args, args.password):
+            if not run(args):
+                raise Failure("Copied REL files differ from expected bytes")
     except Exception as exc:
         traceback.print_exc()
         suite_fail(SUITE, str(exc))

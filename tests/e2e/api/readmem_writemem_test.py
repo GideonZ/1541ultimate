@@ -46,9 +46,10 @@ RESET_SETTLE_SECONDS = 5.0
 MEM_SIZE = 65536
 MAX_POST_CHUNK = 65536
 
-# Screen RAM ($0400-$07FF) is deliberately repurposed by the freezer menu for its
-# own display while frozen, so it is excluded from cross-mode "does the byte you
-# wrote survive" comparisons -- this is the one documented, accepted exception.
+# Screen RAM ($0400-$07FF) is where the freezer menu draws while frozen. REST
+# serves it from the C64's backup on firmware with the frozen-screen-dma fix;
+# on firmware without it REST reaches the menu's screen, and the range is not
+# compared while frozen. See screen_is_menu_owned.
 SCREEN_RANGE = (0x0400, 0x0800)
 # Color RAM is physically 4 bits wide; the upper nibble is not connected to
 # anything meaningful and reads back differently depending on the access path
@@ -408,6 +409,11 @@ def compare(
     return ok
 
 
+def screen_is_menu_owned(session: "RestSession") -> bool:
+    """Whether REST reaches the menu's screen, not the C64's, while frozen."""
+    return identify_machine(session.host).lacks_fix(machine_lib.FROZEN_SCREEN_DMA)
+
+
 def run_selfcheck(
     session: RestSession, interface: str, xor_value: int, noise_addrs: set[int], interface_selectable: bool = True
 ) -> bool:
@@ -467,17 +473,10 @@ def run_selfcheck(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during self-check read/write")
 
-    # The on-device browser repaints its entry rows into the C64 screen while
-    # the menu is open, on its own drive-status refresh rather than in response
-    # to a keypress. Measured during a failing Overlay round trip: the read-back
-    # of $0400-$07FF held the browser listing from $0450 to $07DE, which is row 2
-    # onward, while rows 0 and 1 still held the written pattern. That is true in
-    # Overlay as well as Freeze, so the screen range is not comparable while the
-    # menu is open in either mode. run_screen_round_trip below asserts it with
-    # the menu closed, where nothing else draws.
-    allow_screen_mismatch = True
-    section(f"{label}: write and read both happen in {interface} "
-          f"(screen RAM excluded, the menu redraws its entry rows while open)")
+    allow_screen_mismatch = screen_is_menu_owned(session)
+    section(f"{label}: write and read both happen in {interface}"
+            + (" (screen RAM excluded, this firmware serves the menu's screen)"
+               if allow_screen_mismatch else ""))
     # Freeze already halts the CPU. Overlay normally keeps it running (verified by
     # the live-noise probe), so pause it explicitly around this multi-request
     # transaction. Otherwise the CPU can legitimately mutate RAM between the
@@ -559,9 +558,12 @@ def run_cross_mode(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during cross-mode read")
 
-    section(f"{label}: bytes written while {write_interface} must read back the same while {read_interface}, "
-          f"except screen RAM (menu-owned while frozen)")
-    ok = compare(ground_truth, actual, label=label, allow_screen_mismatch=True, noise_addrs=noise_addrs, session=session)
+    allow_screen_mismatch = screen_is_menu_owned(session)
+    section(f"{label}: bytes written while {write_interface} must read back the same while {read_interface}"
+            + (", except screen RAM, which this firmware serves from the menu's screen"
+               if allow_screen_mismatch else ""))
+    ok = compare(ground_truth, actual, label=label, allow_screen_mismatch=allow_screen_mismatch,
+                 noise_addrs=noise_addrs, session=session)
 
     with check(f"close menu ({read_interface})"):
         session.set_menu_open(False)

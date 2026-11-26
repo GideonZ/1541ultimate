@@ -24,11 +24,6 @@ given value in the upper bits and copies one marker byte from ROML and one
 from ROMH of each selection to screen RAM. Each bank carries its own markers,
 so the eight bytes read back say which bank every selection reached, and $EE
 in the ROML row says the cartridge was off.
-
-The bit 6 check needs the cartridge logic in the FPGA image, and the Ultimate
-64 images ship prebuilt, so that check is gated on
-`machine.COMAL80_CARTRIDGE_OFF_BIT` and reports SKIP on a machine the table
-lists. `run-tests --assume-fix comal80-cartridge-off-bit` runs it there.
 """
 
 from __future__ import annotations
@@ -44,8 +39,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 
 import cli                                                      # noqa: E402
-import machine as machine_lib                                   # noqa: E402
-from api import UltimateApi, identify_machine                   # noqa: E402
+from api import UltimateApi                                     # noqa: E402
 from report import (Failure, check, detail, format_exception,   # noqa: E402
                     suite_fail, suite_ok, teardown_step)
 
@@ -161,7 +155,6 @@ def report_rows(upper_bits: int, seen: tuple[bytes, bytes], wanted: str) -> None
 
 def run(args) -> None:
     device = UltimateApi(args.host, args.password or None, args.timeout)
-    machine = identify_machine(args.host, args.password or None, args.timeout)
     markers = (bytes(roml_marker(b) for b in range(BANKS)),
                bytes(romh_marker(b) for b in range(BANKS)))
     markers_text = f"{markers[0].hex(' ')} and {markers[1].hex(' ')}"
@@ -188,19 +181,16 @@ def run(args) -> None:
             raise Failure("a $DE00 write of $C0 to $C3 on a grey cartridge did not "
                           "select banks 0 to 3")
 
-    cartridge_off_label = "a COMAL 80 $DE00 write with bit 6 set switches the cartridge off"
     checks = (
-        ("COMAL 80 bank selections with bit 7 set reach banks 0 to 3", bank_select, None),
-        (cartridge_off_label, cartridge_off, machine_lib.COMAL80_CARTRIDGE_OFF_BIT),
+        ("COMAL 80 bank selections with bit 7 set reach banks 0 to 3", bank_select),
+        ("a COMAL 80 $DE00 write with bit 6 set switches the cartridge off", cartridge_off),
         ("a grey COMAL 80 CRT (subtype 1) keeps the cartridge on with bit 6 set",
-         grey_stays_on, None),
+         grey_stays_on),
     )
     # Every check runs, so one failure does not hide the result of the others.
     failures = []
     try:
-        for label, body, fix in checks:
-            if fix is not None and machine.skip_without_fix(fix, label):
-                continue
+        for label, body in checks:
             try:
                 with check(label):
                     body()

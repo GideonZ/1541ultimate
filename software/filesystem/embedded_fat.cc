@@ -11,7 +11,8 @@
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
 	tester_emb_fat(FileSystemInFile :: getEmbeddedFileSystemFactory(), FileSystemInFile_FAT :: test_type);
 
-FileSystemInFile_FAT :: FileSystemInFile_FAT() {
+FileSystemInFile_FAT :: FileSystemInFile_FAT(bool writable) {
+	this->writable = writable;
 	fs = 0;
 	blk = 0;
 	prt = 0;
@@ -40,11 +41,11 @@ void FileSystemInFile_FAT :: init(File *f)
         return;
     }
     fres = f->read(secsize, 2, &transferred);
-    if (fres != FR_OK) {
+    if (fres != FR_OK || transferred != sizeof(secsize)) {
         return;
     }
     int sector_size = (int)secsize[0] + (int)(((unsigned int)secsize[1]) << 8);
-    if (sector_size & (sector_size - 1) != 0) {
+    if ((sector_size & (sector_size - 1)) != 0) {
         printf("Invalid sector size %d\n", sector_size);
         return;
     }
@@ -52,8 +53,8 @@ void FileSystemInFile_FAT :: init(File *f)
         printf("Unsupported sector size %d", sector_size);
         return;
     }
-    blk = new BlockDevice_File(f, sector_size);
-    if(blk->status()) {
+    blk = new BlockDevice_File(f, sector_size, writable);
+    if(blk->status() & (STA_NODISK | STA_NOINIT)) {
         printf("Can't open file.\n");
     } else {
         uint32_t sec_count;
@@ -65,8 +66,6 @@ void FileSystemInFile_FAT :: init(File *f)
     if(fs) {
         if(!fs->init()) {
             delete fs;
-			delete prt;
-			delete blk;
             fs = NULL;
         }
     }
@@ -75,6 +74,6 @@ void FileSystemInFile_FAT :: init(File *f)
 FileSystemInFile *FileSystemInFile_FAT :: test_type(FileInfo *inf)
 {
     if(strcmp(inf->extension, "FAT")==0)
-        return new FileSystemInFile_FAT();
+        return new FileSystemInFile_FAT(inf->is_writable());
     return NULL;
 }

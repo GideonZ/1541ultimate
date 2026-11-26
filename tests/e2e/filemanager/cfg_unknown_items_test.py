@@ -25,6 +25,7 @@ Ultimate II+L as "Audio Output Settings". See ConfigsApi.find_padded_enum.
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -76,9 +77,31 @@ def load_cfg(browser) -> None:
     cfg_fixture.load(browser, CFG_NAME, log_name=LOG_NAME)
 
 
-def debug_log(host: str, password: str) -> str:
-    with ftp_lib.session(host, password, timeout=20) as ftp:
-        return ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
+def debug_log(host: str, password: str, needles: list[str] | None = None,
+              seconds: float = 10.0) -> str:
+    """The log the firmware wrote, waited for rather than demanded at once.
+
+    The load that produces it returns before the file is on the medium, so a
+    retrieve that comes straight after can be answered with 550 for a name that
+    is about to exist, or with the part of the log written so far. Waiting
+    until every needle is in what was read turns both races into what they are,
+    a delay, and a log that truly never carries them is returned as it was last
+    read, for the caller to fail on.
+    """
+    deadline = time.monotonic() + seconds
+    text = ""
+    while True:
+        try:
+            with ftp_lib.session(host, password, timeout=20) as ftp:
+                text = ftp_lib.retrieve(ftp, f"/Temp/{LOG_NAME}").decode("ascii", "replace")
+            if all(n in text for n in needles or []):
+                return text
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise
+        if time.monotonic() >= deadline:
+            return text
+        time.sleep(0.5)
 
 
 def require_in_log(log: str, needles: list[str], what: str) -> None:
@@ -125,8 +148,9 @@ def main() -> int:
             detail(f"{store}/{item}: {original!r} -> {now!r}")
 
         with check("the log names the unknown item and its value"):
-            log = debug_log(args.host, args.password)
-            require_in_log(log, [UNKNOWN_ITEM, UNKNOWN_ITEM_VALUE], "unknown item")
+            needles = [UNKNOWN_ITEM, UNKNOWN_ITEM_VALUE]
+            log = debug_log(args.host, args.password, needles)
+            require_in_log(log, needles, "unknown item")
 
         section("a store this machine does not have")
         api.configs.set(store, item, original)
@@ -141,7 +165,7 @@ def main() -> int:
                 raise Failure(f"{store}/{item} is {now!r}, expected {wanted!r}")
 
         with check("the log names the absent store"):
-            log = debug_log(args.host, args.password)
+            log = debug_log(args.host, args.password, [UNKNOWN_STORE])
             require_in_log(log, [UNKNOWN_STORE], "unknown store")
 
         suite_ok("cfg_unknown_items_test")

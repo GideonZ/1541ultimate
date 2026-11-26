@@ -22,7 +22,8 @@ import screens as screen_spool
 import select
 import socket
 import time
-from backend import (Backend, FRAME_CHARS, Snapshot, strip_frame)
+from backend import (Backend, FRAME_CHARS, Frame, Snapshot, framed_list_selections,
+                     strip_frame)
 
 
 # Screen_VT100 serves a 60x24 Telnet session, not the physical 40x25 display.
@@ -63,6 +64,7 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     # value, so 11 is KEY_F1, 13 KEY_F3, 15 KEY_F5 and 19 KEY_F8. F1 is here
     # because a C64 Ultimate puts the task menu on it; see tests/lib/machine.py.
     "F1": b"\x1b[11~",
+    "F2": b"\x1b[12~",
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
     # 18, not 17: keyboard_vt100.cc skips 16 and puts KEY_F6 at 17.
@@ -96,6 +98,8 @@ TELNET_KEY_BYTES: dict[str, bytes] = {
     "CBM_X": b"\x18",
     # KEY_CTRL_I is $09, which the VT100 driver also passes through as itself.
     "CBM_I": b"\x09",
+    # KEY_CTRL_P is $10, passed through as itself: PETSCII filename presentation.
+    "CBM_P": b"\x10",
     # A bare ESC, as a terminal sends for the ESC key; the VT100 driver delivers
     # it after VT100_ESCAPE_ALONE_MS with nothing following (keyboard_vt100.cc
     # getch()). A trailing byte would now arrive as its own keystroke.
@@ -294,6 +298,7 @@ class TelnetBackend(Backend):
         # The colour this machine's browser marks its cursor row with, once a
         # listing has shown it unambiguously; see _marked_row.
         self._selected_sgr: str | None = None
+        self._framed_sgr: str | None = None
         self.sock = self._connect_with_retry(host, port, timeout)
         self.sock.setblocking(False)
         self.timeout = timeout
@@ -422,7 +427,10 @@ class TelnetBackend(Backend):
             tally[sgr] = tally.get(sgr, 0) + 1
         odd = [row for row, sgr in drawn.items() if tally[sgr] == 1]
         if len(odd) == 1:
-            self._selected_sgr = drawn[odd[0]]
+            # Learnt only once: a context menu's own cursor wears the colour too, and
+            # leaves a disk image's volume row as the one odd row on that screen.
+            if self._selected_sgr is None:
+                self._selected_sgr = drawn[odd[0]]
             return odd[0]
         if self._selected_sgr is not None:
             wearing = [row for row, sgr in drawn.items() if sgr == self._selected_sgr]
@@ -445,6 +453,20 @@ class TelnetBackend(Backend):
         self._drain_until_idle(timeout=self.timeout)
         rows = self.screen.rows()
         return strip_frame(rows[self._marked_row(entry_rows, rows)])
+
+    def framed_selections(self) -> dict[Frame, tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}.
+
+        Only the cells inside a frame are read, by the rule _marked_row applies to a
+        listing: the entry drawn in a colour of its own is the highlighted one. A frame
+        with no such entry, such as a column of status words, is left out. Section
+        headers ("-- Peripherals --") and blank rows are not entries.
+        """
+        self._drain_until_idle(timeout=self.timeout)
+        found, self._framed_sgr = framed_list_selections(
+            self.screen.rows(), lambda row, column: self.screen.colours[row][column],
+            self._framed_sgr)
+        return found
 
     def selection_and_rows(
         self, entry_rows: Sequence[int] | None = None
@@ -495,10 +517,12 @@ class TelnetBackend(Backend):
         self._send(ch.encode("ascii"), ch)
         return self.capture()
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # Settling waits TELNET_SETTLE_GAP_SECONDS of silence, which only a
+        # command that commits needs; text typed into a field redraws once.
         self.last_command = label
         self._expect_redraw = True
-        self._expect_settle = True
+        self._expect_settle = settle
         self._send(text.encode("ascii"), label)
         return self.capture()
 

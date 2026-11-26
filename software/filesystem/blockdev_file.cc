@@ -2,9 +2,10 @@
 #include <stdio.h>
 #include "blockdev_file.h"
 
-BlockDevice_File::BlockDevice_File(File *file, int sec_size)
+BlockDevice_File::BlockDevice_File(File *file, int sec_size, bool writable)
 {
 	this->file = file; // reference only
+    this->writable = writable;
     shift = 0;
     while(sec_size > 1) {
         shift++;
@@ -30,7 +31,7 @@ DSTATUS BlockDevice_File::init(void)
 DSTATUS BlockDevice_File::status(void)
 {
     if(file)
-        return 0;
+        return writable ? 0 : STA_PROTECT;
     else
         return STA_NODISK;
 }
@@ -41,7 +42,7 @@ DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
         return RES_PARERR;
         
     uint32_t read;
-    if(file->read(buffer, sector_size * (int)count, &read) != FR_OK)
+    if(file->read(buffer, sector_size * (int)count, &read) != FR_OK || read != sector_size * count)
         return RES_ERROR;
     
     return RES_OK;
@@ -49,11 +50,14 @@ DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
 
 DRESULT BlockDevice_File::write(const uint8_t *buffer, uint32_t sector, int count)
 {
+    if (!writable)
+        return RES_WRPRT;
+
     if(file->seek(sector << shift))
         return RES_PARERR;
         
     uint32_t written;
-    if(file->write((uint8_t *)buffer, sector_size * (int)count, &written) != FR_OK)
+    if(file->write((uint8_t *)buffer, sector_size * (int)count, &written) != FR_OK || written != sector_size * count)
         return RES_ERROR;
     
     return RES_OK;

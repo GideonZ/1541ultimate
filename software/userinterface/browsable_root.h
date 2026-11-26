@@ -11,6 +11,7 @@
 #include "browsable.h"
 #include "filemanager.h"
 #include "filetypes.h"
+#include "x00_wrapper.h"
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
@@ -75,8 +76,64 @@ class BrowsableDirEntry : public Browsable
 	FileInfo *info;
 	FileType *type;
 	char *fatname;
+	// The name a P00, S00, U00 or R00 file carries in its header; NULL for other files. Read
+	// once, because the host name of such a file does not identify it (SI-144).
+	char *cbm_name;
+	bool cbm_probed;
+	// Readable PETSCII text from the filename or authoritative name; NULL uses stored text.
+	char *cbm_text;
+	bool cbm_text_probed;
 	Path *path;
 	Path *parent_path;
+
+	// The CBM name inside an x00 wrapper, or NULL. The file is opened once per entry;
+	// the drive's own listing reads the same header for the same reason (SI-144).
+	const char *wrappedName(void) {
+		if (cbm_probed) {
+			return cbm_name;
+		}
+		cbm_probed = true;
+		char letter = 0;
+		if (!info || (info->attrib & (AM_DIR | AM_VOL)) ||
+		    !x00_extension(info->extension, &letter)) {
+			return NULL;
+		}
+		mstring full(parent_path->get_path());
+		if (full[-1] != '/') {
+			full += "/";
+		}
+		full += info->lfname;
+		char name[17];
+		if (!x00_read_header(FileManager::getFileManager(), full.c_str(), name, NULL) ||
+		    !x00_shown_name(name)) {
+			return NULL; // nothing to show, so the row keeps the host name
+		}
+		cbm_name = new char[strlen(name) + 1];
+		strcpy(cbm_name, name);
+		return cbm_name;
+	}
+
+	const char *cbmText(void) {
+		if (cbm_text_probed) {
+			return cbm_text;
+		}
+		cbm_text_probed = true;
+		if (!info || (info->attrib & AM_VOL) || (info->name_format & NAME_FORMAT_DIRECT)) {
+			return NULL;
+		}
+		char pet[17];
+		const char *wrapped = wrappedName();
+		if (wrapped) {
+			strcpy(pet, wrapped);
+		} else if (!info->get_cbm_name(pet, false)) {
+			return NULL;
+		}
+		char text[4 * sizeof(pet) + 1];
+		petscii_to_text(pet, text, sizeof(text), false);
+		cbm_text = new char[strlen(text) + 1];
+		strcpy(cbm_text, text);
+		return cbm_text;
+	}
 
 	void setPath(void) {
 		if (!path) {
@@ -94,6 +151,10 @@ public:
 		this->parent = parent;
 		this->parent_path = pp;
 		this->fatname = NULL;
+		this->cbm_name = NULL;
+		this->cbm_probed = false;
+		this->cbm_text = NULL;
+		this->cbm_text_probed = false;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -103,6 +164,10 @@ public:
 			delete info;
 		if (fatname)
 		    delete fatname;
+		if (cbm_name)
+		    delete[] cbm_name;
+		if (cbm_text)
+		    delete[] cbm_text;
 		if (path)
 			FileManager :: getFileManager() -> release_path(path);
 	}
@@ -110,6 +175,8 @@ public:
 	FileInfo *getInfo(void) {
 		return this->info;
 	}
+
+    bool hasCbmName(void) { return cbmText() != NULL; }
 
     FileInfo *getFileInfo()
     {
@@ -176,7 +243,12 @@ public:
         return fatname;
     }
 
-    int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
+    virtual const char *getDisplayName(UserInterface *ui) {
+        const char *shown = (ui && ui->cbm_names) ? cbmText() : wrappedName();
+        return shown ? shown : getName();
+    }
+
+    int squeezeToDisplayString(const char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0)
     {
         int len = strlen(string_to_squeeze);
 
@@ -215,16 +287,26 @@ public:
             memset(tmp_buffer, '\0', display_space * sizeof(char));
 
             char sel = getSelection() ? '\x13' : ' ';
+            const char *cbm = ui->cbm_names ? cbmText() : NULL;
+            const char *source = "";
+            if (ui->cbm_names && !(info->attrib & AM_VOL)) {
+                source = !cbm ? "S " : ((wrappedName() || (info->name_format & NAME_FORMAT_CBM)) ? "N " : "D ");
+                display_space -= 2;
+            }
             if (info->is_directory()) {
-                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-                sprintf(buffer, "%#s\eJ DIR%c", display_space + extra, tmp_buffer, sel);
+                extra = squeezeToDisplayString(cbm ? cbm : info->lfname, tmp_buffer, display_space, squeeze_option);
+                sprintf(buffer, "%#s\eJ %sDIR%c", display_space + extra, tmp_buffer, source, sel);
             } else if (info->attrib & AM_VOL) {
                 extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
                 sprintf(buffer, "\eR%#s\er VOLUME", display_space + extra, tmp_buffer);
             } else {
                 size_to_string_bytes(info->size, sizebuf);
-                extra = squeezeToDisplayString(info->lfname, tmp_buffer, display_space, squeeze_option);
-                sprintf(buffer, "%#s\e7 %3s%c%s", display_space + extra, tmp_buffer,
+                // A wrapper shows the name it carries, as its host name does not identify it; the
+                // extension still says P00 (SI-144).
+                const char *shown = cbm ? cbm : wrappedName();
+                extra = squeezeToDisplayString(shown ? shown : info->lfname, tmp_buffer,
+                                               display_space, squeeze_option);
+                sprintf(buffer, "%#s\e7 %s%3s%c%s", display_space + extra, tmp_buffer, source,
                         info->extension, sel, sizebuf);
             }
         }

@@ -17,6 +17,8 @@ public:
     virtual void push_head(int) { }
     virtual void wait_free(void) { }
     virtual void clear_buffer(void) { }
+    // Menu entry: drop anything already held until it has been released.
+    virtual void ignore_held_input(void) { }
 };
 
 #define KEY_BACK   0x08

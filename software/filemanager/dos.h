@@ -75,6 +75,7 @@ public:
     void parse_command(Message *command, Message **reply, Message **status);
     void get_more_data(Message **reply, Message **status);  
     void abort(int);
+    void c64_reset(void);
 };
 
 #endif

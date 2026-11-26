@@ -10,8 +10,9 @@ every target until the machine was power-cycled.
 It also covers the transport state machine, the control target's rejection paths,
 and reply framing on the SoftIEC target, whose single-part replies were announced
 as "Data More" and left a client waiting for a block that is never sent. On
-Ultimate 64 hardware it verifies the runtime RGB palette commands and restores
-the palette before exiting.
+Ultimate 64 hardware it verifies the runtime RGB palette commands, and the
+palette packets a VIC stream opted into with palette=1 carries, and restores the
+palette before exiting.
 
 Every expected value here was taken from the firmware and confirmed against a
 real device. The manuals under doc/ ("Ultimate Command Interface - Register API",
@@ -43,8 +44,12 @@ them on exit.
 
 import argparse
 import ftplib
+import itertools
 import json
+import select
+import socket
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -55,9 +60,13 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import assembler  # noqa: E402
 import cli  # noqa: E402
+from api import UltimateApi  # noqa: E402
 import ftp as ftp_lib
 import rest as rest_lib
+import machine as machine_lib
+import streams as stream_lib
 import targets
 from report import (
     FAIL, Failure, OK, SKIP, check, check_skip, check_start, detail,
@@ -77,6 +86,7 @@ CFG_REU_OFFSET = "REU Preload Offset"
 # Everything the suite writes, captured before the first change and put back at the end.
 OWNED_SETTINGS = (CFG_CMD_IF, CFG_REU_ENABLE, CFG_REU_IMAGE, CFG_REU_SIZE, CFG_REU_OFFSET)
 
+REG_KERNAL_DEVICE = 0xDF1B
 REG_CONTROL = 0xDF1C
 REG_COMMAND = 0xDF1D
 REG_RESPONSE = 0xDF1E
@@ -113,13 +123,36 @@ CTRL_CMD_IDENTIFY = 0x01
 CTRL_CMD_LOAD_REU = 0x08
 CTRL_CMD_SAVE_REU = 0x09
 CTRL_CMD_GET_HWINFO = 0x28
+CTRL_CMD_GET_DRVINFO = 0x29
 CTRL_CMD_GET_PALETTE = 0x51
 CTRL_CMD_SET_PALETTE = 0x52
 CTRL_CMD_SET_PALETTE_COLOR = 0x53
 CTRL_CMD_RESET_PALETTE = 0x54
+# The debug stream's default destination, from the firmware's stream settings.
+DEBUG_GROUP = "239.0.1.66"
+DEBUG_PORT = 11002
+# Longer than the one-second palette repeat, so a leaked opt-in cannot hide.
+PALETTE_QUIET_SECONDS = 1.5
+# From the device answering to the palette packet arriving. The repeat is a
+# second, so only a send on the event itself makes it this soon.
+PALETTE_PROMPT_SECONDS = 0.3
+# A gap in the video longer than this is the stream stopping, not the network.
+VIDEO_STALL_SECONDS = 0.1
+PALETTE_BURST_SOURCE = Path(__file__).with_name("vic_palette_burst.asm")
+PALETTE_BURST_STATUS = 0xC000
+PALETTE_BURST_READY = 0xA4
+PALETTE_BURST_RUNNING = 0xA5
+PALETTE_BURST_DONE = 0x5A
+PALETTE_BURST_GO = 0xC003
 SOFTIEC_CMD_IDENTIFY = 0x01
 SOFTIEC_CMD_LOAD_SU = 0x10
 SOFTIEC_CMD_GET_FATNAME = 0x22
+# GET_DRVINFO reports one three-byte entry (type, bus id, powered) per device. The
+# Software IEC drive and the printer are IEC slaves and carry their own type byte.
+DRVINFO_ENTRY_BYTES = 3
+DRVINFO_CURRENT_BUS_ID = 0x00
+DRVINFO_SLAVE_TYPES = {"IEC Drive": 0x0F, "Printer Emulation": 0x50}
+SOFTIEC_CMD_GET_IECNAME = 0x23
 # No target implements $7F, so it reaches the unknown-command path.
 CMD_UNIMPLEMENTED = 0x7F
 
@@ -174,6 +207,17 @@ FATNAME_BUFFER_REPLY = b"/buffer"
 # secondary address, verify flag, load address and end address from bytes 2 to 7
 # and starts the name at byte 8, so all six have to be present before the name.
 LOAD_SU_MISSING = bytes(6) + b"NOSUCHFILE"
+# GET_IECNAME answers a type byte and the CBM name of a host file. An x00 file carries
+# its CBM name in a 26 byte header that starts "C64File" and a zero (SI-144). Both files
+# go to the RAM disk for the run: one with the header, and one named the same way
+# without it.
+X00_WRAPPED = "/Temp/UCIGAME.P00"
+X00_PLAIN = "/Temp/UCIPLAIN.P00"
+X00_CBM_NAME = b"MY GAME"
+X00_HEADER = b"C64File\0" + X00_CBM_NAME.ljust(16, b"\0") + b"\0\0"
+# The first reply byte is the drive's file type: 0 for a name without a CBM type, 1 PRG.
+IEC_TYPE_ANY = 0
+IEC_TYPE_PRG = 1
 
 BUSY_TIMEOUT_SECONDS = 15.0
 BUSY_POLL_SECONDS = 0.05
@@ -196,6 +240,10 @@ TESTS = [
     "load-reu-disabled",
     "save-reu-disabled",
     "softiec-single-part-reply",
+    "get-drvinfo",
+    "softiec-x00-name",
+    "softiec-setting-modes",
+    "palette-stream",
     "interface-usable-after",
 ]
 
@@ -230,13 +278,26 @@ class RestSession:
         self.password = password
         self.timeout = timeout
 
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, asked once of the device's /v1/info."""
+        def fetch() -> tuple[str, str]:
+            status, body = self.request("GET", "/v1/info", repeatable=True)
+            if status != 200:
+                raise Failure(f"GET /v1/info returned HTTP {status}: {body[:200]!r}")
+            info = json.loads(body)
+            return info.get("product", ""), info.get("firmware_version", "")
+        return machine_lib.identify(self.host, fetch)
+
     def request(self, method: str, path: str, params: dict[str, object] | None = None,
-                repeatable: bool = False, host: str | None = None) -> tuple[int, bytes]:
+                repeatable: bool = False, host: str | None = None,
+                data: bytes | None = None) -> tuple[int, bytes]:
         url = f"http://{host or self.target.host_for(path)}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
         headers = {"X-Password": self.password} if self.password else {}
-        request = urllib.request.Request(url, headers=headers, method=method)
+        if data is not None:
+            headers["Content-Type"] = "application/octet-stream"
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         # Transport and retry policy come from tests/lib/rest.py; see
         # rest.may_retry. `repeatable` is this suite's word for idempotent: a
         # register read applies nothing, so it may go again after the request
@@ -255,14 +316,17 @@ class RestSession:
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             raise Failure(f"{method} {url} failed: {format_exception(exc)}") from exc
 
-    def peek(self, address: int, repeatable: bool = False) -> int:
+    def readmem(self, address: int, length: int, repeatable: bool = False) -> bytes:
         status, body = self.request(
-            "GET", READMEM_PATH, params={"address": f"{address:04x}", "length": 1},
+            "GET", READMEM_PATH, params={"address": f"{address:04x}", "length": length},
             repeatable=repeatable, host=self.register_host
         )
-        if status != 200 or len(body) != 1:
+        if status != 200 or len(body) != length:
             raise Failure(f"readmem(${address:04X}) failed with HTTP {status}: {body[:200]!r}")
-        return body[0]
+        return body
+
+    def peek(self, address: int, repeatable: bool = False) -> int:
+        return self.readmem(address, 1, repeatable)[0]
 
     def poke(self, address: int, value: int) -> None:
         status, body = self.request(
@@ -306,6 +370,11 @@ class RestSession:
         status, body = self.request("PUT", RESET_PATH)
         if status != 200:
             raise Failure(f"reset failed with HTTP {status}: {body[:200]!r}")
+
+    def run_prg(self, program: bytes) -> None:
+        status, body = self.request("POST", "/v1/runners:run_prg", data=program)
+        if status != 200:
+            raise Failure(f"runners:run_prg returned HTTP {status}: {body[:200]!r}")
 
 
 class FtpFixture:
@@ -687,6 +756,409 @@ def run_palette(uci: Uci) -> bool:
     return True
 
 
+class VicListener:
+    """Drain the VIC stream on a thread of its own.
+
+    A REST call with the stream running takes 80 ms or more, and one PAL frame
+    is 50 datagrams every 20 ms, so a socket read only between calls overflows
+    any receive buffer Linux grants without raising `net.core.rmem_max`. A
+    thread keeps it drained whatever the main thread is waiting on.
+    """
+
+    def __init__(self, sock: socket.socket, addresses: set[str]) -> None:
+        self.sock = sock
+        self.addresses = addresses
+        self.lock = threading.Lock()
+        self.palettes: list[tuple[float, int, bytes]] = []
+        self.video: list[tuple[float, int]] = []
+        self.foreign: set[str] = set()
+        self.error: Failure | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="vic-listener", daemon=True)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            ready, _, _ = select.select([self.sock], (), (), 0.1)
+            if not ready:
+                continue
+            try:
+                data, sender = self.sock.recvfrom(2048)
+            except OSError:
+                continue
+            now = time.monotonic()
+            if sender[0] not in self.addresses:
+                with self.lock:
+                    self.foreign.add(sender[0])
+                continue
+            try:
+                palette = stream_lib.palette_packet(data)
+            except Failure as exc:
+                with self.lock:
+                    self.error = self.error or exc
+                continue
+            with self.lock:
+                if palette is not None:
+                    self.palettes.append((now, *palette))
+                elif len(data) == stream_lib.PACKET_SIZE:
+                    self.video.append((now, int.from_bytes(data[:2], "little")))
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+
+    def raise_error(self) -> None:
+        with self.lock:
+            if self.error is not None:
+                raise self.error
+
+    def palettes_since(self, since: float) -> list[tuple[float, int, bytes]]:
+        with self.lock:
+            return [p for p in self.palettes if p[0] >= since]
+
+    def video_since(self, since: float) -> list[tuple[float, int]]:
+        with self.lock:
+            return [v for v in self.video if v[0] >= since]
+
+    def wait_palette(self, since: float, expected: bytes | None = None,
+                     timeout: float = 2.0) -> tuple[float, int, bytes]:
+        """The first palette packet after `since` carrying `expected`, if given."""
+        deadline = time.monotonic() + timeout
+        while True:
+            self.raise_error()
+            for packet in self.palettes_since(since):
+                if expected is None or packet[2] == expected:
+                    return packet
+            if time.monotonic() >= deadline:
+                seen = self.palettes_since(since)
+                if seen:
+                    raise Failure(f"last palette packet carried {seen[-1][2].hex()}, "
+                                  f"expected {expected.hex() if expected else 'any'}")
+                raise Failure(f"no palette packet arrived within {timeout:g} seconds")
+            time.sleep(0.01)
+
+    def expect_no_palette(self, seconds: float = PALETTE_QUIET_SECONDS) -> None:
+        """Listen longer than one repeat, with video as the positive control."""
+        since = time.monotonic()
+        time.sleep(seconds)
+        self.raise_error()
+        video = self.video_since(since)
+        if len(video) < 100:
+            raise Failure(f"only {len(video)} video packets in {seconds:g} s, so the "
+                          f"absence of palette packets proves nothing")
+        palettes = self.palettes_since(since)
+        if palettes:
+            raise Failure(f"{len(palettes)} palette packets arrived on a stream that "
+                          f"did not ask for them")
+
+
+# More opted-in start/stop cycles than lwIP has UDP sockets (MEMP_NUM_UDP_PCB 8).
+PALETTE_SOCKET_CYCLES = 20
+# A multicast group in 224-231, which #871 moved from unicast to multicast.
+PALETTE_LOW_MULTICAST_GROUP = "230.0.1.64"
+
+
+def expected_burst_color(index: int) -> bytes:
+    """Color 6 after the burst fixture's `index`th change, counting from 0."""
+    return bytes(((13 * index) & 0xFF, (85 + 29 * index) & 0xFF, (170 + 47 * index) & 0xFF))
+
+
+def run_palette_stream(session: RestSession, uci: Uci) -> bool:
+    """Runtime palette packets on the VIC stream (#850), opted into with palette=1.
+
+    Runs after the command-interface scenarios, so a machine that cannot stream
+    to this host costs nothing but this scenario.
+    """
+    scenario = "palette-stream"
+    _, probe_status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+    if probe_status == STATUS_UNKNOWN_COMMAND:
+        check_start(f"{scenario}: the machine has a runtime palette")
+        check_skip("GET_PALETTE is not served")
+        return True
+    original, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+    if text != STATUS_OK or len(original) != 48:
+        raise Failure(f"{scenario}: GET_PALETTE returned {len(original)} bytes, status {text!r}")
+
+    video_address = f"{session.target.video_group}:{session.target.video_port}"
+    machine = session.machine()
+    if not machine.has_data_streams:
+        check_start(f"{scenario}: the machine serves the VIC stream")
+        check_skip(f"{machine.described} has no VIC stream")
+        return True
+    # Declared, not probed: a probe would skip exactly when the feature broke.
+    offered = f"{scenario}: the firmware offers palette streams"
+    if machine.skip_without_fix(machine_lib.VIC_PALETTE_STREAM, offered):
+        return True
+    with check(offered):
+        status, body = session.request("PUT", "/v1/streams/video:start",
+                                       params={"ip": video_address, "palette": 2})
+        if status != 400 or b"Palette must be 0 or 1" not in body:
+            raise Failure(f"video:start with palette=2 returned HTTP {status}: {body[:200]!r}; "
+                          f"expected 400 'Palette must be 0 or 1'")
+
+    api = UltimateApi(session.target, session.password)
+    arming = stream_lib.Arming(api, session.target)
+    addresses = stream_lib.source_addresses(session.target)
+    if not addresses:
+        raise Failure(f"{scenario}: could not resolve the VIC stream source address")
+    sock = stream_lib.stream_socket(session.target.video_group, session.target.video_port)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+    listener = VicListener(sock, addresses)
+    listener.start()
+    fixture_loaded = False
+    fixture_released = False
+    try:
+        # Whether this host can see the stream at all is a property of the
+        # bench, not of the firmware, so it decides a skip rather than a failure.
+        if not arming.start("video", palette=0):
+            reason = arming.failures.get("video", "")
+            if "No Operational Network Interface" not in reason:
+                raise Failure(f"{scenario}: video:start failed: {reason}")
+            skip = "the VIC stream's network interface has no link"
+        else:
+            since = time.monotonic()
+            time.sleep(1.0)
+            skip = None
+            if len(listener.video_since(since)) < 100:
+                with listener.lock:
+                    foreign = sorted(listener.foreign)
+                skip = (f"the VIC stream arrives from {', '.join(foreign)}, not from "
+                        f"{', '.join(sorted(addresses))}; name that address with -H"
+                        if foreign else "no VIC stream packets reach this host")
+        if skip:
+            check_start(f"{scenario}: the VIC stream reaches this host")
+            check_skip(skip)
+            return True
+
+        with check(f"{scenario}: a refused palette value leaves the debug stream running"):
+            arming.stop("video")
+            debug_sock = stream_lib.stream_socket(DEBUG_GROUP, DEBUG_PORT)
+            try:
+                status, body = session.request("PUT", "/v1/streams/debug:start",
+                                               params={"ip": f"{DEBUG_GROUP}:{DEBUG_PORT}"})
+                if status != 200:
+                    raise Failure(f"debug:start returned HTTP {status}: {body[:200]!r}")
+                for stream, value in (("video", 2), ("audio", 1), ("audio", 0)):
+                    status, body = session.request(
+                        "PUT", f"/v1/streams/{stream}:start",
+                        params={"ip": video_address, "palette": value})
+                    if status != 400:
+                        raise Failure(f"{stream} stream with palette={value} returned "
+                                      f"HTTP {status}: {body[:200]!r}")
+                tuple(stream_lib.receive([debug_sock], addresses, 0.1))
+                debug = sum(1 for _, _, mine in stream_lib.receive([debug_sock], addresses, 0.5)
+                            if mine)
+                if not debug:
+                    raise Failure("the debug stream stopped for a request that was refused")
+            finally:
+                session.request("PUT", "/v1/streams/debug:stop")
+                debug_sock.close()
+            if not arming.start("video", palette=0):
+                raise Failure(f"video:start failed: {arming.failures.get('video')}")
+
+        with check(f"{scenario}: palette=0 sends no palette packets"):
+            listener.expect_no_palette()
+
+        with check(f"{scenario}: a palette change on an ordinary stream sends nothing"):
+            changed = bytearray(original)
+            changed[-3:] = bytes(component ^ 0x5A for component in changed[-3:])
+            reply, text = uci.transact(
+                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 15]) + changed[-3:])
+            if text != STATUS_OK or reply:
+                raise Failure(f"SET_PALETTE_COLOR returned data {reply!r}, status {text!r}")
+            listener.expect_no_palette()
+
+        with check(f"{scenario}: an opted-in start sends the current palette at once"):
+            arming.stop("video")
+            requested = time.monotonic()
+            if not arming.start("video", palette=1):
+                raise Failure(f"video:start with palette=1 failed: {arming.failures.get('video')}")
+            answered = time.monotonic()
+            arrived, generation, _ = listener.wait_palette(requested, bytes(changed))
+            if arrived - answered > PALETTE_PROMPT_SECONDS:
+                raise Failure(f"the first palette packet came {arrived - answered:.2f} s after "
+                              f"the start was answered")
+
+        with check(f"{scenario}: the palette repeats once a second"):
+            first = listener.wait_palette(arrived + 0.01, bytes(changed), timeout=2.0)
+            second = listener.wait_palette(first[0] + 0.01, bytes(changed), timeout=2.0)
+            interval = second[0] - first[0]
+            if {first[1], second[1]} != {generation}:
+                raise Failure(f"repeats carried generations {first[1]} and {second[1]}, "
+                              f"expected {generation}")
+            if not 0.8 <= interval <= 1.3:
+                raise Failure(f"repeats came {interval:.2f} s apart")
+
+        with check(f"{scenario}: a palette change is sent at once"):
+            previous = listener.wait_palette(second[0] + 0.01, bytes(changed), timeout=2.0)
+            changed[-3:] = bytes(component ^ 0xFF for component in changed[-3:])
+            reply, text = uci.transact(
+                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 15]) + changed[-3:])
+            done = time.monotonic()
+            if text != STATUS_OK or reply:
+                raise Failure(f"SET_PALETTE_COLOR returned data {reply!r}, status {text!r}")
+            arrived, generation, _ = listener.wait_palette(previous[0] + 0.01, bytes(changed))
+            if arrived - done > PALETTE_PROMPT_SECONDS:
+                raise Failure(f"the changed palette came {arrived - done:.2f} s after the change")
+            # Only a send on change can arrive before the next repeat is due.
+            if done - previous[0] < 0.6 and arrived - previous[0] > 0.9:
+                raise Failure(f"the changed palette came {arrived - previous[0]:.2f} s after the "
+                              f"last repeat, which is when the repeat was due")
+
+        with check(f"{scenario}: rapid changes are coalesced without stopping the video"):
+            session.poke(PALETTE_BURST_GO, 0)
+            session.poke(PALETTE_BURST_STATUS, 0)
+            session.run_prg(assembler.assemble(PALETTE_BURST_SOURCE))
+            fixture_loaded = True
+            deadline = time.monotonic() + 5.0
+            while session.peek(PALETTE_BURST_STATUS, repeatable=True) != PALETTE_BURST_READY:
+                if time.monotonic() >= deadline:
+                    raise Failure("the burst fixture did not reach its ready state")
+                time.sleep(0.05)
+            baseline_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK:
+                raise Failure(f"GET_PALETTE before the burst returned {text!r}")
+            _, baseline, _ = listener.wait_palette(time.monotonic(), baseline_palette)
+            started = time.monotonic()
+            session.poke(PALETTE_BURST_GO, 1)
+            deadline = started + 15.0
+            while True:
+                result = session.readmem(PALETTE_BURST_STATUS, 3, repeatable=True)
+                if result[0] == PALETTE_BURST_DONE:
+                    break
+                if result[0] not in (PALETTE_BURST_READY, PALETTE_BURST_RUNNING):
+                    raise Failure(f"the burst fixture reported status ${result[0]:02X}")
+                if time.monotonic() >= deadline:
+                    raise Failure("the burst did not finish within 15 seconds")
+                time.sleep(0.05)
+            finished = time.monotonic()
+            session.poke(PALETTE_BURST_GO, 2)
+            fixture_released = True
+            count = int.from_bytes(result[1:3], "little")
+            final_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK:
+                raise Failure(f"GET_PALETTE after the burst returned {text!r}")
+            final = listener.wait_palette(started, final_palette)
+            samples = [p for p in listener.palettes_since(started) if p[0] <= final[0]]
+            video = [v for v in listener.video_since(started) if v[0] <= finished]
+
+            delta = (final[1] - baseline) & 0xFFFF
+            if count < 2 or delta != count:
+                raise Failure(f"{count} changes advanced the generation by {delta}")
+            if final_palette[18:21] != expected_burst_color(count - 1):
+                raise Failure(f"color 6 ended as {final_palette[18:21].hex()}, "
+                              f"expected {expected_burst_color(count - 1).hex()}")
+            for _, sample_generation, sample_palette in samples:
+                change = (sample_generation - baseline) & 0xFFFF
+                if 1 <= change <= count and sample_palette[18:21] != expected_burst_color(change - 1):
+                    raise Failure(f"generation {sample_generation} carried color 6 as "
+                                  f"{sample_palette[18:21].hex()}, expected "
+                                  f"{expected_burst_color(change - 1).hex()}")
+            distinct = len({sample[1] for sample in samples})
+            if distinct >= count:
+                raise Failure(f"{count} changes produced {distinct} distinct palette packets; "
+                              f"nothing was coalesced")
+            span = samples[-1][0] - samples[0][0] if len(samples) > 1 else 0.0
+            rate = (len(samples) - 1) / span if span > 0 else 0.0
+            # Host scheduling can deliver two queued datagrams back to back, so
+            # the sustained rate is the stable measure of the wire rate.
+            if rate > 55.0:
+                raise Failure(f"palette packets came at {rate:.1f} per second, expected at most 55")
+            # Datagrams the host drops are the host's; the firmware's part is to
+            # keep the video coming, so a stall is what fails.
+            stall = max((b[0] - a[0] for a, b in itertools.pairwise(video)), default=0.0)
+            if len(video) < 100 or stall > VIDEO_STALL_SECONDS:
+                raise Failure(f"{len(video)} video packets during the burst, longest gap "
+                              f"{stall * 1000:.0f} ms")
+            lost = sum(((b[1] - a[1]) & 0xFFFF) - 1 for a, b in itertools.pairwise(video)
+                       if ((b[1] - a[1]) & 0xFFFF) < 0x8000)
+            detail(f"{count} changes in {finished - started:.2f} s -> {distinct} palette "
+                   f"packets at {rate:.1f}/s; {len(video)} video packets, {lost} lost on "
+                   f"the way here, longest gap {stall * 1000:.0f} ms")
+
+        with check(f"{scenario}: RESET_PALETTE reaches an opted-in client at once"):
+            session.reset()
+            uci.release()
+            fixture_loaded = False
+            requested = time.monotonic()
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE]))
+            done = time.monotonic()
+            if text != STATUS_OK or reply:
+                raise Failure(f"RESET_PALETTE returned data {reply!r}, status {text!r}")
+            default_palette, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK:
+                raise Failure(f"GET_PALETTE after RESET_PALETTE returned {text!r}")
+            arrived, _, _ = listener.wait_palette(requested, default_palette)
+            if arrived - done > PALETTE_PROMPT_SECONDS:
+                raise Failure(f"the reset palette came {arrived - done:.2f} s after the reset")
+
+        with check(f"{scenario}: a later ordinary start is not opted in"):
+            arming.stop("video")
+            if not arming.start("video"):
+                raise Failure(f"video:start failed: {arming.failures.get('video')}")
+            listener.expect_no_palette()
+
+        with check(f"{scenario}: palette packets still arrive after "
+                   f"{PALETTE_SOCKET_CYCLES} opted-in starts and stops"):
+            # Each opted-in start opens the palette socket and each stop closes
+            # it. lwIP has 8 UDP sockets in all, so a socket that is not given
+            # back runs the pool dry well within these cycles.
+            for cycle in range(1, PALETTE_SOCKET_CYCLES + 1):
+                arming.stop("video")
+                time.sleep(0.2)
+                requested = time.monotonic()
+                if not arming.start("video", palette=1):
+                    raise Failure(f"cycle {cycle}: video:start with palette=1 failed: "
+                                  f"{arming.failures.get('video')}")
+                try:
+                    listener.wait_palette(requested)
+                except Failure as exc:
+                    raise Failure(f"cycle {cycle}: {exc}") from exc
+            arming.stop("video")
+
+        low_group = PALETTE_LOW_MULTICAST_GROUP
+        with check(f"{scenario}: a stream to {low_group}, below 232.0.0.0, is sent as multicast"):
+            # #871 widened the multicast test from 232-239 to all of 224.0.0.0/4.
+            # Treated as unicast, a group in 224-231 has no ARP answer.
+            port = session.target.video_port
+            low_sock = stream_lib.stream_socket(low_group, port)
+            try:
+                status, body = session.request("PUT", "/v1/streams/video:start",
+                                               params={"ip": f"{low_group}:{port}"})
+                if status != 200:
+                    raise Failure(f"video:start to {low_group} returned HTTP {status}: "
+                                  f"{body[:200]!r}")
+                tuple(stream_lib.receive([low_sock], addresses, 0.1))
+                arrived = sum(1 for _, _, mine in
+                              stream_lib.receive([low_sock], addresses, 1.0) if mine)
+                if arrived < 100:
+                    raise Failure(f"{arrived} video packets reached {low_group} in 1 s")
+            finally:
+                session.request("PUT", "/v1/streams/video:stop")
+                low_sock.close()
+    finally:
+        try:
+            if fixture_loaded and not fixture_released:
+                # The fixture waits for GO=1 and must not start pushing
+                # commands into the queue the restore below uses.
+                session.reset()
+                uci.release()
+            with check(f"{scenario}: restore the original runtime palette"):
+                reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
+                if text != STATUS_OK or reply:
+                    raise Failure(f"restore returned data {reply!r}, status {text!r}")
+                actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+                if text != STATUS_OK or actual != original:
+                    raise Failure(f"restored palette readback was {actual!r}")
+        finally:
+            arming.stop_all()
+            listener.stop()
+            sock.close()
+    return True
+
+
 def prime_reply_buffer(uci: Uci) -> None:
     """Leave a non-empty string in the control target's reply buffer.
 
@@ -858,6 +1330,138 @@ def run_softiec_single_part_reply(uci: Uci) -> bool:
     return True
 
 
+def run_get_drvinfo(session: RestSession, uci: Uci) -> bool:
+    """GET_DRVINFO must send every device it counts, and the same devices as /v1/drives.
+
+    The REST drive list is the reference: it names each device the firmware has
+    (drive A and B, then the IEC slaves) with its bus id and whether it is on.
+    /v1/drives reports the drives' current bus id, which the command selects with
+    a parameter of 0; without a parameter it reports the effective bus id, which
+    differs when the device ID is overridden.
+    """
+    scenario = "get-drvinfo"
+    status, body = session.request("GET", "/v1/drives", repeatable=True)
+    if status != 200:
+        raise Failure(f"{scenario}: GET /v1/drives failed with HTTP {status}: {body[:200]!r}")
+    expected = []
+    for entry in json.loads(body.decode("utf-8"))["drives"]:
+        (name, info), = entry.items()
+        expected.append((name, int(info["bus_id"]), bool(info["enabled"])))
+    if not any(name in DRVINFO_SLAVE_TYPES for name, _, _ in expected):
+        raise Failure(f"{scenario}: /v1/drives lists no IEC slave, so this check cannot run")
+    detail(f"{scenario}: /v1/drives lists {expected}")
+
+    default_reply = expect(uci, f"{scenario}: GET_DRVINFO completes",
+                           bytes([TARGET_CONTROL, CTRL_CMD_GET_DRVINFO]), STATUS_OK)
+    reply = expect(uci, f"{scenario}: GET_DRVINFO with the current bus ids completes",
+                   bytes([TARGET_CONTROL, CTRL_CMD_GET_DRVINFO, DRVINFO_CURRENT_BUS_ID]), STATUS_OK)
+    with check(f"{scenario}: both forms send the same number of bytes"):
+        if len(default_reply) != len(reply):
+            raise Failure(f"{scenario}: {len(default_reply)} bytes by default, "
+                          f"{len(reply)} with the current bus ids")
+    with check(f"{scenario}: the device count matches the bytes sent"):
+        if not reply:
+            raise Failure(f"{scenario}: empty reply")
+        sent = (len(reply) - 1) // DRVINFO_ENTRY_BYTES
+        if reply[0] != sent or len(reply) != 1 + DRVINFO_ENTRY_BYTES * sent:
+            raise Failure(f"{scenario}: the reply counts {reply[0]} devices but holds "
+                          f"{len(reply) - 1} bytes after the count: {reply.hex(' ')}")
+    with check(f"{scenario}: every device in /v1/drives has an entry"):
+        entries = [(reply[1 + i * 3], reply[2 + i * 3], bool(reply[3 + i * 3]))
+                   for i in range(len(reply) // DRVINFO_ENTRY_BYTES)]
+        if len(entries) != len(expected):
+            raise Failure(f"{scenario}: /v1/drives lists {len(expected)} devices, "
+                          f"the reply has {len(entries)}: {reply.hex(' ')}")
+        for (name, bus_id, enabled), (kind, address, powered) in zip(expected, entries):
+            if (address, powered) != (bus_id, enabled):
+                raise Failure(f"{scenario}: {name} is bus id {bus_id}, enabled {enabled}, "
+                              f"the entry says {address}, {powered}")
+            if name in DRVINFO_SLAVE_TYPES and kind != DRVINFO_SLAVE_TYPES[name]:
+                raise Failure(f"{scenario}: {name} has type ${kind:02X}, "
+                              f"expected ${DRVINFO_SLAVE_TYPES[name]:02X}")
+    return True
+
+
+def run_softiec_x00_name(ftp: "FtpFixture", uci: Uci) -> bool:
+    """GET_IECNAME names an x00 file by the CBM name in its header (SI-144).
+
+    Given a full path, the target reads the header of a file whose extension is P, S, U
+    or R and two digits, so a program that lists a directory through the target sees
+    the names the drive lists on the bus. Given a name without a directory there is no
+    file to read, and the answer comes from the host name. A file that has such an
+    extension but no signature is an ordinary file.
+    """
+    scenario = "softiec-x00-name"
+    with check(f"{scenario}: put a P00 file, and a file named like one, on the RAM disk"):
+        ftp.upload(X00_WRAPPED, X00_HEADER + b"PAYLOAD")
+        ftp.upload(X00_PLAIN, b"not wrapped")
+    expect(uci, f"{scenario}: a full path to a P00 file answers the name in its header and PRG",
+           bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + X00_WRAPPED.encode("ascii"),
+           SOFTIEC_OK, reply=bytes([IEC_TYPE_PRG]) + X00_CBM_NAME)
+    expect(uci, f"{scenario}: the same file without its directory answers the host name",
+           bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + b"UCIGAME.P00",
+           SOFTIEC_OK, reply=bytes([IEC_TYPE_ANY]) + b"UCIGAME.P00")
+    expect(uci, f"{scenario}: a file without the signature answers its host name",
+           bytes([TARGET_SOFTIEC, SOFTIEC_CMD_GET_IECNAME]) + X00_PLAIN.encode("ascii"),
+           SOFTIEC_OK, reply=bytes([IEC_TYPE_ANY]) + b"UCIPLAIN.P00")
+    return True
+
+
+SOFTIEC_CATEGORY = "SoftIEC Drive Settings"
+SOFTIEC_ENABLE = "IEC Drive"
+SOFTIEC_BUS_ID = "Soft Drive Bus ID"
+# The number $DF1B holds while the drive is off altogether, which no program opens.
+KERNAL_DEVICE_NONE = 31
+
+
+def softiec_on_bus(session: RestSession) -> bool:
+    status, body = session.request("GET", "/v1/drives", repeatable=True)
+    if status != 200:
+        raise Failure(f"GET /v1/drives failed with HTTP {status}: {body[:200]!r}")
+    for entry in json.loads(body.decode("utf-8"))["drives"]:
+        if "IEC Drive" in entry:
+            return bool(entry["IEC Drive"]["enabled"])
+    raise Failure("/v1/drives lists no IEC Drive")
+
+
+def run_softiec_setting_modes(session: RestSession, uci: Uci) -> bool:
+    """"IEC Drive" decides the bus and the UCI side of the drive separately (SI-107, #918).
+
+    Enabled puts the drive on the bus and gives a UCI KERNAL its number at $DF1B. UCI Only
+    takes it off the bus and keeps the UCI target answering, which is how a program is shown
+    to use UCI and not the bus. Disabled turns off both: the target answers "not loaded" and
+    $DF1B holds 31, so the KERNAL sends everything to the bus, where the drive is not.
+    """
+    scenario = "softiec-setting-modes"
+    settings = session.get_config(SOFTIEC_CATEGORY)
+    original = str(settings[SOFTIEC_ENABLE])
+    device = int(settings[SOFTIEC_BUS_ID])
+    modes = (
+        ("Enabled", True, True, device),
+        ("Disabled", False, False, KERNAL_DEVICE_NONE),
+        ("UCI Only", False, True, device),
+    )
+    try:
+        for value, on_bus, serves_uci, kernal_device in modes:
+            with check(f"{scenario}: {SOFTIEC_ENABLE} {value}: on the bus {on_bus}, "
+                       f"UCI {serves_uci}, $DF1B {kernal_device}"):
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, value)
+                seen_bus = softiec_on_bus(session)
+                seen_device = session.peek(REG_KERNAL_DEVICE, repeatable=True) & 0x1F
+                _reply, text = uci.transact(bytes([TARGET_SOFTIEC, SOFTIEC_CMD_IDENTIFY]))
+                detail(f"on the bus {seen_bus}, $DF1B {seen_device}, IDENTIFY status {text!r}")
+                if seen_bus != on_bus:
+                    raise Failure(f"the drive list says on the bus {seen_bus}, expected {on_bus}")
+                if seen_device != kernal_device:
+                    raise Failure(f"$DF1B holds {seen_device}, expected {kernal_device}")
+                wanted = STATUS_OK if serves_uci else SOFTIEC_NOT_LOADED
+                if text != wanted:
+                    raise Failure(f"IDENTIFY answered status {text!r}, expected {wanted!r}")
+    finally:
+        session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, original)
+    return True
+
+
 def run_interface_usable_after(uci: Uci) -> bool:
     expect(uci, "interface-usable-after: the control target still answers IDENTIFY",
            bytes([TARGET_CONTROL, CTRL_CMD_IDENTIFY]), STATUS_OK, reply_prefix=b"CONTROL TARGET")
@@ -931,6 +1535,8 @@ def main() -> int:
     # $DF1C only belongs to the command interface once the setting is on; before
     # that the address is the REU's, so the suite must not write to it.
     interface_enabled = False
+    # The SoftIEC drive as the device had it, when this suite switched it on.
+    softiec_original: str | None = None
 
     def run(name: str, fn, *fn_args) -> None:
         if name not in selected:
@@ -980,6 +1586,16 @@ def main() -> int:
                     f"identification $C9 (or $49 while an interrupt is pending)"
                 )
 
+        # The SoftIEC scenarios need the drive loaded. A machine that ships with
+        # it off (an Ultimate II+L does) would otherwise fail them for a setting
+        # this suite never looked at.
+        with check("the SoftIEC drive is switched on for the SoftIEC scenarios"):
+            current = str(session.get_config(SOFTIEC_CATEGORY)[SOFTIEC_ENABLE])
+            if current != "Enabled":
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, "Enabled")
+                softiec_original = current
+            detail(f"{SOFTIEC_ENABLE}: {current}")
+
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
         run("palette", run_palette, uci)
@@ -988,6 +1604,10 @@ def main() -> int:
         run("load-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_LOAD_REU, "load-reu-disabled")
         run("save-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_SAVE_REU, "save-reu-disabled")
         run("softiec-single-part-reply", run_softiec_single_part_reply, uci)
+        run("get-drvinfo", run_get_drvinfo, session, uci)
+        run("softiec-x00-name", run_softiec_x00_name, ftp, uci)
+        run("softiec-setting-modes", run_softiec_setting_modes, session, uci)
+        run("palette-stream", run_palette_stream, session, uci)
         run("interface-usable-after", run_interface_usable_after, uci)
 
     except Failure as exc:
@@ -998,6 +1618,12 @@ def main() -> int:
         # both run even if the first one fails.
         released = release_interface(uci) if interface_enabled else True
         restored = restore_settings(session, original, args.keep_config)
+        if softiec_original is not None and not args.keep_config:
+            try:
+                session.set_config(SOFTIEC_CATEGORY, SOFTIEC_ENABLE, softiec_original)
+            except Failure as exc:
+                detail(f"could not put {SOFTIEC_ENABLE} back to {softiec_original}: {exc}")
+                restored = False
         removed = ftp.cleanup()
         cleanup_ok = released and restored and removed
 

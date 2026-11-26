@@ -828,6 +828,36 @@ TEST(TempAutoCleanupTest, CountCleanupDefersOpenMountedTempUntilBackingHandleClo
     EXPECT_EQ(2, (int)env.filesystem->get_deleted_paths().size());
 }
 
+TEST(TempAutoCleanupTest, EvictingDeferredMountedTempDeletesItAfterUnlisting)
+{
+    set_auto_cleanup(true);
+    set_use_cache_subfolder(true);
+
+    TempTestEnvironment env;
+    env.reset();
+
+    // The oldest temp is mounted; count cleanup defers it because the mount holds its file open.
+    std::string mount_path = create_managed_temp_file(env, "mounted.mnt", 80);
+    File *mounted_file = NULL;
+    ASSERT_EQ(FR_OK, env.fm->fopen((mount_path + "/mounted.bin").c_str(), FA_READ, &mounted_file));
+    env.fm->fclose(mounted_file);
+
+    std::vector<std::string> others;
+    for (int i = 0; i < 10; i++) {
+        others.push_back(create_managed_temp_file(env, "other.mnt", 80));
+    }
+    EXPECT_TRUE(env.filesystem->exists(temp_relative_path(mount_path)));
+
+    // Mounting eight more images pushes the cache past its bound and evicts the oldest mount,
+    // which closes its backing file and so deletes it, while the victim is being released.
+    for (int i = 0; i < 8; i++) {
+        File *f = NULL;
+        ASSERT_EQ(FR_OK, env.fm->fopen((others[i] + "/mounted.bin").c_str(), FA_READ, &f));
+        env.fm->fclose(f);
+    }
+    EXPECT_FALSE(env.filesystem->exists(temp_relative_path(mount_path)));
+}
+
 TEST(TempAutoCleanupTest, LowercaseTempRootResolvesCanonicalManagedPath)
 {
     set_auto_cleanup(false);

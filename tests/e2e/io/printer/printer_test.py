@@ -101,6 +101,11 @@ POLL_INTERVAL_SECONDS = 0.5
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # The menu toggle is observable, so it is waited for rather than slept on.
 MENU_CLOSE_TIMEOUT_SECONDS = 5.0
+# Flush/Eject shows this progress dialog while the printer task compresses the page and
+# writes the file, and the menu takes no key until it closes (iec_printer.cc,
+# MENU_PRINTER_FLUSH). Measured on an Ultimate 64 Elite: about 5 s for a bitmap page.
+FLUSH_PROGRESS_TEXT = "Flushing/Ejecting page..."
+FLUSH_TIMEOUT_SECONDS = 120.0
 # Enough Back presses to climb out of the deepest screen a launcher leads to,
 # and one descent into the browser; and deeper than the launcher's own list,
 # so Back reaches its first entry. See enter_file_browser.
@@ -452,6 +457,11 @@ def enter_file_browser(client, settle):
         time.sleep(settle)
 
 
+def flush_in_progress(client):
+    screen = client.get_menu_screen()
+    return screen is not None and any(FLUSH_PROGRESS_TEXT in row for row in menu_screen_text(screen))
+
+
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
     if client.get_menu_screen() is not None:
@@ -533,6 +543,10 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     time.sleep(settle)
     client.tap_key("return")  # trigger it
     time.sleep(1.0)
+    took = wait.wait_until(lambda: not flush_in_progress(client),
+                           "the Flush/Eject progress dialog to close",
+                           timeout=FLUSH_TIMEOUT_SECONDS)
+    detail(f"the flush held the menu for {took + 1.0:.1f}s")
 
     # Close what this function opened, so the caller's teardown does not have to
     # tap its way out with RETURN, which activates the entry under the cursor.
@@ -898,6 +912,28 @@ def combos_for(args):
     return [(e, m) for e in emulations for m in modes]
 
 
+def check_enable_alone(client, prg_bytes, args):
+    """Enabling the printer by itself, from Disabled, makes the device answer on the bus.
+
+    apply_settings() sets IEC printer first and then ten more items, and each set re-applies
+    the whole page, so a printer that only comes up on the second set still passes there.
+    This sets the one item and prints at once, as F2 > Printer Settings does."""
+    check_start("IEC printer Disabled -> Enabled alone: device answers on the IEC bus")
+    client.set_config(CONFIG_CATEGORY, "IEC printer", "Disabled")
+    client.set_config(CONFIG_CATEGORY, "Bus ID", args.bus_id)
+    client.set_config(CONFIG_CATEGORY, "IEC printer", "Enabled")
+    classification, status = classify_and_run(
+        client, prg_bytes, "epson", "text", 2, 1, args.bus_id,
+        args.timeout_seconds, POLL_INTERVAL_SECONDS,
+    )
+    if classification != "PASS_RUN":
+        check_fail(f"{classification}: the printer did not answer after being enabled in the settings "
+                   f"(status {status})")
+        return False
+    check_ok()
+    return True
+
+
 def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_enabled, disambiguate):
     label = f"{emulation}/{mode}"
     check_start(f"print {label}: apply settings + run PRG")
@@ -1016,16 +1052,14 @@ def main():
     assertions_enabled = not args.no_assertions
 
     if targets.is_cartridge(args.host):
-        # Measured on u2@c64u, 2026-09-04: the PRG this suite runs to make the
-        # C64 print never starts, so every phase times out after 60s with REST
-        # still answering. It is the same shape as the load and run actions
-        # skipped in prg_context_menu_test on this target, and the same
-        # evidence applies: driven by hand, the device runs the program.
+        # Measured on u2@c64u: the program prints and the page is written, but
+        # after Flush/Eject the cartridge's menu stays blocked for up to 70s,
+        # so the suite after this one finds a menu that will not open. Kept
+        # skipped until the printer's flush is fixed on the cartridge.
         suite_skip(
             "printer_test",
-            "the PRG that drives the printer does not start when this suite "
-            "runs against a cartridge inside a computer; see the same skip in "
-            "prg_context_menu_test")
+            "after Flush/Eject the cartridge's menu stays blocked for up to "
+            "70 seconds, which breaks the suite that runs next")
         return 0
 
     client = U64Client(args.host, args.password)
@@ -1062,6 +1096,10 @@ def main():
     combos = combos_for(args)
     disambiguate = len(combos) > 1
     try:
+        if not args.no_config_change and not args.issue_717_basic:
+            if not check_enable_alone(client, prg_bytes, args):
+                results.append(("epson", "text", "FAIL_ENABLE_ALONE", "-"))
+                combos = []  # the settings-only path is broken; the matrix would mask it
         for emulation, mode in combos:
             classification, output_base, _status = run_combo(
                 client, inspector, prg_bytes, args, emulation, mode, assertions_enabled, disambiguate,

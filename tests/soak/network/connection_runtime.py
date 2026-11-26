@@ -51,6 +51,9 @@ class RuntimeSettings:
     victim_ip: str = ""
     session_slots: int = 4
     reap_timeout_s: float = 75.0
+    # Whether the machine serves the VIC, audio and debug streams and the debug register;
+    # see Machine.has_data_streams.
+    data_streams: bool = True
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,13 @@ class ProbeExecutionContext:
 
 
 Operation = Callable[[RuntimeSettings], str]
-SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00)
+# The stress profile holds more connections than the network stack has sockets (16,
+# MEMP_NUM_NETCONN), so a listener's accept fails for as long as they are all taken:
+# measured on an Ultimate II+L, DMA connections were reset for over two seconds. A
+# refusal that clears within the last delays is the cap working; one that does not fails.
+SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00, 2.00, 4.00)
+# A written value that reads back wrong is not the cap, so it gets only the first delays.
+MISMATCH_RETRIES = 4
 
 
 class RunProbe(Protocol):
@@ -155,7 +164,10 @@ def is_retryable_surface_error(error: Exception) -> bool:
     if isinstance(error, ftplib.Error):
         detail = str(error).strip()
         if len(detail) >= 3 and detail[:3].isdigit():
-            return int(detail[:3]) in {425, 450, 550}
+            # 421 is the session cap refusing. The stress profile keeps the cap's four
+            # sessions busy, and ftpd frees a slot only when the session's task has ended,
+            # after the client's close, so a reconnect can arrive before it does.
+            return int(detail[:3]) in {421, 425, 450, 550}
     if isinstance(error, (ConnectionResetError, BrokenPipeError, TimeoutError, socket.timeout)):
         return True
     if isinstance(error, (http.client.IncompleteRead, http.client.RemoteDisconnected, http.client.ResponseNotReady)):
@@ -167,7 +179,7 @@ def is_retryable_surface_error(error: Exception) -> bool:
         return (
             "empty telnet text" in detail
             or "timed out" in detail
-            or "missing audio mixer write value" in detail
+            or "missing setting value" in detail
             or "missing telnet text" in detail
             or "verification mismatch" in detail
         )
@@ -200,6 +212,8 @@ def run_surface_operation(
             if on_error is not None:
                 on_error(error)
             if not is_retryable_surface_error(error) or attempt + 1 >= attempts:
+                raise
+            if attempt + 1 >= MISMATCH_RETRIES and "verification mismatch" in str(error).lower():
                 raise
             time.sleep(SURFACE_OPERATION_RETRY_DELAYS_S[attempt])
     raise RuntimeError(f"{protocol} surface operation failed without error") from last_error

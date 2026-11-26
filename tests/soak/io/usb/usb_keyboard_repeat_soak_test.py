@@ -65,7 +65,7 @@ import bootstrap  # noqa: E402,F401
 import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
 from api import MachineApi  # noqa: E402
-from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
+from report import Failure, check, detail, format_exception, suite_fail, suite_ok, suite_skip  # noqa: E402
 from rest import RestClient, header_value  # noqa: E402
 from pico_hid import PROTOCOL_VERSION, Pico, discover_pico, setup_pico  # noqa: E402
 
@@ -585,7 +585,11 @@ def main() -> int:
         setup_pico(args.wifi_ssid, args.pico_host)
         print("\nThen run:\n\n./run-tests -H u64 --soak -s usb-keyboard-repeat")
         return 0
-    host = args.pico_host or discover_pico()
+    host = args.pico_host or discover_pico(optional=True)
+    if host is None:
+        suite_skip("usb_keyboard_repeat_soak_test",
+                   "no Pico HID fixture answers on this network; name one with --pico-host")
+        return 0
     pico = Pico(host)
     u64 = U64(args.host, args.password, args.timeout)
     duration = args.duration or DEFAULT_DURATION[args.profile]

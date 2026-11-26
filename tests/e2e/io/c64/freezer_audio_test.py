@@ -24,6 +24,7 @@ the streams themselves have to do is tests/e2e/av/stream_test.py's.
 from __future__ import annotations
 
 import argparse
+import itertools
 import struct
 import sys
 import time
@@ -38,7 +39,7 @@ import cli                                                       # noqa: E402
 import menu as menu_lib                                          # noqa: E402
 from api import UltimateApi                                      # noqa: E402
 from assembler import assemble                                   # noqa: E402
-from av_stream import AvStreamCapture, audio_rms                 # noqa: E402
+from av_stream import AvStreamCapture, audio_rms, audio_samples  # noqa: E402
 from report import (Failure, check, check_skip, detail,          # noqa: E402
                     format_exception, suite_fail, suite_ok, teardown_step)
 
@@ -146,9 +147,32 @@ def require_silence(capture: AvStreamCapture, ceiling: float, what: str) -> floa
     while quiet > ceiling and time.monotonic() < deadline:
         quiet = peak(capture)
     if quiet > ceiling:
+        detail(describe_sound(capture))
         raise Failure(f"{what} left the machine audible at RMS {quiet:.3f}, "
                       f"over the {ceiling:.3f} a silenced machine stays under")
     return quiet
+
+
+def describe_sound(capture: AvStreamCapture) -> str:
+    """What the last window held, so a sound nobody asked for can be told apart.
+
+    A packet carries 192 stereo frames. A steady tone keeps one zero-crossing
+    count and one level from packet to packet; music or noise does not.
+    """
+    packets = capture.audio_packets
+    if not packets:
+        return "no audio packets in the last window"
+    levels = []
+    crossings = []
+    for packet in packets:
+        samples = audio_samples(packet)
+        left, right = samples[0::2], samples[1::2]
+        levels.append("%.3f/%.3f" % tuple(
+            (sum(v * v for v in side) / len(side)) ** 0.5 / 32768.0 for side in (left, right)))
+        crossings.append(sum(1 for a, b in itertools.pairwise(left) if (a < 0) != (b < 0)))
+    return (f"{len(packets)} packets from {sorted(capture.source_addresses)}, "
+            f"{capture.foreign_packets} foreign; left/right RMS {levels[:8]}; "
+            f"left zero crossings per packet {crossings[:8]}")
 
 
 def tone_sid() -> bytes:
@@ -210,7 +234,15 @@ def run_checks(device: UltimateApi, interface: str, mixer_mute: bool) -> None:
     tune = tone_sid()
     with AvStreamCapture(device.target) as capture:
         with check("entering the freezer menu is silent on a silent machine"):
-            require_silence(capture, AUDIBLE_RMS, "the BASIC prompt")
+            try:
+                require_silence(capture, AUDIBLE_RMS, "the BASIC prompt")
+            except Failure:
+                # Whatever is sounding was left by something before this suite.
+                for store in (MIXER_STORE, "SID Sockets Configuration", "UltiSID Configuration",
+                              "C64 and Cartridge Settings"):
+                    if serves_store(device, store):
+                        detail(f"{store}: {device.configs.category(store)}")
+                raise
             entry = peak_entering_menu(device, capture)
             close_menu(device)
             detail(f"entry peak RMS {entry:.3f}")

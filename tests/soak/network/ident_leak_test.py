@@ -10,6 +10,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
 import leak  # noqa: E402
+import targets  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure, format_exception, suite_fail, suite_ok  # noqa: E402
 
@@ -25,8 +26,11 @@ def main() -> int:
     if not leak.heap_is_served(api.machine.heap, "ident_leak_test"):
         return 0
 
+    # The ident datagram goes to the device itself, not to a cartridge@computer token.
+    device = targets.device_of(args.host)
+
     def once() -> None:
-        if not identify(args.host):
+        if not identify(device):
             raise Failure("ident did not return a matching JSON reply (no retry)")
 
     leak.slope(once, api.machine.heap_free, warmup=3, iterations=20,

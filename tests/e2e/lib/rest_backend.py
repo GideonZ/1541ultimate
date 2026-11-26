@@ -14,7 +14,7 @@ from pathlib import Path
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
-from report import Failure
+from report import Failure, warn
 from collections.abc import Sequence
 import api as api_lib
 import json
@@ -27,11 +27,11 @@ import urllib.parse
 import urllib.request
 from menu import wait_screen_changes
 from menu import wait_screen_settled
-from backend import (Backend, CONFIGS_PATH, KEY_ALIASES, LAUNCHER_DESCENT_STEPS,
+from backend import (Backend, CONFIGS_PATH, Frame, KEY_ALIASES, LAUNCHER_DESCENT_STEPS,
     LAUNCHER_ENTRY_ROWS, MENU_GLYPHS, NoCursorDrawn, POLL_INTERVAL_SECONDS,
     SCREEN_BYTES, SCREEN_CELLS, SCREEN_HEIGHT, SCREEN_WIDTH,
     SETTLE_TIMEOUT_SECONDS, Snapshot, char_to_combo, find_selected_row_rest,
-    measure_cursor_colour, strip_frame)
+    framed_list_selections, measure_cursor_colour, strip_frame)
 
 
 # The routes this transport drives the UI through, and the settings it reads.
@@ -134,6 +134,7 @@ class RestBackend(Backend):
         self.password = password
         self.timeout = timeout
         self.last_command = "<connect>"
+        self._framed_colour: int | None = None
         # What one key of a batch costs on this target. A cartridge target
         # pays the computer's matrix tap rate rather than the device's own key
         # queue; see tests/lib/pacing.py.
@@ -304,18 +305,14 @@ class RestBackend(Backend):
         while time.monotonic() < deadline:
             screen = self._menu_screen_body()
             if screen is not None:
-                # The menu answers the moment it opens, before the browser has
-                # drawn: on an Ultimate 64 in Overlay mode the character matrix
-                # still holds what the previous UI left there, and the browser
-                # paints over it row by row during the next few tens of
-                # milliseconds. Observed as a monitor status line from a closed
-                # session being read as "the monitor is up", so the key that
-                # would have opened it was never sent. Opening the menu is a
-                # redraw like any other, so it gets the same wait every keypress
-                # gets: the screen has to hold still before it is anyone's to
-                # read.
-                wait_screen_settled(self._menu_screen_body,
-                                    timeout=SETTLE_TIMEOUT_SECONDS, known=screen)
+                # The first reads can still hold the frame the menu last drew,
+                # until its task runs and redraws. Measured on a C64 Ultimate: a
+                # monitor frame for 40ms after a reopen that drew the browser.
+                # The settle starts from the screen just read.
+                settled, _ = wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS,
+                                                 known=screen)
+                if not settled:
+                    warn(f"the menu screen was still changing {SETTLE_TIMEOUT_SECONDS:g}s after it opened")
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
@@ -484,6 +481,21 @@ class RestBackend(Backend):
     def capture(self) -> Snapshot:
         return self._decode(self._body())
 
+    def framed_selections(self) -> dict[Frame, tuple[int, str, list[str]]]:
+        """The highlighted entry of each framed list: {frame: (index, text, entries)}.
+
+        See framed_list_selections: the colour of an entry's first cell, read here
+        from the colour plane of one menu_screen capture. The remembered colour is
+        kept apart from _cursor_colour, which is the browser cursor's and need not
+        be the colour a popup or settings list highlights with.
+        """
+        body = self._body()
+        colours = body[SCREEN_CELLS:SCREEN_BYTES]
+        found, self._framed_colour = framed_list_selections(
+            self._decode(body).lines, lambda row, column: colours[row * SCREEN_WIDTH + column],
+            self._framed_colour)
+        return found
+
     def selected_row(self, entry_rows: Sequence[int] | None = None) -> int:
         return self._settled_selection(entry_rows)[1]
 
@@ -614,7 +626,8 @@ class RestBackend(Backend):
         self.last_command = ch
         return self.send_combo(char_to_combo(ch))
 
-    def send_text(self, text: str, label: str) -> Snapshot:
+    def send_text(self, text: str, label: str, *, settle: bool = True) -> Snapshot:
+        # REST settles on the screen changing, which costs nothing extra; `settle` is Telnet's.
         self.last_command = label
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]

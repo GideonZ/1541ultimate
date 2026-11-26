@@ -17,8 +17,9 @@ class FileSystemInFile_FAT: public FileSystemInFile {
 	FileSystemFAT *fs;
 	BlockDevice_File *blk;
     Partition *prt;
+    bool writable;
 public:
-	FileSystemInFile_FAT();
+	FileSystemInFile_FAT(bool writable = true);
 	virtual ~FileSystemInFile_FAT();
 
 	void init(File *f);

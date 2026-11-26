@@ -11,8 +11,9 @@ class BlockDevice_File : public BlockDevice
     int file_size;
     int sector_size;
     int shift;
+    bool writable;
 public:
-    BlockDevice_File(File *file, int sec_size);
+    BlockDevice_File(File *file, int sec_size, bool writable = true);
     ~BlockDevice_File();
 
     virtual DSTATUS init(void);

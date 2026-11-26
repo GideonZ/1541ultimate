@@ -130,3 +130,88 @@ void create_iec_d64_fixture(const char *path)
 }
 
 
+
+// A D64 holding GEOS files, for SI-149. A GEOS file is an ordinary directory entry
+// whose type bits say SEQ, PRG or USR, with the info block pointer at offset $15 and
+// the file structure at offset $17 filled in as well. The image also holds a plain PRG
+// so that the two cases can be compared.
+static void d64_make_geos(uint8_t *disk, int dir_index, int info_track, int info_sector,
+                          uint8_t structure)
+{
+    uint8_t *entry = d64_sector(disk, 18, 1) + 32 * dir_index;
+    entry[0x15] = (uint8_t)info_track;
+    entry[0x16] = (uint8_t)info_sector;
+    entry[0x17] = structure;   // 0 is sequential, 1 is VLIR
+    entry[0x18] = 6;           // GEOS file type
+}
+
+void create_iec_geos_fixture(const char *path)
+{
+    const char *testname = "create_iec_geos_fixture";
+    uint8_t *disk = new uint8_t[D64_SIZE];
+    memset(disk, 0, D64_SIZE);
+
+    uint8_t *bam = d64_sector(disk, 18, 0);
+    bam[0] = 18;
+    bam[1] = 1;
+    bam[2] = 0x41;
+    bam[3] = 0x00;
+    for (int track = 1; track <= D64_TRACKS; track++) {
+        uint8_t *entry = bam + 4 * track;
+        entry[0] = (uint8_t)D64_SECTORS_PER_TRACK[track];
+        entry[1] = entry[2] = entry[3] = 0;
+        for (int sector = 0; sector < D64_SECTORS_PER_TRACK[track]; sector++) {
+            entry[1 + (sector >> 3)] |= (uint8_t)(1 << (sector & 7));
+        }
+    }
+    memset(bam + 144, 0xA0, 27);
+    memcpy(bam + 144, "GEOS TEST", 9);
+    bam[144 + 21] = '2';
+    bam[144 + 22] = 'A';
+    d64_set_allocated(bam, 18, 0);
+    d64_set_allocated(bam, 18, 1);
+
+    uint8_t *dir = d64_sector(disk, 18, 1);
+    dir[0] = 0;
+    dir[1] = 0xFF;
+
+    static const uint8_t geosprg[] = "GEOSPRG";
+    static const uint8_t geosseq[] = "GEOSSEQ";
+    static const uint8_t geosusr[] = "GEOSUSR";
+    static const uint8_t plainprg[] = "PLAINPRG";
+
+    // A load address of $0801 in front, so that the PRG case is one a C64 could run.
+    d64_add_file(disk, 0, geosprg,  sizeof(geosprg) - 1,  2, 17, 0, "\x01\x08GEOS:PRG");
+    d64_add_file(disk, 1, geosseq,  sizeof(geosseq) - 1,  1, 17, 1, "GEOS:SEQ");
+    d64_add_file(disk, 2, geosusr,  sizeof(geosusr) - 1,  3, 17, 2, "GEOS:VLIR");
+    d64_add_file(disk, 3, plainprg, sizeof(plainprg) - 1, 2, 17, 3, "\x01\x08PLAIN:PRG");
+
+    // One info block, shared by the three GEOS entries. Its first byte is the $03 an
+    // info block carries; the rest only has to be recognisable in a CVT stream.
+    uint8_t *info = d64_sector(disk, 17, 10);
+    info[0] = 0;
+    info[1] = 0xFF;
+    info[2] = 0x03;
+    memcpy(info + 4, "INFO BLOCK", 10);
+    d64_set_allocated(bam, 17, 10);
+
+    d64_make_geos(disk, 0, 17, 10, 0);
+    d64_make_geos(disk, 1, 17, 10, 0);
+    d64_make_geos(disk, 2, 17, 10, 1);
+
+    // The VLIR entry points at a record block, not at a chain of data. A drive hands
+    // that block over as it stands, so it is a full sector.
+    uint8_t *records = d64_sector(disk, 17, 2);
+    memset(records, 0, 256);
+    records[0] = 0;
+    records[1] = 0xFF;
+    records[2] = 17;   // record 0 lives at 17:11
+    records[3] = 11;
+    memcpy(records + 4, "VLIR", 4);
+
+    FILE *f = fopen(path, "wb");
+    REQUIRE(f != NULL);
+    REQUIRE(fwrite(disk, 1, D64_SIZE, f) == D64_SIZE);
+    REQUIRE(fclose(f) == 0);
+    delete[] disk;
+}

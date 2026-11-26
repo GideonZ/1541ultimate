@@ -17,6 +17,10 @@
  *      a machine with different hardware is the normal case for this, and it
  *      must warn rather than fail: the warning goes to stdout, which the
  *      firmware routes to syslog.
+ *
+ *   3. An enum listed in its own order (ConfigItem::setListOrder). The menu,
+ *      the +/- keys and REST follow the list order, while the value that is
+ *      stored, and the label a .cfg names, stay those of the enum.
  */
 
 #include <stdio.h>
@@ -101,6 +105,14 @@ public:
 };
 
 static const char *chips[] = { "6581", "8580" };
+
+static const char *listed[] = { "Zero", "One", "Two", "Three" };
+static const uint8_t listed_order[] = { 2, 0, 3, 1 };
+
+static t_cfg_definition order_defs[] = {
+    { 0x01, CFG_TYPE_ENUM,  "Listed", "%s", listed, 0, 3, 0 },
+    { 0x02, CFG_TYPE_ENUM,  "From One", "%s", listed, 1, 3, 1 },
+    { CFG_TYPE_END, CFG_TYPE_END, "", "", NULL, 0, 0, 0 } };
 
 /* Real ARMSID enum labels. They carry leading spaces so the menu can right
    align them, and one contains a space in the middle. Both shapes end up in a
@@ -240,6 +252,158 @@ int main(int argc, char **argv)
     orphan.load("Emulation Mode=6581\n\n");
     ok = ConfigIO::S_read_from_file(&orphan, &log5);
     check(!ok, "an item outside any store is reported as an error");
+
+    printf("-- an enum listed in its own order\n");
+    ConfigStore *ordered = new ConfigStore(NULL, "Ordered", order_defs, NULL);
+    cm->add_custom_store(ordered);
+    ConfigItem *item = ordered->find_item(0x01);
+    item->setListOrder(listed_order);
+
+    IndexedList<ConfigSetting *> choices(4, NULL);
+    item->fetch_possible_settings(choices);
+    check(choices.get_elements() == 4 && !strcmp(choices[0]->setting_name.c_str(), "Two") &&
+          !strcmp(choices[3]->setting_name.c_str(), "One"),
+          "the choices are listed in the list order");
+    check(choices[0]->setting_index == 2 && choices[3]->setting_index == 1,
+          "each listed choice still selects its own enum value");
+    check(item->listPosition(2) == 0 && item->listPosition(1) == 3,
+          "a value's position is its place in the list order");
+
+    item->setValue(2);
+    item->next(1);
+    check(item->getValue() == 0, "+ steps to the next value in the list order");
+    item->next(1);
+    item->previous(1);
+    check(item->getValue() == 0, "- steps back in the list order");
+    item->setValue(1);
+    item->next(1);
+    check(item->getValue() == 2, "+ on the last listed value wraps to the first");
+    item->previous(1);
+    check(item->getValue() == 1, "- on the first listed value wraps to the last");
+    item->setValue(2);
+    item->next(5);
+    check(item->getValue() == 0, "a step larger than the list wraps around it");
+    item->setValue(2);
+    item->previous(5);
+    check(item->getValue() == 1, "a large step back wraps around it too");
+    item->setValue(2);
+    item->next(-1);
+    check(item->getValue() == 1, "a negative step moves back in the list order");
+
+    item->setValue(3);
+    MemFile listed_out;
+    ConfigIO::S_write_to_file(&listed_out);
+    check(contains(listed_out.text(), "Listed=Three"),
+          "a .cfg names the selected label, whatever the list order");
+    MemFile listed_in;
+    StreamTextLog log6(4096);
+    listed_in.load("[Ordered]\nListed=One\n\n");
+    check(ConfigIO::S_read_from_file(&listed_in, &log6) && item->getValue() == 1,
+          "reading a .cfg selects the label's enum value, not a list position");
+
+    item->setListOrder(NULL);
+    item->setValue(1);
+    item->next(1);
+    check(item->getValue() == 2, "without a list order, + still steps in value order");
+
+    /* An enum whose values start at 1 and that has no list order: listed,
+       stepped and positioned exactly as by value. */
+    ConfigItem *from_one = ordered->find_item(0x02);
+    IndexedList<ConfigSetting *> plain(4, NULL);
+    from_one->fetch_possible_settings(plain);
+    check(plain.get_elements() == 3 && plain[0]->setting_index == 1 && plain[2]->setting_index == 3 &&
+          !strcmp(plain[0]->setting_name.c_str(), "One"),
+          "an enum from 1 without a list order lists its values in value order");
+    check(from_one->listPosition(1) == 0 && from_one->listPosition(3) == 2,
+          "its positions count from its minimum");
+    from_one->setValue(3);
+    from_one->next(1);
+    check(from_one->getValue() == 1, "+ wraps from its maximum to its minimum");
+    from_one->previous(1);
+    check(from_one->getValue() == 3, "- wraps from its minimum to its maximum");
+
+    static t_cfg_definition path_defs[] = {
+        { 0x01, CFG_TYPE_STRING, "Partition config file", "%s", NULL, 0, 255, (long int)"" },
+        { CFG_TYPE_END, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
+    };
+    ConfigStore *paths = new ConfigStore(NULL, "Paths", path_defs, NULL);
+    cm->add_custom_store(paths);
+    char path[256];
+    memset(path, 'x', sizeof(path) - 1);
+    memcpy(path, "/USB0/", 6);
+    memcpy(path + 251, ".ipr", 5);
+    paths->set_string(0x01, path);
+    MemFile path_out;
+    ConfigIO::S_write_to_file(&path_out);
+    check(contains(path_out.text(), path), "a 255-character path is saved intact");
+    paths->set_string(0x01, "");
+    MemFile path_in;
+    path_in.load(path_out.text());
+    StreamTextLog path_log(4096);
+    check(ConfigIO::S_read_from_file(&path_in, &path_log), "a long path .cfg loads");
+    check(!strcmp(paths->get_string(0x01), path), "a 255-character path survives a .cfg round trip");
+
+    // The menu draws a 38-column row into a 96-byte buffer; guard the bytes around it.
+    char row[96 + 2 * 64];
+    memset(row, 'G', sizeof(row));
+    paths->find_item(0x01)->get_display_string(row + 64, 38, 1, 2);
+    bool guarded = true;
+    for (int i = 0; i < 64; i++) {
+        guarded = guarded && (row[i] == 'G') && (row[64 + 96 + i] == 'G');
+    }
+    check(guarded, "a 255-character value is drawn inside the row buffer");
+    check(!strncmp(row + 64, "Partition config file ", 22), "the item name stays readable beside a long value");
+    check(contains(row + 64, "/USB0/xxxxxxx...") && (strlen(row + 64) == 40),
+          "a long value is cut to the row and ends in \"...\"");
+    paths->set_string(0x01, "");
+    memset(row, 'G', sizeof(row));
+    check(!contains(paths->find_item(0x01)->get_display_string(row + 64, 21, 1, 2), "..."),
+          "an empty value is not shown as cut when the name fills the row");
+
+    // The allocator hands this block back as the fresh item's string, so its last byte is not 0.
+    char *used = new char[256];
+    memset(used, 'x', 256);
+    delete[] used;
+    ConfigStore *fresh_paths = new ConfigStore(NULL, "FreshPaths", path_defs, NULL);
+    cm->add_custom_store(fresh_paths);
+    char fresh_text[320];
+    sprintf(fresh_text, "[FreshPaths]\nPartition config file=%s\n", path);
+    MemFile fresh_in;
+    fresh_in.load(fresh_text);
+    check(ConfigIO::S_read_from_file(&fresh_in, &path_log), "a maximum-length path loads into a fresh store");
+    check(!strcmp(fresh_paths->get_string(0x01), path), "a maximum-length path is null-terminated");
+
+    char oversized[512];
+    memset(oversized, 'x', 400);
+    strcpy(oversized + 400, "\n[Paths]\nPartition config file=/Temp/ok.ipr\n");
+    MemFile oversized_in;
+    oversized_in.load(oversized);
+    check(!ConfigIO::S_read_from_file(&oversized_in, &path_log), "an oversized CFG line is rejected");
+    check(!strcmp(paths->get_string(0x01), "/Temp/ok.ipr"), "the line after an oversized CFG line is read intact");
+
+    char oversized_last[512];
+    strcpy(oversized_last, "[Paths]\n");
+    memset(oversized_last + 8, 'x', 400);
+    oversized_last[408] = 0;
+    MemFile oversized_last_in;
+    oversized_last_in.load(oversized_last);
+    check(!ConfigIO::S_read_from_file(&oversized_last_in, &path_log), "an oversized last line without a line end is rejected");
+
+    char oversized_header[512];
+    strcpy(oversized_header, "[Paths]\nPartition config file=/Temp/kept.ipr\n[");
+    memset(oversized_header + strlen(oversized_header), 'x', 400);
+    strcpy(oversized_header + 446, "]\nPartition config file=/Temp/other.ipr\n");
+    MemFile oversized_header_in;
+    oversized_header_in.load(oversized_header);
+    check(!ConfigIO::S_read_from_file(&oversized_header_in, &path_log), "an oversized store header is rejected");
+    check(!strcmp(paths->get_string(0x01), "/Temp/kept.ipr"), "items after an oversized store header stay out of the previous store");
+
+    StreamTextLog name_log(4096);
+    MemFile long_name_in;
+    long_name_in.load("[Paths]\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n");
+    check(!ConfigIO::S_read_from_file(&long_name_in, &name_log), "a long line without '=' is rejected");
+    check(contains(name_log.getText(), "item 'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy'."),
+          "and the item name in the log stops at 40 characters");
 
     printf("\n%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

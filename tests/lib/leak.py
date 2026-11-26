@@ -85,6 +85,24 @@ def heap_is_served(heap: Callable[[], object], suite: str) -> bool:
     return False
 
 
+# Another client's session holds heap for as long as it lasts: the bench's status monitor
+# opens an FTP session, whose buffer alone is 8 KB, every few seconds. A reading is the
+# highest of several spread over longer than such a session, so only memory that stays
+# taken counts. Measured on an Ultimate 64 Elite: 9104 bytes read as a leak of twelve disk
+# images, with the monitor's FTP session opening at the second reading.
+STEADY_READINGS = 4
+STEADY_INTERVAL_SECONDS = 1.0
+
+
+def steady(heap: Callable[[], int]) -> int:
+    """The free heap, as the highest of STEADY_READINGS readings."""
+    best = heap()
+    for _ in range(STEADY_READINGS - 1):
+        time.sleep(STEADY_INTERVAL_SECONDS)
+        best = max(best, heap())
+    return best
+
+
 def slope(once: Callable[[], None], heap: Callable[[], int], *,
           warmup: int, iterations: int, tolerance_bytes_per_op: float,
           unit: str, units: str = "", settle_seconds: float = 0.0,
@@ -109,12 +127,12 @@ def slope(once: Callable[[], None], heap: Callable[[], int], *,
     measured: Slope | None = None
     try:
         with check(f"free heap is flat across {iterations} more {units}"):
-            before = heap()
+            before = steady(heap)
             for _ in range(iterations):
                 once()
             if settle_seconds:
                 time.sleep(settle_seconds)
-            measured = Slope(before=before, after=heap(), iterations=iterations,
+            measured = Slope(before=before, after=steady(heap), iterations=iterations,
                              unit=unit, units=units)
             if measured.per_op > tolerance_bytes_per_op:
                 raise Failure(

@@ -93,6 +93,7 @@ class Keyboard_USB : public Keyboard
     bool repeat_stale;
     int  injected_matrix_hold;
     int  injected_matrix_gap;
+    uint8_t injected_cursor_key; // column 0 bit, pressed once SHIFT is down
 	void applyMatrixState(void);
 	void clearInjectedMatrixState(void);
 	void setInjectedMatrixKey(int key);
