@@ -26,6 +26,8 @@ static reply_time reply_at;
 static bool timed_out;
 static bool module_ready;
 static TickType_t buffer_wait;      // the ticks the last GetBuffer was given
+static int suspended;               // depth of vTaskSuspendAll; every function must return it to 0
+static int critical;                // depth of the critical section; the same
 // The fake clock: it moves only when a wait ends without a notification, or by wait_elapse
 static TickType_t now = 1000;
 static TickType_t wait_elapse;      // the ticks a wait that ends with a notification took
@@ -98,9 +100,11 @@ BaseType_t xTaskNotifyFromISR(TaskHandle_t t, uint32_t v, int a, BaseType_t *w)
     return pdTRUE;
 }
 
-// As in FreeRTOS: without overwrite, a notification that is pending stays
+// As in FreeRTOS: without overwrite, a notification that is pending stays. The owner check and the
+// notification are one step: only with the scheduler suspended can the waiter not leave in between.
 BaseType_t xTaskNotify(TaskHandle_t t, uint32_t v, int a)
 {
+    CHECK(suspended > 0);
     if (notify_pending && (a == eSetValueWithoutOverwrite)) {
         return pdFAIL;
     }
@@ -114,7 +118,6 @@ TickType_t xTaskGetTickCount(void)
     return now;
 }
 
-static int suspended;
 void vTaskSuspendAll(void)
 {
     suspended++;
@@ -174,8 +177,15 @@ bool wifi_module_ready(void)
 
 static void (*safe_hook)(void);     // runs once, at the next critical section
 
+extern "C" void leave_safe_section(void)
+{
+    CHECK(critical > 0);
+    critical--;
+}
+
 extern "C" void enter_safe_section(void)
 {
+    critical++;
     if (safe_hook) {
         void (*hook)(void) = safe_hook;
         safe_hook = NULL;
@@ -421,6 +431,7 @@ static int fill_power(uint8_t *request, void *context)
 static int take_power(const uint8_t *reply, int size, uint16_t sequence, void *context)
 {
     takes++;
+    CHECK(suspended > 0); // a reply is read and freed with no reset of the pool in between
     const rpc_get_power_mode_resp *r = (const rpc_get_power_mode_resp *)reply;
     if ((size < (int)sizeof(*r)) || (r->hdr.sequence != sequence) || (r->hdr.command != CMD_GET_POWER_MODE)) {
         return WIFI_CALL_FOREIGN;
@@ -474,6 +485,8 @@ static void answer_now(command_buf_t *tx)
 // What every end of a call leaves: no slot, no notification, no waiter that a later wake could reach
 static void check_clean(void)
 {
+    CHECK(suspended == 0);
+    CHECK(critical == 0);
     CHECK(!notify_pending);
     wifi_wake(me());
     CHECK(!notify_pending);

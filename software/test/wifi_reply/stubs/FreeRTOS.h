@@ -24,6 +24,7 @@ static inline BaseType_t xQueueSendFromISR(QueueHandle_t q, const void *item, Ba
 #define pdMS_TO_TICKS(x) (x)
 // The test can let the ISR run just before a critical section
 extern "C" void enter_safe_section(void);
+extern "C" void leave_safe_section(void);
 #define ENTER_SAFE_SECTION enter_safe_section()
-#define LEAVE_SAFE_SECTION
+#define LEAVE_SAFE_SECTION leave_safe_section()
 #endif
