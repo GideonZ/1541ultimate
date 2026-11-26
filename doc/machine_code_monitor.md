@@ -895,7 +895,7 @@ When the debugger steps ROM code, or code in RAM under ROM, it completes the ins
 - An I/O access happens once. A read-modify-write instruction such as `INC $D019` writes the I/O register once instead of twice, and an indexed read that crosses a page does not make the extra dummy read.
 - An instruction that writes `$01` still changes the banking, because it runs on the real 6510.
 
-In UI Freeze mode, a Step Over of a `JSR` into ROM and a Step Out from ROM are completed one instruction at a time while the machine stays frozen. This stops early at an enabled breakpoint, at an instruction the debugger cannot step (`BRK` or an undocumented opcode), or after 8192 instructions. Press the same key, or `G`, to continue.
+While the menu on the HDMI or C64 screen holds the machine frozen, a Step Over of a `JSR` into ROM and a Step Out from ROM are completed one instruction at a time and the machine stays frozen. This stops early at an enabled breakpoint, at an instruction the debugger cannot step (`BRK` or an undocumented opcode), or after 8192 instructions. Press the same key, or `G`, to continue.
 
 On an Ultimate II+ or II+L cartridge, the debugger can only stop and step code in RAM. See [Hardware support](#hardware-support).
 
