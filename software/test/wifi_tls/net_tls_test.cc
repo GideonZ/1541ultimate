@@ -1053,6 +1053,22 @@ static void test_abort_during_read_step(void)
           (int)got.size(), last.c_str());
     check(stepped_in() == (int)rec.size(), "read abort: the ciphertext is fed once (%d of %d B)", stepped_in(), (int)rec.size());
 
+    // A step that was never sent (UNSENT) changes nothing: the session goes on
+    fresh();
+    h = open_ok();
+    server_push(h, EV_DATA, record('D', 100, 8));
+    f = Forced();
+    f.result = WIFI_TLS_UNSENT;
+    f.delay_ms = 100;
+    world_module.forced.push_back(f);
+    world_abort_at = world_tick + 100 * 200 / 1000;
+    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } };
+    r = read_cmd(h, 1472);
+    world_abort_hook = [] { net.abort(0); };
+    world_abort_at = 0xFFFFFFFF;
+    got = read_all(h, 1472, &last);
+    check(got == expected(8, 100), "read abort: an UNSENT step leaves the session whole (%d B, %s)", (int)got.size(), last.c_str());
+
     // The abort comes first: nobody knows what the module did, so the session fails and says so
     fresh();
     h = open_ok();

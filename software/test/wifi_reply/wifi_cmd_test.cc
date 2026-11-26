@@ -821,6 +821,21 @@ static void test_call_reset_while_making_request(void)
     CHECK(uart.buffers_free == 1);
     check_clean();
 
+    // Nor is it freed when no reply slot is free and the pool was reset
+    call_setup();
+    rpc_header_t held[WIFI_REPLY_SLOTS];
+    for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+        CHECK(wifi_reply_register(&held[i]));
+    }
+    on_get_buffer = pool_reset_now;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && uart.buffers_free == 1);
+    for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+        answer(held[i]);
+    }
+    notify_pending = false;
+    check_clean();
+
     // A reset before the call is not one for it
     call_setup();
     pool_reset_now();
