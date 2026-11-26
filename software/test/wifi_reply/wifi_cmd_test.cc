@@ -768,6 +768,42 @@ static void test_call_deadline(void)
     check_clean();
 }
 
+// A restart of the module during the wait ends it at once, with a result of its own: no answer will come
+static void restart_in_wait(int n)
+{
+    wifi_command_init(); // which resets the buffer pool, and counts it
+}
+
+static void test_call_module_restart(void)
+{
+    call_setup();
+    on_wait = restart_in_wait;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_RESTARTED);
+    CHECK(blocking_waits == 1);
+    CHECK(wait_ticks[0] == pdMS_TO_TICKS(5000));
+    CHECK(now == 1000);
+    CHECK(takes == 0);
+    check_clean();
+
+    // Also for a call without a cancel
+    call_setup();
+    on_wait = restart_in_wait;
+    call = power_call(5000, false);
+    CHECK(wifi_call(&call) == WIFI_CALL_RESTARTED);
+    CHECK(blocking_waits == 1 && now == 1000);
+    check_clean();
+
+    // A restart before the call: it starts after, and is not a restart for it
+    call_setup();
+    wifi_command_init();
+    on_wait = reply_in_wait;
+    call = power_call(5000, true);
+    CHECK(wifi_call(&call) == 0);
+    CHECK(takes == 1);
+    check_clean();
+}
+
 // A reply that was delivered before a reset of the buffer pool is not read, and not freed: the reset took it back
 static void reply_then_reset_in_wait(int n)
 {
@@ -806,6 +842,7 @@ int main(void)
     test_call_unsent();
     test_call_deadline();
     test_call_reply_before_reset();
+    test_call_module_restart();
     printf(failures ? "wifi_cmd: %d FAILED\n" : "wifi_cmd: all passed\n", failures);
     return failures ? 1 : 0;
 }
