@@ -122,6 +122,8 @@ void DmaUART::ClearRxBuffer(void)
     xQueueGenericReset(rx_bufs, pdFALSE);
     uart->flowctrl = uart->flowctrl | DMAUART_RESET; // reset pulse; will also disable interrupts
     cmd_buffer_reset(packets);
+    generation++; // after the reset, so that any doubt ends in a leak, not a double free
+    xTaskResumeAll();
 }
 
 int DmaUART::Read(uint8_t *buffer, int bufsize)
