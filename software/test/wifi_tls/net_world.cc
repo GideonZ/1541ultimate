@@ -972,7 +972,9 @@ int wifi_tls_close(uint8_t slot, uint16_t tag, uint8_t *ct_out, uint16_t room, u
     }
     log_call(0x32, slot, tag, cancel);
     bool cancelled;
-    module_wait(timeout_ms, cancel, 0, &cancelled);
+    if (!module_wait(timeout_ms, cancel, m.close_delay_ms, &cancelled) && m.close_delay_ms) {
+        return WIFI_TLS_BUSY;
+    }
     if (m.close_result >= 0) {
         return m.close_result;
     }

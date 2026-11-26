@@ -812,6 +812,34 @@ static void test_cancel_wakes_the_wait(void)
     check(late <= 10, "reset: the OPEN RPC wait ends at the reset, not at the end of a slice (%u ms late)", late);
     world_reset_at = 0xFFFFFFFF;
 
+    // The CLOSE that cleans up after an aborted OPEN stops for a reset only. A reset that comes while it
+    // waits finds no job to cancel, and wakes the worker all the same.
+    fresh();
+    world_module.open_delay_ms = 3000;
+    world_module.close_delay_ms = 900;
+    world_abort_at = world_tick + 104;
+    world_reset_at = world_tick + 144; // 200 ms after the abort, in the CLOSE
+    r = run(open_cmd(0, 0, "example.com"));
+    late = (world_tick - world_reset_at) * 5;
+    check(late <= 10, "a reset during the cleanup CLOSE of an aborted OPEN ends the wait at once (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+    world_reset_at = 0xFFFFFFFF;
+
+    // A call that is not answered ends at the handshake deadline, in the same block, not at its own timeout
+    fresh();
+    for (int i = 0; i < 3; i++) {
+        world_module.forced.push_back(Forced());
+        world_module.forced.back().delay_ms = 4900; // answered, but slowly: 14.7 s in
+    }
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    uint32_t t0 = world_ms();
+    r = run(open_cmd(0, 0, "example.com"));
+    uint32_t spent = world_ms() - t0;
+    check(r.status == "15,TLS HANDSHAKE TIMEOUT" && spent >= 14900 && spent <= 15300,
+          "a STEP that is not answered ends at the handshake deadline, 0.3 s into its 5 s (%u ms, %s)", spent,
+          r.status.c_str());
+
     // Woken, and nothing to cancel: the wait goes on to the answer
     fresh();
     world_module.open_delay_ms = 1000;

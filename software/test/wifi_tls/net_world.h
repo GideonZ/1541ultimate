@@ -183,6 +183,7 @@ struct FakeModule {
     bool ca_loaded;
     // CLOSE
     int close_result;    // forced; -1 for normal
+    uint32_t close_delay_ms; // CLOSE is answered this long after it is sent; a cancel before that ends the call BUSY
     int close_alls;
     // steps
     std::deque<Forced> forced;
