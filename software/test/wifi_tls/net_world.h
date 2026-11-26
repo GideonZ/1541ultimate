@@ -120,6 +120,7 @@ struct Forced {
     uint8_t alert_in;
     int fail_err;
     bool pt_on_no_read;  // hand out plaintext on a NO_READ step (malformed)
+    bool unavailable_after; // the module application is gone once this step is answered
 };
 
 struct FakeSession {

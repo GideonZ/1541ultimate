@@ -863,6 +863,9 @@ int wifi_tls_step(uint8_t slot, uint16_t tag, wifi_tls_step_t *st, uint32_t time
     if (forced) {
         f = m.forced.front();
         m.forced.pop_front();
+        if (f.unavailable_after) {
+            m.available = false;
+        }
     }
     bool cancelled;
     bool busy = forced && (f.result == WIFI_TLS_BUSY);

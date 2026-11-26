@@ -495,6 +495,13 @@ static void answer_now(command_buf_t *tx)
     answer(*(rpc_header_t *)tx->data);
 }
 
+// The answer comes, and the module restarts (the pool is reset) in the same transmit
+static void answer_then_restart(command_buf_t *tx)
+{
+    answer(*(rpc_header_t *)tx->data);
+    uart.generation++;
+}
+
 // What every end of a call leaves: no slot, no notification, no waiter that a later wake could reach
 static void check_clean(void)
 {
@@ -924,6 +931,14 @@ static void test_call_send_only(void)
     uart.transmit_fails = true;
     CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
     CHECK(uart.transmitted == 0 && uart.buffers_free == 1);
+    check_clean();
+
+    // The module restarts while the request is sent, and an answer from before the restart has already arrived:
+    // the restart took that buffer back to the pool, so it is not freed again
+    call_setup();
+    uart.on_transmit = answer_then_restart;
+    CHECK(wifi_call(&call) == WIFI_CALL_SENT);
+    CHECK(takes == 0 && uart.buffers_free == 0 && blocking_waits == 0);
     check_clean();
 }
 
