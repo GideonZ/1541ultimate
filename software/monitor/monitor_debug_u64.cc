@@ -91,6 +91,13 @@ protected:
     {
         volatile uint8_t *rom = rom_patch_ptr(address, cpu_port);
         if (rom) {
+            // While frozen the aperture serves the freezer cartridge, so a ROM
+            // load of a parked step comes from the monitor's copy of the image.
+            uint8_t cached = 0;
+            if (machine_is_frozen() && backend &&
+                    backend->read_monitor_rom_byte(address, cpu_port, &cached)) {
+                return cached;
+            }
             // The U64 ROM image buffers are write targets, not authoritative
             // read sources on every core. Read through the CPU-visible aperture
             // so verification sees the byte the 6510 will fetch.
