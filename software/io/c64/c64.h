@@ -306,6 +306,7 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
+    SemaphoreHandle_t ownershipLock;
     // Set once freeze() has taken the program's I/O state and set the CIA up
     // for the cartridge, cleared before unfreeze() puts that state back. The
     // keyboard is scanned from a timer on a cartridge (Keyboard_C64), so the
