@@ -130,6 +130,8 @@ static command_buf_t *wifi_call_leave(rpc_header_t tag)
 int wifi_call(const wifi_call_t *call)
 {
     command_buf_t *buf;
+    // Before the buffer: a reset of the pool from here on is seen below
+    uint32_t generation = esp32.uart->generation;
     if (esp32.uart->GetBuffer(&buf, 4) == pdFALSE) { // 20 ms
         printf(no_wifi_buf);
         return WIFI_CALL_UNSENT;
@@ -138,13 +140,23 @@ int wifi_call(const wifi_call_t *call)
     hdr->command = call->command;
     buf->size = call->fill(buf->data, call->context);
     if (!wifi_reply_register(hdr)) {
-        esp32.uart->FreeBuffer(buf);
+        if (generation == esp32.uart->generation) {
+            esp32.uart->FreeBuffer(buf);
+        }
         printf(no_wifi_slot);
         return WIFI_CALL_UNSENT;
     }
     // The UART frees the buffer once sent: the tag is read first
     rpc_header_t tag = *hdr;
-    uint32_t generation = esp32.uart->generation;
+    if (generation != esp32.uart->generation) {
+        // The reset put the buffer back in the pool, where it may be in other hands: it is not sent, nor freed
+        wifi_reply_tag_t slot = { tag.thread, tag.sequence };
+        ENTER_SAFE_SECTION;
+        wifi_reply_abandon(replySlots, &slot);
+        LEAVE_SAFE_SECTION;
+        printf("%s: the module restarted.\n", call->name);
+        return WIFI_CALL_UNSENT;
+    }
     bool alone;
     ENTER_SAFE_SECTION;
     alone = (wifi_wait_owner == NULL);

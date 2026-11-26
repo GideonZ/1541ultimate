@@ -14,10 +14,11 @@
 // first is the caller's, whichever of these comes with it: take checks it and returns 0 or its own code,
 // and WIFI_CALL_FOREIGN for a reply that is not the answer (the call then ends BUSY).
 // One call at a time may wait this way; a second is UNSENT. wifi_wake is for the task that raises a cancel:
-// it ends the wait at once, so that nothing has to poll. U64 == 1 and U64 == 2 only.
+// it ends the wait at once, so that nothing has to poll. Only wifi_tls.cc calls it, and that is built for the
+// Nios II U64 alone; wifi_cmd.cc compiles it into the RISC-V U64 firmware too, where nothing does.
 #define WIFI_CALL_BUSY       1  // sent, but no answer in time; the module may still act on it
 #define WIFI_CALL_FOREIGN    5  // from take only: not the answer to this request
-#define WIFI_CALL_UNSENT     6  // no buffer, no reply slot, another call waiting, or the UART refused it: nothing was sent
+#define WIFI_CALL_UNSENT     6  // no buffer, no reply slot, another call waiting, the pool was reset or the UART refused it: nothing was sent
 #define WIFI_CALL_CANCELLED  9  // sent, and ended by cancel
 #define WIFI_CALL_RESTARTED  10 // sent, and the module restarted: no answer will come
 

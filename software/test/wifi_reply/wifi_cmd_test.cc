@@ -26,6 +26,7 @@ static reply_time reply_at;
 static bool timed_out;
 static bool module_ready;
 static TickType_t buffer_wait;      // the ticks the last GetBuffer was given
+static void (*on_get_buffer)(void); // runs as GetBuffer hands the buffer out
 static int suspended;               // depth of vTaskSuspendAll; every function must return it to 0
 static int critical;                // depth of the critical section; the same
 // The fake clock: it moves only when a wait ends without a notification, or by wait_elapse
@@ -52,6 +53,9 @@ BaseType_t DmaUART::GetBuffer(command_buf_t **b, TickType_t t)
     }
     buffers_free--;
     *b = &txbuf;
+    if (on_get_buffer) {
+        on_get_buffer();
+    }
     return pdTRUE;
 }
 
@@ -423,8 +427,13 @@ static bool cancel_pred(void *context)
     return cancel_flag;
 }
 
+static void (*fill_hook)(void);
+
 static int fill_power(uint8_t *request, void *context)
 {
+    if (fill_hook) {
+        fill_hook();
+    }
     return sizeof(rpc_header_t);
 }
 
@@ -457,6 +466,8 @@ static void call_setup(void)
     on_wait = NULL;
     after_wait = NULL;
     safe_hook = NULL;
+    on_get_buffer = NULL;
+    fill_hook = NULL;
     cancel_flag = false;
     cancel_polls = 0;
     takes = 0;
@@ -781,6 +792,42 @@ static void test_call_deadline(void)
     check_clean();
 }
 
+// The pool is reset while the request is made: the reset gave the buffer back to the pool, so the request
+// does not use it, nor frees it, and nothing is sent
+static void pool_reset_now(void)
+{
+    uart.generation++;
+    uart.buffers_free = 1;
+}
+
+static void test_call_reset_while_making_request(void)
+{
+    wifi_call_t call = power_call(5000, true);
+
+    call_setup();
+    on_get_buffer = pool_reset_now;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && blocking_waits == 0);
+    CHECK(uart.buffers_free == 1); // not freed a second time
+    check_clean();
+
+    call_setup();
+    fill_hook = pool_reset_now;
+    uart.buffers_free = 1;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && blocking_waits == 0);
+    CHECK(uart.buffers_free == 1);
+    check_clean();
+
+    // A reset before the call is not one for it
+    call_setup();
+    pool_reset_now();
+    uart.buffers_free = 1;
+    on_wait = reply_in_wait;
+    CHECK(wifi_call(&call) == 0);
+    check_clean();
+}
+
 // A restart of the module during the wait ends it at once, with a result of its own: no answer will come
 static void restart_in_wait(int n)
 {
@@ -856,6 +903,7 @@ int main(void)
     test_call_deadline();
     test_call_reply_before_reset();
     test_call_module_restart();
+    test_call_reset_while_making_request();
     printf(failures ? "wifi_cmd: %d FAILED\n" : "wifi_cmd: all passed\n", failures);
     return failures ? 1 : 0;
 }
