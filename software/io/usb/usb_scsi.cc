@@ -265,6 +265,10 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 
 	// stop_on_short: a CSW that arrives as a short packet is invalid; do not wait for the missing bytes
 	len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries, true);
+	if (len == 0) {
+		// A zero length packet between the data phase and the CSW (a known device quirk): read the status once more
+		len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries, true);
+	}
 
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
 		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
@@ -630,7 +634,7 @@ DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
     // printf("Read capacity.\n");
     int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, (uint8_t *)buf, false);
     
-    if(stat >= 0) {
+    if(stat == 8) { // the whole reply: a shorter one with a good status leaves buf unset
     	*num_blocks = LD_DWORD_BE(&buf[0]);
         ++(*num_blocks);
         *blk_size = LD_DWORD_BE(&buf[4]);

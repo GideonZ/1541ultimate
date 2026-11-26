@@ -68,6 +68,29 @@ static void test_normal_read_and_write()
     CHECK(sim.count(e_ev_msr) == 0);
 }
 
+// 4.1: a device that sends a zero length packet between the data and the CSW. The status is read once more.
+static void test_zlp_before_csw()
+{
+    { Rig r = make_rig();
+      sim.data(512); sim.zlp(); sim.csw();
+      CHECK(r.unit->read(buf, 0, 1) == RES_OK);
+      CHECK(sim.count(e_ev_msr) == 0);
+      CHECK(!r.drv->is_read_only());
+      CHECK(cbws(0x28) == 1);
+      CHECK(r.unit->get_state() == e_device_ready); }
+    { Rig r = make_rig();   // the same on a write: the unit must not fail
+      sim.zlp(); sim.csw();
+      CHECK(r.unit->write(buf, 0, 1) == RES_OK);
+      CHECK(sim.count(e_ev_msr) == 0);
+      CHECK(r.unit->get_state() == e_device_ready); }
+    { Rig r = make_rig();   // two zero length packets are not tolerated: invalid status, recovery, and the retry reads
+      sim.data(512); sim.zlp(); sim.zlp();
+      sim.stream(512); sim.csw();
+      CHECK(r.unit->read(buf, 0, 1) == RES_OK);
+      CHECK(sim.count(e_ev_msr) == 1);
+      CHECK(cbws(0x28) == 2); }
+}
+
 // An invalid status: Reset Recovery in the order of the specification, one more attempt, then read-only.
 static void test_reset_recovery()
 {
@@ -140,7 +163,7 @@ static void test_csw_in_data_phase()
       CHECK(sim.count(e_ev_msr) == 0); }
 }
 
-// The stall paths
+// 4.2 and the stall paths
 static void test_stalls()
 {
     { Rig r = make_rig();   // stall in the IN data phase: the IN endpoint address, with bit 7
@@ -183,7 +206,8 @@ static void test_unit_ready()
       CHECK(cbws(0x00) == 2); }
 }
 
-// READ CAPACITY
+// READ CAPACITY must get all 8 bytes. A shorter reply with a good status must not be parsed: the numbers would come
+// from stack bytes the device never sent. The sentinels show whether the answer was written.
 static void test_read_capacity()
 {
     const uint32_t sentinel = 0xDEADBEEF;
@@ -192,6 +216,16 @@ static void test_read_capacity()
       sim.data(8, 0); sim.csw();
       CHECK(r.unit->read_capacity(&blocks, &bs) == RES_OK);
       CHECK(bs == 0 && blocks == 1); }
+    { Rig r = make_rig();   // 4 bytes and a good status: not a capacity
+      blocks = bs = sentinel;
+      sim.data(4, 0); sim.csw();
+      CHECK(r.unit->read_capacity(&blocks, &bs) != RES_OK);
+      CHECK(blocks == sentinel && bs == sentinel); }
+    { Rig r = make_rig();   // no data at all (a zero length packet) and a good status
+      blocks = bs = sentinel;
+      sim.zlp(); sim.csw();
+      CHECK(r.unit->read_capacity(&blocks, &bs) != RES_OK);
+      CHECK(blocks == sentinel && bs == sentinel); }
 }
 
 // INQUIRY: a reply that is not 36 bytes is a failure, and an INQUIRY is never recovered
@@ -214,6 +248,7 @@ static void test_inquiry()
 int main()
 {
     test_normal_read_and_write();
+    test_zlp_before_csw();
     test_reset_recovery();
     test_csw_in_data_phase();
     test_stalls();
