@@ -1012,6 +1012,67 @@ static void test_start_tls(void)
 
 // --- READ, WRITE and CLOSE on a TLS handle -----------------------------------------------
 
+// --- an abort during a READ's step ----------------------------------------------------------
+
+// The module takes the ciphertext of a step whether the answer or the cancel wins. The next READ must not feed
+// the same records again: the session either goes on from the answer, or is failed, and says so.
+static int stepped_in(void)
+{
+    int total = 0;
+    for (const RpcCall &c : world_module.calls) {
+        if (c.cmd == 0x31) {
+            total += c.ct_in_len;
+        }
+    }
+    return total;
+}
+
+static void test_abort_during_read_step(void)
+{
+    printf("READ: an abort during the step leaves the session in step, or failed\n");
+
+    // The answer is in hand when the abort is noted: its plaintext is kept, and the ciphertext fed is not fed again
+    fresh();
+    int h = open_ok();
+    bytes rec = record('D', 100, 5);
+    server_push(h, EV_DATA, rec);
+    world_module.calls.clear();
+    Forced f = Forced();
+    f.delay_ms = 100;
+    world_module.forced.push_back(f);
+    world_abort_at = world_tick + 100 * 200 / 1000; // 5 ms ticks: the tick of the answer
+    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } }; // noted, with no wake
+    Res r = read_cmd(h, 1472);
+    world_abort_hook = [] { net.abort(0); };
+    world_abort_at = 0xFFFFFFFF;
+    check(header(r) == 0xFFFF && r.status == "02,NO DATA: " + num(EWOULDBLOCK),
+          "read abort: the aborted READ hands out nothing (its reply is dropped) (%d B, %s)", (int)r.data.size(), r.status.c_str());
+    std::string last;
+    bytes got = read_all(h, 1472, &last);
+    check(got == expected(5, 100), "read abort: the plaintext of the step is read once, after the abort (%d B, %s)",
+          (int)got.size(), last.c_str());
+    check(stepped_in() == (int)rec.size(), "read abort: the ciphertext is fed once (%d of %d B)", stepped_in(), (int)rec.size());
+
+    // The abort comes first: nobody knows what the module did, so the session fails and says so
+    fresh();
+    h = open_ok();
+    server_push(h, EV_DATA, record('D', 100, 6));
+    world_module.calls.clear();
+    f = Forced();
+    f.delay_ms = 1000;
+    world_module.forced.push_back(f);
+    world_abort_at = world_tick + 50;
+    r = read_cmd(h, 1472);
+    world_abort_at = 0xFFFFFFFF;
+    r = read_cmd(h, 1472);
+    check(header(r) == 0 && r.status == "17,TLS MODULE NOT RESPONDING",
+          "read abort: an outcome nobody knows fails the session (%s)", r.status.c_str());
+    check(stepped_in() == (int)record('D', 100, 6).size(), "read abort: and the records are not fed again (%d B)", stepped_in());
+    r = write_cmd(h, S("x"));
+    check(header(r) == 0xFFFF && r.status == "17,TLS MODULE NOT RESPONDING", "read abort: WRITE -> the same");
+    check(close_cmd(h).status == "00,OK" && !sock(h).open, "read abort: CLOSE frees the handle");
+}
+
 static void test_read(void)
 {
     printf("READ on a TLS handle\n");
@@ -1932,6 +1993,7 @@ int main(int argc, char **argv)
     test_abort_during_open();
     test_reset_during_start();
     test_read();
+    test_abort_during_read_step();
     test_write();
     test_close();
     test_latch();

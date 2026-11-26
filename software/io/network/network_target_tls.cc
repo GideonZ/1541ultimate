@@ -1374,6 +1374,27 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
             int result = tls_run_step(e, &st, deadline, true);
             steps++;
             if (reset_now()) {
+                // The module takes the ciphertext of a step whether the answer or the cancel wins, so the next
+                // READ must not feed it again. An answer in hand is booked (as below) when nothing in it is still
+                // to be sent to the peer; otherwise, or when the outcome is unknown, the session fails for good
+                // (as a WRITE's does): data is neither lost nor read twice without a word. A step that was not
+                // sent (UNSENT) changed nothing.
+                if (result != WIFI_TLS_UNSENT) {
+                    if (((result == 0) || (result == WIFI_TLS_AGAIN)) && (st.ct_out_len == 0) &&
+                        (st.state == WIFI_TLS_ESTABLISHED)) {
+                        if (result == 0) {
+                            e->held_len = 0;
+                        }
+                        e->module_more = (st.pt_out_len != 0) || (result == WIFI_TLS_AGAIN);
+                        if (st.pt_out_len) {
+                            memcpy(e->rx, tls_pt, st.pt_out_len);
+                            e->rx_off = 0;
+                            e->rx_len = st.pt_out_len;
+                        }
+                    } else {
+                        tls_fail(e, "17,TLS MODULE NOT RESPONDING");
+                    }
+                }
                 break;
             }
             if ((result != 0) && (result != WIFI_TLS_AGAIN)) {
@@ -1440,7 +1461,8 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
             }
         }
     }
-    if (e->rx_len) {
+    // An aborted command's reply is dropped, and a reset ends the session: plaintext taken now stays for the next READ
+    if (e->rx_len && !reset_now()) {
         int n = (e->rx_len < length) ? e->rx_len : length;
         memcpy(buffer, e->rx + e->rx_off, n);
         e->rx_off += n;
@@ -1452,7 +1474,7 @@ void NetworkTarget :: tls_read(TlsSocket *e, uint32_t length, Message **reply, M
         start_read_reply(n, &c_status_ok, reply, status);
         return;
     }
-    if (e->failed || (e->end != TLS_END_NONE)) {
+    if (!e->rx_len && (e->failed || (e->end != TLS_END_NONE))) {
         tls_end(e, reply, status);
         return;
     }
