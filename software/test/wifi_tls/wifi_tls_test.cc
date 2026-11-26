@@ -694,6 +694,8 @@ static void test_calls(void)
     world_reset(22, tls_maker);
     seq = sequence_nr;
     r = wifi_tls_close_send(1, 0xBEEF);
+    expect_close[2] = (uint8_t)seq;
+    expect_close[3] = (uint8_t)(seq >> 8);
     check((r == 0) && (sent() == "transmit 8:" + hex(expect_close, sizeof(expect_close))) && world_last.send_only &&
               (world_last.command == CMD_TLS_CLOSE),
           "CLOSE without waiting: slot, 0, tag as for CLOSE, flagged send only (%d)", r);

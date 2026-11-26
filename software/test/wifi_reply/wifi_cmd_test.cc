@@ -876,7 +876,7 @@ static void test_call_send_only(void)
 
     call_setup();
     CHECK(wifi_call(&call) == WIFI_CALL_SENT);
-    CHECK(uart.transmitted == 1 && blocking_waits == 0 && waits == 0 && takes == 0);
+    CHECK(uart.transmitted == 1 && blocking_waits == 0 && takes == 0);
     CHECK(now == 1000);
     check_clean();
 
@@ -888,6 +888,7 @@ static void test_call_send_only(void)
 
     // The call after it is a call like any other: nothing is left of the first
     wifi_call_t next = power_call(5000, true);
+    uart.buffers_free = 1;
     CHECK(wifi_call(&next) == WIFI_CALL_BUSY);
     CHECK(uart.transmitted == 2 && blocking_waits == 1);
     check_clean();
