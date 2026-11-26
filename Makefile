@@ -87,6 +87,7 @@ host_tests:
 	@$(MAKE) -C software/wifi/uart_tests
 	@$(MAKE) -C target/pc/linux/recoveryimage test
 	@$(MAKE) -C target/pc/linux/recoveryurl test
+	@$(MAKE) -C target/pc/linux/recoverydates test
 	@$(MAKE) -C target/pc/linux/c64mem test
 	@$(MAKE) -C target/pc/linux/sdcard test
 	@$(MAKE) -C target/pc/linux/rasterwait test
