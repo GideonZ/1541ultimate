@@ -189,6 +189,8 @@ SUITES: Sequence[Suite] = (
     # Also needs no device: the SoftIEC soak's log correlation, against lines the device
     # wrote on the bench. A wrong verdict there reads as a firmware defect.
     Suite("e2e", "softiec-log", "tests/soak/io/iec/softiec_log_test.py", "", profile=profiles.QUICK),
+    # Also needs no device: the JiffyDOS LOAD soak's host delay patch, checksums and verdicts.
+    Suite("e2e", "jiffy-load", "tests/soak/io/iec/jiffy_load_test.py", "", profile=profiles.QUICK),
     # Also needs no device: which keys go out for a machine that reads 'w',
     # 'a', 's' and 'd' as cursor keys is decided before anything reaches the
     # device. A C64 Ultimate ships with that reading, and getting it wrong
@@ -229,6 +231,12 @@ SUITES: Sequence[Suite] = (
     # address fails here rather than on somebody's desk. Manual for the same
     # reason web-theme is.
     Suite("e2e", "web-index", "tests/e2e/web/index_test.py", "", manual=True),
+    # Also needs no device: the BASIC editor turns typed text into the bytes of
+    # a program in C64 memory, and nothing on the page shows those bytes, so a
+    # keyword uploaded as plain characters or a wrong link pointer is invisible
+    # until the program is run. It reads the upload the page sends the stub.
+    # Manual for the same reason web-index is.
+    Suite("e2e", "web-tokenizer", "tests/e2e/web/tokenizer_test.py", "", manual=True),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
@@ -247,6 +255,9 @@ SUITES: Sequence[Suite] = (
     # readmem and writemem back to back while machine:menu_button opens and closes the
     # menu; every answer must be the data, none the $FF a half-frozen bus gives (#1106).
     Suite("e2e", "menu-freeze-dma", "tests/e2e/api/menu_freeze_dma_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # machine:reset sent while the menu is opening must not crash the device.
+    Suite("e2e", "menu-reset-race", "tests/e2e/api/menu_reset_race_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
@@ -767,6 +778,13 @@ SUITES: Sequence[Suite] = (
     # minutes, the soak profile runs the soak mode for four hours. See --help and
     # tests/soak/README.md for --mode and the per-phase durations.
     Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
+    # JiffyDOS/SoftIEC LOAD soak: LOAD from the Software IEC drive over and over under whatever
+    # KERNAL the device runs, each load checked for status, error channel, end address and
+    # content. As run here (no host delay, partition 1) it is a general LOAD soak and does not
+    # reproduce #986; the row that does needs a USB partition, a host delay and the user's own
+    # JiffyDOS image, and is run by hand. See tests/soak/README.md.
+    Suite("soak", "jiffy-load-soak", "tests/soak/io/iec/jiffy_load_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
 )
 

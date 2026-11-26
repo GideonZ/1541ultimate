@@ -446,8 +446,9 @@ void UserInterface :: effectuate_settings(void)
 {
 }
 
-void UserInterface :: release_host()
+bool UserInterface :: release_host()
 {
+    return true;
 }
 
 bool UserInterface :: is_available(void)
