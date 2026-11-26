@@ -27,8 +27,10 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.26"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.27"
 #define IDENT_MAJOR   1
+// 1.27: CMD_GET_RANDOM no longer checks the random source a second time after the draw; the entropy gate
+//       it holds already keeps the radio from changing.
 // 1.26: the TLS root list (software/u64ctrl/ca) drops the roots NSS master has deleted, no longer trusts
 //       for websites or distrusts for every certificate still valid (Buypass Class 2 and 3, QuoVadis Root CA 1
 //       and 3 G3, Certigna Root CA, Izenpe.com).
@@ -55,7 +57,7 @@ void send_keepalive();
 // Disconnected forever. The Ultimate's updater only reflashes the module
 // when this differs from what the module reports, so a module change that
 // does not bump it is silently never installed.
-#define IDENT_MINOR   26
+#define IDENT_MINOR   27
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072 // TLS runs on its own task, so this stays small
 
