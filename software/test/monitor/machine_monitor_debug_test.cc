@@ -5022,6 +5022,66 @@ static int test_step_out_keeps_traced_frame_still_on_the_stack()
     return 0;
 }
 
+// Under Freeze a Step Out of a visible-ROM frame walks the held CPU to the
+// caller. The stack pointer it stops at is the caller's, so a callee that has
+// pushed data above its return address still ends at the return site.
+static int test_freeze_rom_step_out_stops_at_a_traced_frame_below_pushed_data()
+{
+    FakeVisibleRomMachine m(true);
+    m.fetch_lags = true;
+
+    // $2000 NOP parks the CPU, as any first debug step does.
+    m.ram[0x2000] = 0xEA;
+    m.ram[0x2001] = 0xEA;
+    {
+        uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+        DebugPredictResult park_pred;
+        debug_predict(0x2000, nop, false, &park_pred);
+        m.arm_capture_context(0x2001, 0xF0, 0, 0, 0, 0x24);
+        DebugContext parked;
+        if (expect(m.trace_at(0x2000, park_pred, &parked) == DebugSession::DBG_OK,
+                   "parking step must complete")) return 1;
+    }
+
+    // $C000 JSR $E000 ; $C003 LDA #$99 ; $C005 JMP $C005
+    const uint8_t caller[] = { 0x20, 0x00, 0xE0, 0xA9, 0x99, 0x4C, 0x05, 0xC0 };
+    memcpy(&m.ram[0xC000], caller, sizeof(caller));
+    // $E000 PHA ; $E001 NOP ; $E002 PLA ; $E003 RTS
+    const uint8_t callee[] = { 0x48, 0xEA, 0x68, 0x60 };
+    memcpy(&m.kernal_rom[0], callee, sizeof(callee));
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xC000;
+    from.sp = 0xF0;
+    from.sr = 0x24;
+    from.live_cpu_port_valid = true;
+    from.live_cpu_port = 0x07;
+
+    uint8_t jsr[3] = { 0x20, 0x00, 0xE0 };
+    DebugPredictResult pred;
+    debug_predict(0xC000, jsr, false, &pred);
+    DebugContext inside;
+    if (expect(m.trace(from, pred, &inside) == DebugSession::DBG_OK &&
+               inside.pc == 0xE000 && inside.sp == 0xEE,
+               "Step Into must enter the KERNAL callee")) return 1;
+
+    uint8_t pha[3] = { 0x48, 0xEA, 0x68 };
+    debug_predict(0xE000, pha, false, &pred);
+    DebugContext pushed;
+    if (expect(m.trace(inside, pred, &pushed) == DebugSession::DBG_OK &&
+               pushed.pc == 0xE001 && pushed.sp == 0xED,
+               "Step Into must execute the push")) return 1;
+
+    DebugContext after;
+    if (expect(m.step_out(pushed, &after) == DebugSession::DBG_OK,
+               "Step Out must complete")) return 1;
+    if (expect(after.pc == 0xC003 && after.sp == 0xF0,
+               "Step Out must stop at the caller with the caller's stack")) return 1;
+    return 0;
+}
+
 static int test_step_out_prefers_live_stack_over_stale_traced_frame()
 {
     // A traced frame goes stale as soon as the CPU is released: the program
@@ -9678,6 +9738,7 @@ int main()
     RUN(test_step_out_follows_jsr_validated_stack_frame_without_trace);
     RUN(test_step_out_refuses_stack_frame_without_jsr);
     RUN(test_step_out_keeps_traced_frame_still_on_the_stack);
+    RUN(test_freeze_rom_step_out_stops_at_a_traced_frame_below_pushed_data);
     RUN(test_step_out_prefers_live_stack_over_stale_traced_frame);
     RUN(test_step_out_unwinds_past_eight_nested_traces);
     RUN(test_visible_rom_simple_linear_interprets_without_breakpoint);

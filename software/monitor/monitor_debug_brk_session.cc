@@ -2500,6 +2500,9 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     // return address, since a callee that pushes after its JSR can leave data
     // there that merely looks like one. The live candidate wins once it is gone.
     bool traced_on_stack = false;
+    // The stack pointer once the target's frame has been pulled: two above the
+    // current one, or higher when the callee has pushed data above that frame.
+    uint8_t traced_return_sp = (uint8_t)(from.sp + 2);
     if (has_traced) {
         uint16_t pushed = (uint16_t)(traced - 1);
         for (int i = 0; i < MAX_RETURN_TARGETS; i++) {
@@ -2509,14 +2512,17 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
             uint16_t hi = (uint16_t)(0x0100 + slot + 1);
             if ((peek_cpu(lo, cpu_port) | (peek_cpu(hi, cpu_port) << 8)) == pushed) {
                 traced_on_stack = true;
+                traced_return_sp = (uint8_t)(slot + 1);
                 break;
             }
         }
     }
 
     uint16_t target;
+    uint8_t return_sp = (uint8_t)(from.sp + 2);
     if (has_traced && (!live_is_frame || traced == live || traced_on_stack)) {
         target = traced;
+        return_sp = traced_return_sp;
     } else if (live_is_frame) {
         target = live;
     } else {
@@ -2526,8 +2532,7 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     // site) walks the remainder of the frame while parked instead of
     // releasing the live CPU into the fetch-lagging aperture.
     if (frozen_rom_run_unreliable(from.pc, target, true, cpu_port)) {
-        Result walked = parked_step_walk(from, target,
-                                         (uint8_t)(from.sp + 2), bps,
+        Result walked = parked_step_walk(from, target, return_sp, bps,
                                          from.pc, true, ctx);
         if (walked == DBG_OK && ctx->valid && ctx->pc == target) {
             pop_return_target(target);
