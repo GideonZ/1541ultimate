@@ -857,6 +857,7 @@ HttpJob::HttpJob(HttpHeaderSlot *hdr, bool r)
 {
     ticket = 0;
     raw = r;
+    head = hdr->is_head();
     host = hdr->get_host();
     port = hdr->get_port();
     request = new StreamRamFile(512);
@@ -928,7 +929,7 @@ void HttpTarget::run_job(HttpJob *job)
             hdr->RawCopy = job->raw_status;
             hdr->RawCopySize = HTTP_MAX_STATUS_BYTES;
         }
-        job->ok = job->exch->recv_response();
+        job->ok = job->exch->recv_response(job->head);
     }
     job->exch->disconnect();
 }

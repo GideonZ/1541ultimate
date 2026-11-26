@@ -319,12 +319,14 @@ e2e:
   image-copy-oracle                 .      x      x      x      x
   input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
+  jiffy-load                        .      x      x      x      x
   key-injection                     .      .      x      x      x
   keystroke-read-back               x      x      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
   memory-views                      .      .      x      x      x
   menu-freeze-dma                   .      .      x      x      x
+  menu-reset-race                   .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
   mus-rest-play                     .      .      x      x      x
@@ -384,6 +386,7 @@ soak:
   browser-refresh-leak              .      .      x      x      x
   heap-leak                         .      .      x      x      x
   ident-leak                        .      .      x      x      x
+  jiffy-load-soak                   .      .      x      x      x
   listener-soak                     .      .      x      x      x
   menu-navigation                   .      .      x      x      x
   mount-cache-leak                  .      .      x      x      x
@@ -393,8 +396,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           16     37     89    105    105
-  suite runs                       16     37     89    210    315
+  suites                           16     38     91    107    107
+  suite runs                       16     38     91    214    321
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
