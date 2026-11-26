@@ -356,6 +356,16 @@ int IecChannel::read_block(void)
     }
     if (res != FR_OK) {
         state = e_error;
+        // The talk ends here: the error channel has to say why. 69 has no counterpart on any
+        // other device (SI-036), so a handle the file system no longer accepts reads as a
+        // drive that is not ready, and a damaged chain in an image as a read error.
+        if (res == FR_INVALID_OBJECT) {
+            drive->set_error(ERR_DRIVE_NOT_READY, 0, 0);
+        } else if (res == FR_INT_ERR) {
+            drive->set_error(ERR_READ_ERROR, 0, 0);
+        } else {
+            drive->set_error_fres(res);
+        }
         log_fault("read_block");
         return IEC_READ_ERROR;
     }

@@ -46,7 +46,7 @@ class HostClient
 public:
 	virtual ~HostClient() { }
 
-	virtual void release_host() { }
+	virtual bool release_host() { return true; }
 };
 
 #endif

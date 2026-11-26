@@ -1300,6 +1300,46 @@ def ensure_fast_reset(target, password: str | None = None,
     return ", ".join(changed) if changed else None
 
 
+# The file browsers show a file under the name the suites create it with only in
+# "Stored names". "PETSCII names" shows a name without its extension, cut to 16
+# characters, so a suite that looks for 'name.prg' or types a long name finds
+# no row. The setting survives a power cycle once it has been saved to flash, so
+# a machine can carry the other value into a run. It is part of the well-known
+# configuration every run starts from.
+FILENAME_VIEW_STORE = "User Interface Settings"
+FILENAME_VIEW_ITEM = "Filename view"
+FILENAME_VIEW_STORED = "Stored names"
+
+
+def ensure_stored_names_view(target, password: str | None = None,
+                             timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Make every machine this target occupies list files under their stored names.
+
+    Answers what it changed, or None when there was nothing to change. A
+    machine that does not serve the item is passed over, as ensure_fast_reset
+    does. The caller captures the settings first, so the run puts back what it
+    found; the same note on flash applies as for ensure_fast_reset.
+    """
+    handle = targets.resolve(target)
+    changed = []
+    for host in handle.resources:
+        machine = UltimateApi(host, password, timeout)
+        try:
+            current = machine.configs.current(FILENAME_VIEW_STORE, FILENAME_VIEW_ITEM)
+        except Failure:
+            continue
+        if current == FILENAME_VIEW_STORED:
+            continue
+        machine.configs.set(FILENAME_VIEW_STORE, FILENAME_VIEW_ITEM, FILENAME_VIEW_STORED)
+        now = machine.configs.current(FILENAME_VIEW_STORE, FILENAME_VIEW_ITEM)
+        if now != FILENAME_VIEW_STORED:
+            raise Failure(
+                f"{host} kept {FILENAME_VIEW_STORE}/{FILENAME_VIEW_ITEM} at {now!r} "
+                f"after it was set to {FILENAME_VIEW_STORED!r}")
+        changed.append(f"{host}: {current!r} -> {FILENAME_VIEW_STORED!r}")
+    return ", ".join(changed) if changed else None
+
+
 def ensure_host_drives_off(target, password: str | None = None,
                            timeout: float = DEFAULT_TIMEOUT) -> str | None:
     """Silence the computer's own drives, so the cartridge owns the IEC bus.

@@ -80,10 +80,18 @@ host_tests:
 	@$(MAKE) -C software/wifi/size_tests test
 	@$(MAKE) -C software/io/wifi/tests
 	@$(MAKE) -C software/wifi/tests
+	@$(MAKE) -C software/wifi/uart_tests
 	@$(MAKE) -C target/pc/linux/recoverymanifest test
 	@$(MAKE) -C target/pc/linux/recoveryimage test
 	@$(MAKE) -C target/pc/linux/recoveryurl test
+	@$(MAKE) -C target/pc/linux/c64mem test
+	@$(MAKE) -C target/pc/linux/sdcard test
+	@$(MAKE) -C target/pc/linux/rasterwait test
+	@$(MAKE) -C target/pc/linux/socketdma test
+	@$(MAKE) -C target/pc/linux/syslog test
 	@$(MAKE) -C target/pc/linux/ucitargets test
+	@$(MAKE) -C target/pc/linux/httpdbody test
+	@$(MAKE) -C software/userinterface/tests
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
