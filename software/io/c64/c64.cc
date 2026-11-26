@@ -671,6 +671,17 @@ void C64::resume(void)
         // un-stop the c-64
         C64_STOP = 0;
 
+        // The cartridge releases the CPU on the next bad line and reads as stopped
+        // until then. Wait for the release: a caller that still sees a stopped
+        // machine writes memory the CPU starts running in the middle of.
+        ioWrite8(ITU_TIMER, 200); // 1 ms
+        for (int ms = 0; ms < 25 && (C64_STOP & C64_HAS_STOPPED); ) {
+            if (!ioRead8(ITU_TIMER)) {
+                ioWrite8(ITU_TIMER, 200);
+                ms++;
+            }
+        }
+
         // printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
     } else {
         C64_STOP_MODE = STOP_COND_FORCE;
