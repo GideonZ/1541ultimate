@@ -3,6 +3,8 @@
  * answers when the UART has no free TX buffer. The RPCs answer 0 for success, so
  * they must answer -1; wifi_detect answers a success flag, so pdFALSE. And how a
  * request ends whose reply comes in time, as the wait times out, late, or never.
+ * And wifi_call, the request that can be cancelled: how each wait ends, with a fake
+ * clock, and what it leaves behind for the next request.
  */
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +26,13 @@ static reply_time reply_at;
 static bool timed_out;
 static bool module_ready;
 static TickType_t buffer_wait;      // the ticks the last GetBuffer was given
+// The fake clock: it moves only when a wait ends without a notification, or by wait_elapse
+static TickType_t now = 1000;
+static TickType_t wait_elapse;      // the ticks a wait that ends with a notification took
+static int blocking_waits;          // the waits with a timeout, and the ticks each was given
+static TickType_t wait_ticks[8];
+static void (*on_wait)(int n);      // runs at the start of the n-th wait with a timeout
+static void (*after_wait)(void);    // runs when a wait that took a notification is about to return
 // What the module answers: a GET_RANDOM answer, or one of the power mode (the default)
 static bool random_answer;
 static int random_err;
@@ -89,6 +98,34 @@ BaseType_t xTaskNotifyFromISR(TaskHandle_t t, uint32_t v, int a, BaseType_t *w)
     return pdTRUE;
 }
 
+// As in FreeRTOS: without overwrite, a notification that is pending stays
+BaseType_t xTaskNotify(TaskHandle_t t, uint32_t v, int a)
+{
+    if (notify_pending && (a == eSetValueWithoutOverwrite)) {
+        return pdFAIL;
+    }
+    notify_value = (command_buf_t *)v;
+    notify_pending = true;
+    return pdTRUE;
+}
+
+TickType_t xTaskGetTickCount(void)
+{
+    return now;
+}
+
+static int suspended;
+void vTaskSuspendAll(void)
+{
+    suspended++;
+}
+
+BaseType_t xTaskResumeAll(void)
+{
+    suspended--;
+    return pdFALSE;
+}
+
 // The module answers the request just sent: during the wait (ON_TIME), after the
 // wait timed out but before the slot is released (AT_TIMEOUT), so only a drain
 // after the release can take it, or during that drain (AFTER_RELEASE). As in
@@ -97,6 +134,15 @@ BaseType_t xTaskNotifyWait(uint32_t a, uint32_t b, uint32_t *v, TickType_t t)
 {
     if (!waits++) {
         first_wait = t;
+    }
+    if (t) {
+        if (blocking_waits < 8) {
+            wait_ticks[blocking_waits] = t;
+        }
+        if (on_wait) {
+            on_wait(blocking_waits);
+        }
+        blocking_waits++;
     }
     if ((t && reply_at == ON_TIME) || (!t && reply_at == AFTER_RELEASE)) {
         reply_at = NEVER;
@@ -109,9 +155,15 @@ BaseType_t xTaskNotifyWait(uint32_t a, uint32_t b, uint32_t *v, TickType_t t)
         return pdFALSE;
     }
     if (!notify_pending) {
+        now += t;
         return pdFALSE;
     }
     notify_pending = false;
+    now += wait_elapse;
+    wait_elapse = 0;
+    if (after_wait) {
+        after_wait();
+    }
     return pdTRUE;
 }
 
@@ -336,6 +388,387 @@ static void test_random(void)
     CHECK(all_slots_free());
 }
 
+// wifi_call: a request that can be cancelled. The tests are in the task of the wait, so that "the
+// canceller" is the code run from a wait, as another task is while the waiter blocks.
+static bool cancel_flag;
+static int cancel_polls;
+static int takes;
+static int mode_taken;
+
+static TaskHandle_t me(void)
+{
+    return xTaskGetCurrentTaskHandle();
+}
+
+static bool cancel_pred(void *context)
+{
+    cancel_polls++;
+    return cancel_flag;
+}
+
+static int fill_power(uint8_t *request, void *context)
+{
+    return sizeof(rpc_header_t);
+}
+
+static int take_power(const uint8_t *reply, int size, uint16_t sequence, void *context)
+{
+    takes++;
+    const rpc_get_power_mode_resp *r = (const rpc_get_power_mode_resp *)reply;
+    if ((size < (int)sizeof(*r)) || (r->hdr.sequence != sequence) || (r->hdr.command != CMD_GET_POWER_MODE)) {
+        return WIFI_CALL_FOREIGN;
+    }
+    mode_taken = r->mode;
+    return 0;
+}
+
+static void call_setup(void)
+{
+    random_answer = false;
+    module_ready = true;
+    uart.buffers_free = 1;
+    uart.transmitted = 0;
+    uart.transmit_fails = false;
+    uart.on_transmit = NULL;
+    queued = 0;
+    waits = 0;
+    blocking_waits = 0;
+    reply_at = NEVER;
+    notify_pending = false;
+    wait_elapse = 0;
+    on_wait = NULL;
+    after_wait = NULL;
+    cancel_flag = false;
+    cancel_polls = 0;
+    takes = 0;
+    mode_taken = 0;
+    now = 1000;
+}
+
+static wifi_call_t power_call(uint32_t timeout_ms, bool with_cancel)
+{
+    wifi_call_t call;
+    memset(&call, 0, sizeof(call));
+    call.name = "Power";
+    call.command = CMD_GET_POWER_MODE;
+    call.timeout_ms = timeout_ms;
+    call.fill = fill_power;
+    call.take = take_power;
+    call.cancel = with_cancel ? cancel_pred : NULL;
+    return call;
+}
+
+static void answer_now(command_buf_t *tx)
+{
+    answer(*(rpc_header_t *)tx->data);
+}
+
+// What every end of a call leaves: no slot, no notification, no waiter that a later wake could reach
+static void check_clean(void)
+{
+    CHECK(!notify_pending);
+    wifi_wake(me());
+    CHECK(!notify_pending);
+    CHECK(all_slots_free());
+}
+
+static void cancel_in_wait(int n)
+{
+    cancel_flag = true;
+    wifi_wake(me());
+}
+
+static void wake_in_wait(int n)
+{
+    if (n == 0) {
+        wait_elapse = 100;
+        wifi_wake(me());
+    }
+}
+
+static void reply_then_cancel_in_wait(int n)
+{
+    answer(*(rpc_header_t *)txbuf.data);
+    cancel_flag = true;
+    wifi_wake(me()); // refused: the reply is pending
+}
+
+static void cancel_then_reply_in_wait(int n)
+{
+    cancel_flag = true;
+    wifi_wake(me());
+    answer(*(rpc_header_t *)txbuf.data); // overwrites the wake
+}
+
+static void reply_in_wait(int n)
+{
+    answer(*(rpc_header_t *)txbuf.data);
+}
+
+static void wake_after_reply(void)
+{
+    wifi_wake(me());
+}
+
+static void foreign_wake_in_wait(int n)
+{
+    wifi_wake((TaskHandle_t)&n);
+}
+
+static int nested_result;
+static void call_in_wait(int n)
+{
+    wifi_call_t inner = power_call(5000, true);
+    uint32_t sent = uart.transmitted;
+    nested_result = wifi_call(&inner);
+    CHECK(uart.transmitted == sent);
+}
+
+// A cancel that was raised before the wait: the request went out, and nothing blocks
+static void test_call_cancel_before_wait(void)
+{
+    call_setup();
+    cancel_flag = true;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_CANCELLED);
+    CHECK(uart.transmitted == 1);
+    CHECK(blocking_waits == 0);
+    CHECK(now == 1000);
+    CHECK(takes == 0);
+    check_clean();
+}
+
+// A cancel during the wait ends it at once: one wait, of the whole timeout, and none of it used up
+static void test_call_cancel_during_wait(void)
+{
+    call_setup();
+    on_wait = cancel_in_wait;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_CANCELLED);
+    CHECK(uart.transmitted == 1);
+    CHECK(blocking_waits == 1);
+    CHECK(wait_ticks[0] == pdMS_TO_TICKS(5000));
+    CHECK(now == 1000);
+    CHECK(takes == 0);
+    CHECK(uart.buffers_free == 0);
+    check_clean();
+}
+
+// A wake that cancels nothing is no reason to stop: the rest of the time is waited
+static void test_call_spurious_wake(void)
+{
+    call_setup();
+    on_wait = wake_in_wait;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 2);
+    CHECK(wait_ticks[0] == pdMS_TO_TICKS(5000));
+    CHECK(wait_ticks[1] == pdMS_TO_TICKS(5000) - 100);
+    CHECK(now == 1000 + pdMS_TO_TICKS(5000));
+    check_clean();
+}
+
+// A wake aimed at another task, or when nothing waits, does nothing
+static void test_call_wake_of_others(void)
+{
+    call_setup();
+    wifi_wake(me());
+    CHECK(!notify_pending);
+    on_wait = foreign_wake_in_wait;
+    wifi_call_t call = power_call(300, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 1);
+    CHECK(now == 1300);
+    check_clean();
+}
+
+// The reply and the cancel arrive together, in either order: the reply wins, once, and its buffer is freed
+static void test_call_reply_races_cancel(void)
+{
+    void (*orders[2])(int) = { reply_then_cancel_in_wait, cancel_then_reply_in_wait };
+    for (int i = 0; i < 2; i++) {
+        call_setup();
+        on_wait = orders[i];
+        wifi_call_t call = power_call(5000, true);
+        CHECK(wifi_call(&call) == 0);
+        CHECK(mode_taken == 3);
+        CHECK(takes == 1);
+        CHECK(uart.buffers_free == 1);
+        CHECK(queued == 0);
+        check_clean();
+    }
+    // The reply was there before the cancel was looked at: it is still the caller's
+    call_setup();
+    cancel_flag = true;
+    uart.on_transmit = answer_now;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == 0);
+    CHECK(mode_taken == 3 && takes == 1);
+    CHECK(uart.buffers_free == 1);
+    CHECK(blocking_waits == 0);
+    check_clean();
+}
+
+// A wake that comes after the reply was taken must not be left for the next request, which would read
+// it as a reply
+static void test_call_no_stale_wake(void)
+{
+    call_setup();
+    on_wait = reply_in_wait;
+    after_wait = wake_after_reply;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == 0);
+    CHECK(takes == 1);
+    CHECK(!notify_pending);
+    after_wait = NULL;
+    on_wait = NULL;
+
+    uint8_t mode = 0, last = 0;
+    uart.buffers_free = 2;
+    reply_at = ON_TIME;
+    CHECK(wifi_get_power_mode(&mode, &last) == 0);
+    CHECK(mode == 3 && last == 1);
+    check_clean();
+
+    // And after a timeout
+    call_setup();
+    call = power_call(100, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    check_clean();
+}
+
+// Without a cancel the wait is one block of the whole timeout, as for every other request
+static void test_call_no_cancel(void)
+{
+    call_setup();
+    wifi_call_t call = power_call(5000, false);
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 1);
+    CHECK(wait_ticks[0] == pdMS_TO_TICKS(5000));
+    CHECK(now == 1000 + pdMS_TO_TICKS(5000));
+    CHECK(uart.transmitted == 1);
+    check_clean();
+
+    call_setup();
+    on_wait = reply_in_wait;
+    call = power_call(5000, false);
+    CHECK(wifi_call(&call) == 0);
+    CHECK(mode_taken == 3 && takes == 1 && uart.buffers_free == 1);
+    check_clean();
+
+    // The reply arrives as the wait times out: still the caller's
+    call_setup();
+    reply_at = AT_TIMEOUT;
+    call = power_call(5000, false);
+    CHECK(wifi_call(&call) == 0);
+    CHECK(takes == 1 && uart.buffers_free == 1);
+    check_clean();
+}
+
+// "Not sent" is not "sent, no answer": a caller may send again after the first only
+static void test_call_unsent(void)
+{
+    wifi_call_t call = power_call(5000, true);
+
+    call_setup();
+    uart.buffers_free = 0;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && blocking_waits == 0);
+    check_clean();
+
+    call_setup();
+    rpc_header_t held[WIFI_REPLY_SLOTS];
+    for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+        CHECK(wifi_reply_register(&held[i]));
+    }
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && uart.buffers_free == 1 && blocking_waits == 0);
+    for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+        answer(held[i]);
+    }
+    notify_pending = false;
+    check_clean();
+
+    call_setup();
+    uart.transmit_fails = true;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && uart.buffers_free == 1 && blocking_waits == 0);
+    check_clean();
+
+    // Sent, and nothing came back
+    call_setup();
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(uart.transmitted == 1 && blocking_waits == 1);
+    check_clean();
+
+    // A second request while one waits: nothing is sent for it
+    call_setup();
+    on_wait = call_in_wait;
+    nested_result = -1;
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(nested_result == WIFI_CALL_UNSENT);
+    check_clean();
+}
+
+// A deadline before the end of the timeout ends the wait there, in one block
+static void test_call_deadline(void)
+{
+    call_setup();
+    wifi_call_t call = power_call(1000, true);
+    call.use_deadline = true;
+    call.deadline = now + 50;
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 1);
+    CHECK(wait_ticks[0] == 50);
+    CHECK(now == 1050);
+    check_clean();
+
+    // Past already: not a tick of waiting; and a deadline after the timeout changes nothing
+    call_setup();
+    call = power_call(1000, true);
+    call.use_deadline = true;
+    call.deadline = now - 1;
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 0);
+    check_clean();
+
+    call_setup();
+    call = power_call(1000, false);
+    call.use_deadline = true;
+    call.deadline = now + 5000;
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 1 && wait_ticks[0] == 1000);
+    check_clean();
+
+    // The tick counter wraps inside the wait
+    call_setup();
+    now = 0xFFFFFFF0u;
+    call = power_call(1000, true);
+    call.use_deadline = true;
+    call.deadline = now + 0x20;
+    CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(blocking_waits == 1 && wait_ticks[0] == 0x20);
+    check_clean();
+}
+
+// A reply that was delivered before a reset of the buffer pool is not read, and not freed: the reset took it back
+static void reply_then_reset_in_wait(int n)
+{
+    answer(*(rpc_header_t *)txbuf.data);
+    uart.generation++;
+}
+
+static void test_call_reply_before_reset(void)
+{
+    call_setup();
+    on_wait = reply_then_reset_in_wait;
+    wifi_call_t call = power_call(5000, true);
+    CHECK(wifi_call(&call) == WIFI_CALL_RESTARTED);
+    CHECK(takes == 0);
+    CHECK(uart.buffers_free == 0);
+    check_clean();
+}
+
 int main(void)
 {
     esp32.uart = &uart;
@@ -346,6 +779,16 @@ int main(void)
     test_reply(AT_TIMEOUT);
     test_reply_after_release();
     test_random();
+    test_call_cancel_before_wait();
+    test_call_cancel_during_wait();
+    test_call_spurious_wake();
+    test_call_wake_of_others();
+    test_call_reply_races_cancel();
+    test_call_no_stale_wake();
+    test_call_no_cancel();
+    test_call_unsent();
+    test_call_deadline();
+    test_call_reply_before_reset();
     printf(failures ? "wifi_cmd: %d FAILED\n" : "wifi_cmd: all passed\n", failures);
     return failures ? 1 : 0;
 }
