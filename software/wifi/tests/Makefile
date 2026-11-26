@@ -127,7 +127,7 @@ voltages:
 	@{ grep -E '^#define UART_CHAN' $(DIR_u64ctrl)/rpc_dispatch.c; $(EXTRACT) -v f=cmd_get_voltages $(DIR_u64ctrl)/rpc_dispatch.c; } > $(OUT)/voltages/voltages_extract.c
 	@grep -q cmd_get_voltages $(OUT)/voltages/voltages_extract.c || { echo "wifi tests: cmd_get_voltages not found"; exit 1; }
 	$(CC) -std=gnu11 -g -O0 -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function \
-	    -I$(OUT)/voltages -Istub -I$(DIR_u64ctrl) -I$(PATH_SW)/wifi/common -o $(OUT)/voltages/voltages_test voltages_test.c
+	    -I$(OUT)/voltages -Istub -I$(DIR_u64ctrl) -I$(PATH_SW)/wifi/common -I$(PATH_SW)/wifi/tls -o $(OUT)/voltages/voltages_test voltages_test.c
 	@echo "== voltages"; $(OUT)/voltages/voltages_test
 
 clean:
