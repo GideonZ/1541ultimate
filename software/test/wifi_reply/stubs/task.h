@@ -5,7 +5,7 @@
 #define eSetValueWithoutOverwrite 1
 #define pdFAIL 0
 // inline, not static: the one task has the same handle in every file
-inline TaskHandle_t xTaskGetCurrentTaskHandle(void) { static int me; return &me; }
+inline TaskHandle_t xTaskGetCurrentTaskHandle(void) { static int me; return (TaskHandle_t)&me; }
 BaseType_t xTaskNotifyFromISR(TaskHandle_t t, uint32_t v, int a, BaseType_t *w);
 BaseType_t xTaskNotify(TaskHandle_t t, uint32_t v, int a);
 TickType_t xTaskGetTickCount(void);

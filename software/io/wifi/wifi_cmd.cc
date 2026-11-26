@@ -73,11 +73,11 @@ static TaskHandle_t wifi_wait_owner = NULL;
 
 // A notification that is pending stays: a reply is not replaced, and the interrupt that delivers one
 // overwrites a wake.
-void wifi_wake(TaskHandle_t task)
+void wifi_wake(void *task)
 {
     vTaskSuspendAll();
-    if (task && (task == wifi_wait_owner)) {
-        xTaskNotify(task, WIFI_WAKE, eSetValueWithoutOverwrite);
+    if (task && ((TaskHandle_t)task == wifi_wait_owner)) {
+        xTaskNotify(wifi_wait_owner, WIFI_WAKE, eSetValueWithoutOverwrite);
     }
     xTaskResumeAll();
 }

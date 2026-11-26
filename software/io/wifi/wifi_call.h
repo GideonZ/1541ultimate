@@ -42,6 +42,6 @@ typedef struct {
 
 int wifi_call(const wifi_call_t *call);
 // Ends the wait of task, if it waits in wifi_call, and has it ask cancel. Safe from any task.
-void wifi_wake(void *task); // a TaskHandle_t
+void wifi_wake(void *task); // a TaskHandle_t, which is not a void * in FreeRTOS: this header has none
 
 #endif /* WIFI_CALL_H_ */
