@@ -26,8 +26,11 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.37"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.38"
 #define IDENT_MAJOR   1
+// 1.38: CMD_GET_RANDOM no longer checks the random source a second time after the draw; the entropy gate
+// it holds already keeps the radio from changing. A refused TLS version is reported as the ServerHello
+// carried it.
 // 1.37: the recovery's root list drops the roots NSS master has deleted, no longer trusts
 // for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
 // QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
@@ -65,7 +68,7 @@ void send_keepalive();
 // when this is higher than what the module reports, so a module change that
 // does not bump it is silently never installed, and an older release never
 // replaces a newer module.
-#define IDENT_MINOR   37
+#define IDENT_MINOR   38
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
