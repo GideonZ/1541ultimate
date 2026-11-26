@@ -423,6 +423,11 @@ DebugSession *MachineMonitor :: ensure_debug_session()
         return NULL;
     }
     debug_session = backend->create_debug_session();
+    if (debug_session && debug.is_active() &&
+            !debug_session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
+        delete debug_session;
+        debug_session = NULL;
+    }
     if (debug_session) {
         debug_session->set_cancel_keyboard(keyboard);
         debug_session->set_run_window_refreeze_enabled(debug_run_window_refreeze_enabled);
@@ -434,16 +439,8 @@ void MachineMonitor :: debug_cleanup_session()
 {
     if (debug_session) {
         debug_session->cleanup();
-        debug_session->release_debug_ownership();
         delete debug_session;
         debug_session = NULL;
-    }
-    // Safety net beyond cleanup()'s own patch restore: catches a byte that
-    // reached the ROM image any other way, so a session never hands the next
-    // one a modified KERNAL. Compares before writing against a snapshot
-    // retaken on legitimate ROM replacement, so a real new ROM is left alone.
-    if (u64_restore_pristine_rom_image) {
-        u64_restore_pristine_rom_image();
     }
 }
 
@@ -460,13 +457,6 @@ void MachineMonitor :: dispatch_deferred_debug_go(void)
         debug_session = NULL;
     }
     debug_context_reset(&deferred_debug_go_context);
-    // Same safety net as debug_cleanup_session(). This path is the one where it
-    // matters most: the C64 is handed back and starts executing immediately, so
-    // a ROM byte that escaped cleanup_to_context() would be run, not merely
-    // left in place.
-    if (u64_restore_pristine_rom_image) {
-        u64_restore_pristine_rom_image();
-    }
     if (backend) {
         // The CPU runs on from here, free to rewrite $01, so the port read at
         // the last debug stop stops describing it.

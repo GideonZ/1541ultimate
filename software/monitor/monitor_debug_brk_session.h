@@ -143,7 +143,7 @@ public:
     virtual void forget_context(void);
     virtual bool screen_render_target_invalidated(void) const { return screen_was_clobbered; }
     virtual bool claim_debug_ownership(bool remote);
-    virtual void refresh_debug_ownership(void);
+    bool owns_debug_session(void) const;
     virtual void release_debug_ownership(void);
 
 private:

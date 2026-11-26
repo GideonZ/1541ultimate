@@ -810,7 +810,7 @@ Starting Debug does not stop or change the C64. Until the program stops for the 
 
 When you leave Debug, the program continues from where it stopped. See [Leaving Debug](#leaving-debug).
 
-Debug is available in UI Freeze, UI Overlay and Telnet mode, but only one Debug session can run at a time. If another session already has the debugger, pressing `D` shows `DEBUG IN USE`. A session that has not responded for 3 seconds is taken over.
+Debug is available in UI Freeze, UI Overlay and Telnet mode, but only one Debug session can run at a time. If another session already has the debugger, pressing `D` shows `DEBUG IN USE`. Closing the owning monitor or disconnecting its Telnet client releases the debugger.
 
 ### Debug keys
 
@@ -966,7 +966,7 @@ The two messages that start with `Step` appear on the bottom row. All others app
 | `DEBUG CANCELLED`                            | You stopped waiting for the program with a key.                                                            |
 | `DEBUG NOT SUPPORTED`                        | This device cannot do it, for example stepping ROM code on an Ultimate II+ cartridge.                      |
 | `BRK $xxxx IN ROM BLOCKS DEBUG`              | An enabled breakpoint is in ROM, which a cartridge cannot change. Clear it or set it in RAM. `A BRK IN ROM BLOCKS DEBUG` means the same when the address is not known. |
-| `DEBUG IN USE`                               | Another session has the debugger. Close it there, or wait 3 seconds if it no longer responds.               |
+| `DEBUG IN USE`                               | Another session has the debugger. Close it there or disconnect the owning Telnet client.               |
 
 ### Leaving Debug
 

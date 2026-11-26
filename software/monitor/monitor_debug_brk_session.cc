@@ -155,7 +155,6 @@ static const int HANDLER_BYTES_LEN = (int)sizeof(HANDLER_BYTES);
 static const int TRAMPOLINE_BYTES_LEN = (int)sizeof(TRAMPOLINE_BYTES);
 static const int NMI_TRAMPOLINE_BYTES_LEN = 24;
 static const int HARD_BRK_STUB_BYTES_LEN = (int)sizeof(HARD_BRK_STUB_BYTES);
-static const uint16_t DEBUG_OWNER_STALE_REMOTE_MS = 3000;
 
 static bool hard_vector_points_to_stub(uint8_t lo, uint8_t hi)
 {
@@ -185,10 +184,9 @@ static bool patch_verify_now(uint16_t addr, uint8_t live_cpu_port,
 struct DebugOwnerState {
     BrkDebugSession *owner;
     bool remote;
-    uint16_t last_seen_ms;
 };
 
-static DebugOwnerState debug_owner = { 0, false, 0 };
+static DebugOwnerState debug_owner = { 0, false };
 
 }
 
@@ -326,45 +324,30 @@ void BrkDebugSession :: forget_installed_state(void)
 
 bool BrkDebugSession :: claim_debug_ownership(bool remote)
 {
-    uint16_t now = getMsTimer();
-    if (debug_owner.owner == this) {
+    // Only the owning monitor can tear down a session that may be running.
+    ENTER_SAFE_SECTION
+    bool available = !debug_owner.owner || debug_owner.owner == this;
+    if (available) {
+        debug_owner.owner = this;
         debug_owner.remote = remote;
-        debug_owner.last_seen_ms = now;
-        return true;
     }
-    if (debug_owner.owner) {
-        bool owner_is_stale =
-            (uint16_t)(now - debug_owner.last_seen_ms) >= DEBUG_OWNER_STALE_REMOTE_MS;
-        if (!owner_is_stale) {
-            return false;
-        }
-        BrkDebugSession *stale_owner = debug_owner.owner;
-        debug_owner.owner = 0;
-        debug_owner.remote = false;
-        debug_owner.last_seen_ms = now;
-        stale_owner->cleanup();
-        stale_owner->forget_context();
-    }
-    debug_owner.owner = this;
-    debug_owner.remote = remote;
-    debug_owner.last_seen_ms = now;
-    return true;
+    LEAVE_SAFE_SECTION
+    return available;
 }
 
-void BrkDebugSession :: refresh_debug_ownership(void)
+bool BrkDebugSession :: owns_debug_session(void) const
 {
-    if (debug_owner.owner == this) {
-        debug_owner.last_seen_ms = getMsTimer();
-    }
+    return debug_owner.owner == this;
 }
 
 void BrkDebugSession :: release_debug_ownership(void)
 {
+    ENTER_SAFE_SECTION
     if (debug_owner.owner == this) {
         debug_owner.owner = 0;
         debug_owner.remote = false;
-        debug_owner.last_seen_ms = getMsTimer();
     }
+    LEAVE_SAFE_SECTION
 }
 
 bool BrkDebugSession :: reserved_patch_address(uint16_t addr) const
@@ -1070,7 +1053,6 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
     // below 65535 for the wrap-safe subtraction (callers use 900 and 5000).
     const uint16_t start_ms = getMsTimer();
     while ((uint16_t)(getMsTimer() - start_ms) < (uint16_t)timeout_ms) {
-        refresh_debug_ownership();
         if (reset_cancel_requested) {
             restore_patches();
             uninstall_handler();
@@ -1448,7 +1430,6 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                                                     uint8_t cpu_port)
 {
     reset_cancel_requested = false;
-    refresh_debug_ownership();
     save_and_install_handler();
     // Relaunch metadata for the runaway retry.
     const DebugContext *launch_ctx = 0;
@@ -2916,7 +2897,6 @@ void BrkDebugSession :: cleanup(void)
         uninstall_handler();
     }
     cpu_parked_in_spin = false;
-    release_debug_ownership();
 }
 
 void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
@@ -2939,7 +2919,6 @@ void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
         uninstall_handler();
     }
     cpu_parked_in_spin = false;
-    release_debug_ownership();
 }
 
 bool BrkDebugSession :: has_parked_context_handoff(void) const

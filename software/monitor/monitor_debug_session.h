@@ -187,7 +187,6 @@ public:
     virtual bool screen_render_target_invalidated(void) const { return false; }
 
     virtual bool claim_debug_ownership(bool remote) { (void)remote; return true; }
-    virtual void refresh_debug_ownership(void) { }
     virtual void release_debug_ownership(void) { }
 
     virtual bool is_debug_session_active(void) const { return false; }

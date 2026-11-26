@@ -322,7 +322,7 @@ public:
     // left alone.
     void restore_rom_image_if_patched(void)
     {
-        if (u64_restore_pristine_rom_image) {
+        if (owns_debug_session() && u64_restore_pristine_rom_image) {
             u64_restore_pristine_rom_image();
         }
     }

@@ -3876,8 +3876,6 @@ DebugContext StubDebugSession::last_cleanup_target;
 
 // Counts the pristine-ROM safety net, which a monitor close must run only when
 // it had a session to clean up after.
-static int g_rom_restores = 0;
-extern "C" void u64_restore_pristine_rom_image(void) { g_rom_restores++; }
 
 static int test_host_disconnect_during_debug_hands_the_machine_back()
 {
@@ -3914,8 +3912,7 @@ static int test_host_disconnect_during_debug_hands_the_machine_back()
     // The loop has exited on the dead host; only the teardown runs.
     monitor.deinit();
 
-    if (expect(!monitor.is_debug_session_active() ||
-               StubDebugSession::destroyed_count > destroyed_before,
+    if (expect(!monitor.is_debug_session_active(),
                "Disconnect must not leave the debug session installed")) return 1;
     if (expect(StubDebugSession::destroyed_count == destroyed_before + 1,
                "deinit() must delete the session it created")) return 1;
@@ -3952,8 +3949,7 @@ static int test_edit_mode_ctrl_o_exit_hands_the_machine_back()
     int installed_before = StubDebugSession::destroyed_installed_count;
     int handed_back_before = StubDebugSession::cleanup_to_context_total;
     monitor.deinit();
-    if (expect(!monitor.is_debug_session_active() ||
-               StubDebugSession::destroyed_count > destroyed_before,
+    if (expect(!monitor.is_debug_session_active(),
                "Edit-mode Ctrl-O must not leave Debug installed")) return 1;
     if (expect(StubDebugSession::destroyed_count == destroyed_before + 1 &&
                StubDebugSession::destroyed_installed_count == installed_before,
@@ -4011,7 +4007,7 @@ static int test_deferred_go_after_deinit_resumes_through_the_session()
     return 0;
 }
 
-static int test_close_without_a_session_leaves_the_rom_image_alone()
+static int test_close_without_a_session_skips_debug_teardown()
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -4028,10 +4024,13 @@ static int test_close_without_a_session_leaves_the_rom_image_alone()
     if (expect(monitor.poll(0) == 0, "ASM switch should return 0")) return 1;
     if (expect(backend.last_session == NULL || backend.session_creations == 0,
                "Setup must not create a session")) return 1;
-    int restores_before = g_rom_restores;
+    int destroyed_before = StubDebugSession::destroyed_count;
+    int handed_back_before = StubDebugSession::cleanup_to_context_total;
     monitor.deinit();
-    if (expect(g_rom_restores == restores_before,
-               "A close with no session must not touch the ROM image")) return 1;
+    if (expect(backend.session_creations == 0 &&
+               StubDebugSession::destroyed_count == destroyed_before &&
+               StubDebugSession::cleanup_to_context_total == handed_back_before,
+               "A close with no session must skip Debug teardown")) return 1;
     return 0;
 }
 
@@ -7745,33 +7744,23 @@ static int test_request_reset_cancel_clears_state_and_makes_handler_pokes_during
     return 0;
 }
 
-static int test_debug_ownership_blocks_second_stakeholder_until_remote_expires()
+static int test_debug_ownership_blocks_second_stakeholder_through_cleanup()
 {
     FakeFreezeMachine telnet_owner(false);
     FakeFreezeMachine local_owner(false);
-    FakeFreezeMachine leaked_local_owner(false);
-    FakeFreezeMachine reclaiming_telnet_owner(false);
 
     set_fake_ms_timer(100);
     if (expect(telnet_owner.claim_debug_ownership(true),
                "Initial remote stakeholder must claim debug ownership")) return 1;
-    advance_fake_ms_timer(1000);
-    if (expect(!local_owner.claim_debug_ownership(false),
-               "A second stakeholder must be blocked while the remote owner is still fresh")) return 1;
-    advance_fake_ms_timer(2501);
-    if (expect(local_owner.claim_debug_ownership(false),
-               "A stale remote owner must expire so a new stakeholder can claim Debug")) return 1;
-    local_owner.release_debug_ownership();
-    telnet_owner.release_debug_ownership();
-
-    set_fake_ms_timer(1000);
-    if (expect(leaked_local_owner.claim_debug_ownership(false),
-               "Initial local stakeholder must claim debug ownership")) return 1;
     advance_fake_ms_timer(3501);
-    if (expect(reclaiming_telnet_owner.claim_debug_ownership(true),
-               "A stale local owner must expire so a later telnet session can claim Debug")) return 1;
-    reclaiming_telnet_owner.release_debug_ownership();
-    leaked_local_owner.release_debug_ownership();
+    if (expect(!local_owner.claim_debug_ownership(false),
+               "An idle session keeps ownership while its monitor is open")) return 1;
+    telnet_owner.cleanup();
+    if (expect(!local_owner.claim_debug_ownership(false),
+               "Ownership must cover the entire cleanup")) return 1;
+    telnet_owner.release_debug_ownership();
+    if (expect(local_owner.claim_debug_ownership(false),
+               "Another monitor can claim Debug after release")) return 1;
     return 0;
 }
 
@@ -9630,7 +9619,7 @@ int main()
     RUN(test_host_disconnect_during_debug_hands_the_machine_back);
     RUN(test_edit_mode_ctrl_o_exit_hands_the_machine_back);
     RUN(test_deferred_go_after_deinit_resumes_through_the_session);
-    RUN(test_close_without_a_session_leaves_the_rom_image_alone);
+    RUN(test_close_without_a_session_skips_debug_teardown);
     RUN(test_ctrl_o_after_debug_step_closes_without_go_handoff);
     RUN(test_stop_debugging_clears_stale_go_handoff);
     RUN(test_stop_debugging_resumes_current_debug_context);
@@ -9727,7 +9716,7 @@ int main()
     RUN(test_wait_for_sentinel_drops_execution_keys);
     RUN(test_wait_for_sentinel_aborts_immediately_on_reset_cancel);
     RUN(test_request_reset_cancel_clears_state_and_makes_handler_pokes_during_delay);
-    RUN(test_debug_ownership_blocks_second_stakeholder_until_remote_expires);
+    RUN(test_debug_ownership_blocks_second_stakeholder_through_cleanup);
     RUN(test_monitor_refuses_debug_when_owner_is_busy);
     RUN(test_cursor_row_highlights_jsr_target);
     RUN(test_cursor_row_highlights_jmp_target);
