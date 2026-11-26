@@ -1,5 +1,5 @@
-# Host build of the checks on the TLS calls to the WiFi module, on the channel they use (wifi_dedicated.cc)
-# and on the network target's TLS commands; FreeRTOS, the UART, lwIP and the module are stand-ins.
+# Host build of the checks on the TLS calls to the WiFi module (wifi_tls.cc) and on the network target's TLS
+# commands; wifi_call, FreeRTOS, lwIP and the module are stand-ins.
 #   make (build), make test (build and run)
 RESULT  = result
 OUTPUT  = output
@@ -13,7 +13,7 @@ CXX     = g++
 CPPOPTIONS = -std=gnu++11 -g -O0 -Wall -Wextra -Wno-unused-parameter -DNIOS=1 -DU64=1 \
            $(addprefix -I, $(VPATH))
 
-TLS_SRCS   = wifi_tls_test.cc world.cc wifi_tls.cc wifi_dedicated.cc wifi_random.cc
+TLS_SRCS   = wifi_tls_test.cc world.cc wifi_tls.cc
 TLS_OBJS   = $(addprefix $(OUTPUT)/tls/, $(TLS_SRCS:%.cc=%.o))
 
 # The network target's sources, which a red run can point at another tree.
@@ -30,14 +30,6 @@ all: $(RESULT)/wifitls $(RESULT)/nettls
 $(OUTPUT)/tls/%.o: %.cc
 	@mkdir -p $(OUTPUT)/tls
 	$(CXX) $(CPPOPTIONS) -c -o $@ $<
-
-# wifi_dedicated.cc includes "wifi_cmd.h", which the compiler looks for next to
-# the source before anywhere else. A copy compiled from here finds the
-# stand-in instead; it is the same file, byte for byte.
-$(OUTPUT)/tls/wifi_dedicated.o: $(PATH_SW)/io/wifi/wifi_dedicated.cc
-	@mkdir -p $(OUTPUT)/tls
-	cp $< $(OUTPUT)/tls/wifi_dedicated.cc
-	$(CXX) $(CPPOPTIONS) -c -o $@ $(OUTPUT)/tls/wifi_dedicated.cc
 
 $(OUTPUT)/net/wifi_random.o: $(PATH_SW)/io/wifi/wifi_random.cc
 	@mkdir -p $(OUTPUT)/net

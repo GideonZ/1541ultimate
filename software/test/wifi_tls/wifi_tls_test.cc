@@ -1,13 +1,13 @@
-// Host tests (make -C target/pc/linux/wifitls test) for the TLS calls to the WiFi module in wifi_tls.cc and for the
-// channel they use (wifi_dedicated.cc), its cancel predicate included. The real wifi_tls.cc and
-// wifi_dedicated.cc are compiled; only the UART, queue, tick and module are the world's.
+// Host tests (make -C target/pc/linux/wifitls test) for the TLS calls to the WiFi module in wifi_tls.cc: the
+// requests they build, what they take from the answers, what they make of each way a call can end, and the cancel
+// and the deadline they hand on. The real wifi_tls.cc is compiled; wifi_call, the module and the tick are the
+// world's (test/wifi_reply tests the real wifi_call).
 #include <stdarg.h>
 #include <string.h>
 #include <limits.h>
 #include "world.h"
-#include "wifi_dedicated.h"
+#include "wifi_call.h"
 #include "wifi_tls.h"
-#include "wifi_random.h"
 #include "rpc_calls.h"
 #include "check.h"
 #undef printf
@@ -45,7 +45,7 @@ static void header(uint8_t command)
     memset(reply.bytes, 0, sizeof(reply.bytes));
     rpc_header_t *hdr = (rpc_header_t *)reply.bytes;
     hdr->command = command;
-    hdr->thread = WIFI_DEDICATED_THREAD;
+    hdr->thread = WORLD_THREAD;
     hdr->sequence = SEQUENCE;
 }
 
@@ -233,7 +233,7 @@ static void test_take_step(void)
 
     // Random answers: bytes only whole, only from an answer that holds them,
     // plaintext only once established and never on a NO_READ step.
-    world_reset(99, NULL, true);
+    world_reset(99, NULL);
     int broken = 0;
     for (int n = 0; n < 300000; n++) {
         for (int i = 0; i < 64; i++) {
@@ -536,10 +536,10 @@ static void test_calls(void)
     o.pin = pin;
     o.sni = "a.b";
     o.sni_len = 3;
-    world_reset(1, tls_maker, true);
+    world_reset(1, tls_maker);
     uint16_t seq = sequence_nr;
     int r = wifi_tls_open(&o, 5000, NULL, &esp_err, &reason);
-    const uint8_t fixed[] = { CMD_TLS_OPEN, WIFI_DEDICATED_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 2, 3, 1, 1,
+    const uint8_t fixed[] = { CMD_TLS_OPEN, WORLD_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 2, 3, 1, 1,
                               0xCD, 0xAB, 0x89, 0x67, 0x03, 0x02, 0x01, 0, 0x05, 0x04, 0, 0 };
     std::string want = "transmit 55:" + hex(fixed, 20) + hex(pin, 32) + hex((const uint8_t *)"a.b", 3);
     check((r == 0) && (esp_err == 0) && (sent() == want),
@@ -548,13 +548,13 @@ static void test_calls(void)
     o.sni = NULL;
     o.sni_len = 0;
     o.trust = 0;
-    world_reset(2, tls_maker, true);
+    world_reset(2, tls_maker);
     r = wifi_tls_open(&o, 5000, NULL, &esp_err, &reason);
     std::string s = sent();
     check((r == 0) && (s.compare(0, 12, "transmit 52:") == 0) && (count(s, " 00") >= 36),
           "OPEN: no name, no pin: 52 bytes, the pin as zeros");
     o.sni_len = 254;
-    world_reset(3, tls_maker, true);
+    world_reset(3, tls_maker);
     r = wifi_tls_open(&o, 5000, NULL, &esp_err, &reason);
     check((r == WIFI_TLS_TOO_LONG) && (world_trace.find("getbuffer") == std::string::npos), "OPEN: 254 bytes of name send nothing");
 
@@ -567,17 +567,17 @@ static void test_calls(void)
     st.ct_in_len = 3;
     st.pt_in = pt_in;
     st.pt_in_len = 2;
-    world_reset(6, tls_maker, true);
+    world_reset(6, tls_maker);
     seq = sequence_nr;
     r = wifi_tls_step(1, 0x0A0B, &st, 5000, NULL);
-    uint8_t expect_step[] = { CMD_TLS_STEP, WIFI_DEDICATED_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 1, 1, 0x0B,
+    uint8_t expect_step[] = { CMD_TLS_STEP, WORLD_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 1, 1, 0x0B,
                               0x0A, 3, 0, 2, 0, 0xA1, 0xA2, 0xA3, 0xB1, 0xB2 };
     check((r == WIFI_TLS_INVALID) && (sent() == "transmit 17:" + hex(expect_step, sizeof(expect_step))),
           "STEP: slot, flags, tag, ct_in_len, pt_in_len, ciphertext, plaintext (and the maker's plaintext on NO_READ is refused)");
     fresh_step(&st, 1024);
     st.ct_in = ct_in;
     st.ct_in_len = 3;
-    world_reset(7, tls_maker, true);
+    world_reset(7, tls_maker);
     r = wifi_tls_step(0, 1, &st, 5000, NULL);
     check((r == 0) && (st.ct_out_len == 5) && (st.pt_out_len == 4) && (ct_out[0] == 1) && (pt_out[0] == 6),
           "STEP: the answer is split into ciphertext and plaintext");
@@ -585,171 +585,110 @@ static void test_calls(void)
     fresh_step(&st, 1024);
     st.ct_in = big;
     st.ct_in_len = 1537;
-    world_reset(8, tls_maker, true);
+    world_reset(8, tls_maker);
     r = wifi_tls_step(0, 1, &st, 5000, NULL);
     check((r == WIFI_TLS_TOO_LONG) && (world_trace.find("getbuffer") == std::string::npos), "STEP: 1537 bytes in send nothing");
     st.ct_in_len = 1536;
-    world_reset(8, tls_maker, true);
+    world_reset(8, tls_maker);
     r = wifi_tls_step(0, 1, &st, 5000, NULL);
     check((r == 0) && (sent().compare(0, 15, "transmit 1548: ") == 0), "STEP: 1536 bytes in go in one request");
 
     uint8_t notify[64];
     uint16_t notify_len;
-    world_reset(9, tls_maker, true);
+    world_reset(9, tls_maker);
     seq = sequence_nr;
     r = wifi_tls_close(1, 0xBEEF, notify, sizeof(notify), &notify_len, &esp_err, 1000, NULL);
-    uint8_t expect_close[] = { CMD_TLS_CLOSE, WIFI_DEDICATED_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 1, 0,
+    uint8_t expect_close[] = { CMD_TLS_CLOSE, WORLD_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 1, 0,
                                0xEF, 0xBE };
     check((r == 0) && (notify_len == 0) && (sent() == "transmit 8:" + hex(expect_close, sizeof(expect_close))),
           "CLOSE: slot, 0, tag (8 bytes)");
     wifi_tls_stats_t stats;
-    world_reset(10, tls_maker, true);
+    world_reset(10, tls_maker);
     seq = sequence_nr;
     r = wifi_tls_stats(WIFI_TLS_SLOT_GLOBAL, 0, &stats, &esp_err, 1000, NULL);
-    uint8_t expect_stats[] = { CMD_TLS_STATS, WIFI_DEDICATED_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 0xFF, 0,
+    uint8_t expect_stats[] = { CMD_TLS_STATS, WORLD_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 0xFF, 0,
                                0, 0 };
     check((r == 0) && (stats.heap_free == 123456) && (sent() == "transmit 8:" + hex(expect_stats, 8)),
           "STATS: the module as a whole is slot $FF, tag 0");
-    world_reset(11, tls_maker, true);
+    world_reset(11, tls_maker);
     seq = sequence_nr;
     r = wifi_tls_close_all(&esp_err, 500);
-    uint8_t expect_all[] = { CMD_TLS_CLOSE_ALL, WIFI_DEDICATED_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8) };
+    uint8_t expect_all[] = { CMD_TLS_CLOSE_ALL, WORLD_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8) };
     check((r == 0) && (sent() == "transmit 4:" + hex(expect_all, 4)), "CLOSE_ALL: the header only");
     uint8_t der[5] = { 0x30, 0x82, 0x01, 0x02, 0x03 };
     uint8_t reject;
-    world_reset(12, tls_maker, true);
+    world_reset(12, tls_maker);
     seq = sequence_nr;
     r = wifi_tls_set_ca(der, 5, 0x1122, &esp_err, &reject, 5000, NULL);
-    uint8_t expect_ca[] = { CMD_TLS_SET_CA, WIFI_DEDICATED_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 5, 0,
+    uint8_t expect_ca[] = { CMD_TLS_SET_CA, WORLD_THREAD, (uint8_t)seq, (uint8_t)(seq >> 8), 5, 0,
                             0x22, 0x11, 0x30, 0x82, 0x01, 0x02, 0x03 };
     check((r == 0) && (sent() == "transmit 13:" + hex(expect_ca, sizeof(expect_ca))), "SET_CA: der_len, ca_tag, der");
     static uint8_t big_ca[WIFI_TLS_CA_MAX + 1];
-    world_reset(12, tls_maker, true);
+    world_reset(12, tls_maker);
     r = wifi_tls_set_ca(big_ca, WIFI_TLS_CA_MAX + 1, 1, &esp_err, &reject, 5000, NULL);
     check((r == WIFI_TLS_TOO_LONG) && (world_trace.find("getbuffer") == std::string::npos), "SET_CA: 1473 bytes send nothing");
-    world_reset(12, tls_maker, true);
+    world_reset(12, tls_maker);
     r = wifi_tls_set_ca(big_ca, WIFI_TLS_CA_MAX, 1, &esp_err, &reject, 5000, NULL);
     check((r == 0) && (sent().compare(0, 15, "transmit 1480: ") == 0), "SET_CA: 1472 bytes go in one request");
 
-    // The waits: each call its caller's timeout; with a cancel, in slices.
-    world_reset(13, late_maker, true);
+    // What is handed to wifi_call: the caller's timeout, cancel and deadline, as they are.
+    world_reset(13, late_maker);
     fresh_step(&st, 1024);
     r = wifi_tls_step(0, 1, &st, 5000, NULL);
-    check((r == WIFI_TLS_BUSY) && (world_trace.find("receive 1000") != std::string::npos) && !dedicated_waiting,
-          "no cancel: one wait of the whole timeout (5 s = 1000 ticks), then BUSY");
-    world_reset(14, late_maker, true);
+    check((r == WIFI_TLS_BUSY) && (world_calls == 1) && (world_last.timeout_ms == 5000) && !world_last.cancel &&
+              !world_last.use_deadline && (st.ct_out_len == 0),
+          "no cancel: the caller's timeout, nothing else; an answer to another request is BUSY (%d)", r);
+    world_reset(14, tls_maker);
+    int marker;
+    wifi_tls_cancel_t given = { cancel_after_n, &marker, true, 123456 };
     cancel_calls = 0;
     cancel_after = 1000;
-    wifi_tls_cancel_t never = { cancel_after_n, NULL };
     fresh_step(&st, 1024);
-    r = wifi_tls_step(0, 1, &st, 1000, &never);
-    check((r == WIFI_TLS_BUSY) && (count(world_trace, "receive 20") == 10) && (cancel_calls == 10) &&
-          (world_trace.find("print: TLS Step: no reply.") != std::string::npos),
-          "a cancel that never fires: ten 100-ms slices, asked after each (%d), then BUSY", cancel_calls);
-    world_reset(15, late_maker, true);
-    cancel_calls = 0;
-    cancel_after = 3;
-    wifi_tls_cancel_t soon = { cancel_after_n, NULL };
-    fresh_step(&st, 1024);
-    r = wifi_tls_step(0, 1, &st, 5000, &soon);
-    // The first slice brings the late (foreign) answer and is skipped; three empty ones follow.
-    check((r == WIFI_TLS_BUSY) && (cancel_calls == 3) && (count(world_trace, "receive 20") == 4) &&
-          (world_trace.find("print: TLS Step: cancelled.") != std::string::npos) && !dedicated_waiting &&
-          (world_queued() == 0) && (st.ct_out_len == 0) && (st.pt_out_len == 0) && untouched(ct_out) &&
-          untouched(pt_out),
-          "a cancel after 3 slices ends the call with BUSY at once, frees the channel, takes nothing");
-    // The answer arrives just as the cancel fires: the call has given up, so
-    // it is dropped, not taken.
-    world_reset(20, late_maker, true);
-    fresh_step(&st, 1024);
-    struct arriving_right {
-        static void maker(command_buf_t *rx, const uint8_t *req, int req_size, int kind)
-        {
-            tls_maker(rx, req, req_size, kind);
-        }
-        static bool now(void *context)
-        {
-            world_reset_maker(maker);
-            world_deliver_now();
-            return true;
-        }
-    };
-    wifi_tls_cancel_t race = { arriving_right::now, NULL };
-    r = wifi_tls_step(0, 1, &st, 5000, &race);
-    check((r == WIFI_TLS_BUSY) && (st.ct_out_len == 0) && untouched(ct_out) && (world_queued() == 0) &&
-              !dedicated_waiting,
-          "an answer that arrives as the cancel fires is dropped: BUSY, nothing taken, the queue emptied (%d)", r);
+    r = wifi_tls_step(0, 1, &st, 1000, &given);
+    check((r == 0) && (world_last.timeout_ms == 1000) && (world_last.cancel == cancel_after_n) &&
+              (world_last.cancel_context == &marker) && world_last.use_deadline && (world_last.deadline == 123456),
+          "the cancel function, its context and the deadline are handed on as they are");
+    wifi_tls_cancel_t no_deadline = { cancel_after_n, NULL, false, 77 };
+    world_reset(14, tls_maker);
+    r = wifi_tls_stats(0, 1, &stats, &esp_err, 1000, &no_deadline);
+    check((r == 0) && world_last.cancel && !world_last.use_deadline, "a cancel without a deadline has none");
+    world_reset(14, tls_maker);
+    r = wifi_tls_close_all(&esp_err, 500);
+    check((r == 0) && (world_last.timeout_ms == 500) && !world_last.cancel, "CLOSE_ALL: its timeout, no cancel");
 
-    world_reset(16, tls_maker, true);
-    cancel_calls = 0;
-    cancel_after = 1;
-    fresh_step(&st, 1024);
-    r = wifi_tls_step(0, 1, &st, 5000, &soon);
-    check((r == 0) && (cancel_calls == 0), "an answer inside the first slice is taken; cancel is not even asked");
-    world_reset(17, tls_maker, true);
+    // A call that ends BUSY, cancelled or restarted is BUSY, and takes nothing.
+    world_outcome_t ends[3] = { WORLD_SILENT, WORLD_SILENT, WORLD_RESTARTS };
+    for (int i = 0; i < 3; i++) {
+        world_reset(15, tls_maker);
+        world_outcome = ends[i];
+        cancel_calls = 0;
+        cancel_after = (i == 1) ? 1 : 1000;
+        wifi_tls_cancel_t soon = { cancel_after_n, NULL, false, 0 };
+        fresh_step(&st, 1024);
+        r = wifi_tls_step(0, 1, &st, 5000, &soon);
+        check((r == WIFI_TLS_BUSY) && (world_transmits == 1) && (st.ct_out_len == 0) && (st.pt_out_len == 0) &&
+                  untouched(ct_out) && untouched(pt_out),
+              "%s: BUSY, nothing taken (%d)", (i == 0) ? "no answer" : ((i == 1) ? "cancelled" : "module restarted"), r);
+    }
+    world_reset(16, tls_maker);
+    world_outcome = WORLD_SILENT;
+    r = wifi_tls_close_all(&esp_err, 500);
+    check((r == WIFI_TLS_BUSY) && (world_transmits == 1), "CLOSE_ALL without an answer: BUSY, sent");
+
+    world_reset(17, tls_maker);
     world_ready = false;
     r = wifi_tls_close_all(&esp_err, 500);
     check((r == WIFI_TLS_NO_MODULE) && world_trace.empty(), "without the module application nothing is tried");
-    world_reset(18, tls_maker, true);
-    dedicated_waiting = true;
-    r = wifi_tls_stats(0, 1, &stats, &esp_err, 1000, NULL);
-    check((r == WIFI_TLS_UNSENT) && dedicated_waiting, "another request outstanding: UNSENT at once");
-    // Nothing sent: a failed GetBuffer or TransmitPacket is UNSENT for the TLS calls and BUSY for GET_RANDOM.
-    uint8_t random_bytes[16];
-    world_reset(19, tls_maker, true);
+    // Nothing sent: no buffer, no reply slot, the UART refusing it: UNSENT, which a caller may retry.
+    world_reset(19, tls_maker);
     world_no_buffer = true;
     r = wifi_tls_stats(0, 1, &stats, &esp_err, 1000, NULL);
-    check((r == WIFI_TLS_UNSENT) && (world_transmits == 0) && !dedicated_waiting && (world_queued() == 0),
-          "no buffer: UNSENT (%d), nothing sent, the channel free again", r);
-    world_reset(19, tls_maker, true);
-    world_no_buffer = true;
-    r = wifi_get_random(random_bytes, sizeof(random_bytes));
-    check((r == WIFI_RANDOM_BUSY) && (world_transmits == 0) && !dedicated_waiting,
-          "GET_RANDOM, no buffer: BUSY, not UNSENT (%d)", r);
-    world_reset(21, tls_maker, true);
+    check((r == WIFI_TLS_UNSENT) && (world_transmits == 0), "no buffer: UNSENT (%d), nothing sent", r);
+    world_reset(21, tls_maker);
     world_no_transmit = true;
     r = wifi_tls_stats(0, 1, &stats, &esp_err, 1000, NULL);
-    check((r == WIFI_TLS_UNSENT) && (world_transmits == 0) && !dedicated_waiting && (world_queued() == 0) &&
-              (world_trace.find("print: TLS Stats: no reply.") != std::string::npos),
+    check((r == WIFI_TLS_UNSENT) && (world_transmits == 0),
           "a failed transmit: UNSENT, not BUSY (%d): the module never saw the request", r);
-    world_reset(21, tls_maker, true);
-    world_no_transmit = true;
-    r = wifi_get_random(random_bytes, sizeof(random_bytes));
-    check((r == WIFI_RANDOM_BUSY) && (world_transmits == 0) && !dedicated_waiting,
-          "GET_RANDOM, a failed transmit: BUSY, not UNSENT (%d)", r);
-    world_reset(22, tls_maker, true);
-    dedicated_waiting = true;
-    r = wifi_get_random(random_bytes, sizeof(random_bytes));
-    check((r == WIFI_RANDOM_BUSY) && dedicated_waiting, "GET_RANDOM, channel taken: BUSY, not UNSENT (%d)", r);
-
-    // The buffer of a taken answer is freed with the scheduler suspended, so that no reset gets in between.
-    world_reset(23, tls_maker, true);
-    r = wifi_tls_stats(0, 1, &stats, &esp_err, 1000, NULL);
-    check((r == 0) && (world_frees == 1) && (world_free_unsuspended == 0) && (world_suspended == 0),
-          "a taken answer is freed inside the suspended section (%d frees, %d outside)", world_frees,
-          world_free_unsuspended);
-    // So is one that is dropped unread after the call gave up.
-    world_reset(24, late_maker, true);
-    cancel_calls = 0;
-    cancel_after = 1;
-    fresh_step(&st, 1024);
-    r = wifi_tls_step(0, 1, &st, 5000, &soon);
-    check((r == WIFI_TLS_BUSY) && (world_frees >= 1) && (world_free_unsuspended == 0) && (world_suspended == 0),
-          "a skipped answer is freed inside the suspended section (%d frees, %d outside)", world_frees,
-          world_free_unsuspended);
-
-    // An answer queued before the last buffer pool reset is dropped unread and its buffer not freed.
-    world_reset(25, tls_maker, true);
-    world_stale_next = true;
-    memset(&stats, 0, sizeof(stats));
-    r = wifi_tls_stats(0, 1, &stats, &esp_err, 100, NULL);
-    check((r == WIFI_TLS_BUSY) && (world_isr_calls == 1) && (world_frees == 0) && (stats.heap_free == 0) &&
-              !dedicated_waiting && (world_queued() == 0),
-          "a right-looking answer of a past generation is not taken and not freed: BUSY (%d)", r);
-    world_reset(26, tls_maker, true);
-    world_stale_next = true;
-    r = wifi_get_random(random_bytes, sizeof(random_bytes));
-    check((r == WIFI_RANDOM_BUSY) && (world_frees == 0), "GET_RANDOM: a past generation's answer is dropped (%d)", r);
 }
 
 int main(void)
