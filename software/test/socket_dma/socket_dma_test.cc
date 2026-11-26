@@ -53,7 +53,7 @@ SubsysCommand::SubsysCommand(void *ui, int id, int func, int m, const void *buf,
 SubsysCommand::SubsysCommand(void *ui, int id, int func, int m, const char *p, const char *f)
     : function_id(func), mode(m), buffer(0), bufferSize(0), direct_call(0) { }
 
-int SubsysCommand::execute(void)
+SubsysResultCode_t SubsysCommand::execute(void)
 {
     Rec r;
     r.function_id = function_id;
@@ -66,7 +66,8 @@ int SubsysCommand::execute(void)
         recs.push_back(r);
     }
     delete this;
-    return 0;
+    SubsysResultCode_t ok = { SSRET_OK };
+    return ok;
 }
 
 static C64 the_c64;

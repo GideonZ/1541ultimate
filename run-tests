@@ -182,6 +182,8 @@ SUITES: Sequence[Suite] = (
     # Also needs no device: the SoftIEC soak's log correlation, against lines the device
     # wrote on the bench. A wrong verdict there reads as a firmware defect.
     Suite("e2e", "softiec-log", "tests/soak/io/iec/softiec_log_test.py", "", profile=profiles.QUICK),
+    # Also needs no device: the JiffyDOS LOAD soak's host delay patch, checksums and verdicts.
+    Suite("e2e", "jiffy-load", "tests/soak/io/iec/jiffy_load_test.py", "", profile=profiles.QUICK),
     # Also needs no device: which keys go out for a machine that reads 'w',
     # 'a', 's' and 'd' as cursor keys is decided before anything reaches the
     # device. A C64 Ultimate ships with that reading, and getting it wrong
@@ -232,6 +234,13 @@ SUITES: Sequence[Suite] = (
     # the frozen transfer and a seeded run of random windows; leaves RAM as found.
     Suite("e2e", "dma-round-trip", "tests/e2e/api/dma_round_trip_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+    # readmem and writemem back to back while machine:menu_button opens and closes the
+    # menu; every answer must be the data, none the $FF a half-frozen bus gives (#1106).
+    Suite("e2e", "menu-freeze-dma", "tests/e2e/api/menu_freeze_dma_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # machine:reset sent while the menu is opening must not crash the device.
+    Suite("e2e", "menu-reset-race", "tests/e2e/api/menu_reset_race_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     # Keyboard, joystick and mouse injection over REST, checked against what the
@@ -329,6 +338,13 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
+    # Issue #1052: a long print job, B&W and colour, with a SoftIEC drive and REST
+    # probed while it runs and after it closes. B&W alone takes about 75 s, so the
+    # suite is standard; the test adds the colour legs (about 5 min in all) itself
+    # under the deep profile. `--control-drive BUS` adds a control drive and is
+    # not in the registered arguments.
+    Suite("e2e", "printer-stall", "tests/e2e/io/printer/printer_stall_test.py",
+          "-H @HOST@ -p @PASS@", profile=profiles.STANDARD),
     # usb-mouse drives the mouse over REST and needs no hardware; it runs the
     # scenarios its profile asks for (mouse_test.py PROFILE_TESTS), from two in
     # smoke to every one in deep, where it also sweeps PAL and NTSC and takes
@@ -707,6 +723,13 @@ SUITES: Sequence[Suite] = (
     # minutes, the soak profile runs the soak mode for four hours. See --help and
     # tests/soak/README.md for --mode and the per-phase durations.
     Suite("soak", "softiec-soak", "tests/soak/io/iec/softiec_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
+    # JiffyDOS/SoftIEC LOAD soak: LOAD from the Software IEC drive over and over under whatever
+    # KERNAL the device runs, each load checked for status, error channel, end address and
+    # content. As run here (no host delay, partition 1) it is a general LOAD soak and does not
+    # reproduce #986; the row that does needs a USB partition, a host delay and the user's own
+    # JiffyDOS image, and is run by hand. See tests/soak/README.md.
+    Suite("soak", "jiffy-load-soak", "tests/soak/io/iec/jiffy_load_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@ @KERNAL@"),
 )
 
