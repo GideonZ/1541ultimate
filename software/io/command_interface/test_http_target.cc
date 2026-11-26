@@ -771,7 +771,8 @@ class ResponsePeer
     ResponsePeer& operator=(const ResponsePeer&);
 public:
     // With piece > 0, the response goes out piece bytes at a time, gap_us apart.
-    ResponsePeer(const char *response, int response_length = -1, int piece = 0, int gap_us = 0) : child(-1)
+    // With hold_ms > 0, the connection stays open that long after the last byte.
+    ResponsePeer(const char *response, int response_length = -1, int piece = 0, int gap_us = 0, int hold_ms = 0) : child(-1)
     {
         if (!endpoint.port() || !endpoint.start_listening()) {
             return;
@@ -807,6 +808,9 @@ public:
                 if (piece > 0 && sent < length) {
                     usleep(gap_us);
                 }
+            }
+            if (hold_ms > 0) { // a keep-alive server: the reply is sent, the connection stays open
+                usleep(hold_ms * 1000);
             }
             shutdown(client, SHUT_WR);
             close(client);
@@ -2018,6 +2022,100 @@ static void test_abort_reading_server(HttpTarget *target)
     run_expect_empty(target, "release reading-server fixture", &c_cmd_free_all, status_ok);
 }
 
+// Replies that end with their headers: the reply to HEAD, and a 204 or 304 reply,
+// whatever Content-Length they announce (RFC 9110 section 6.4.1). The exchange is
+// complete when the headers end, and does not wait for a body that never comes.
+static void test_bodyless_responses(HttpTarget *target)
+{
+    struct Case {
+        const char *name;
+        uint8_t verb;
+        const char *response;
+        int hold_ms; // the server keeps the connection open this long
+        const char *body; // what the C64 must get as the reply (raw exchange only); NULL: nothing
+        bool fail; // the exchange must end in 503 SERVICE UNAVAILABLE, with no reply
+    };
+    static const Case cases[] = {
+        { "HEAD with Content-Length", 6, "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n", 0, NULL },
+        { "HEAD with chunked encoding", 6, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", 0, NULL },
+        { "HEAD, connection kept open", 6, "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n", 4000, NULL },
+        { "HEAD without framing", 6, "HTTP/1.1 200 OK\r\n\r\n", 0, NULL },
+        { "HEAD without framing, connection kept open", 6, "HTTP/1.1 200 OK\r\n\r\n", 4000, NULL },
+        { "304 with Content-Length", 1, "HTTP/1.1 304 Not Modified\r\nContent-Length: 100\r\n\r\n", 0, NULL },
+        { "304, connection kept open", 1, "HTTP/1.1 304 Not Modified\r\nContent-Length: 100\r\n\r\n", 4000, NULL },
+        { "204 without framing", 1, "HTTP/1.1 204 No Content\r\n\r\n", 0, NULL },
+        // A status line without a status code is not a reply: the parser rejects it.
+        { "no status code, Content-Length 0", 1, "HTTP/1.1\r\nContent-Length: 0\r\n\r\n", 0, NULL, true },
+        { "no status code, Content-Length body", 1, "HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello", 0, NULL, true },
+        // No length and no chunking: the body runs until the server closes.
+        { "no framing, ended by close", 1, "HTTP/1.1 200 OK\r\n\r\nhello", 0, "hello" },
+        // A chunk size that is not hexadecimal is a broken reply, not an empty one.
+        { "bad chunk size", 1, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\nhello\r\n0\r\n\r\n", 0, NULL, true },
+    };
+    int baseline = open_descriptor_count();
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        for (int raw = 0; raw <= 1; ++raw) {
+            const Case& c = cases[i];
+            char label[96];
+            snprintf(label, sizeof(label), "bodyless: %s, %s", c.name, raw ? "raw" : "object");
+            {
+                ResponsePeer peer(c.response, -1, 0, 0, c.hold_ms);
+                checks++;
+                if (!peer.port()) {
+                    failures++;
+                    printf("FAIL response peer setup\n");
+                    return;
+                }
+                run_expect_empty(target, "reset bodyless fixture", &c_cmd_free_all, status_ok);
+                uint8_t create[128] = { 6, HTTP_CMD_HEADER_CREATE, c.verb };
+                int length = snprintf((char *)create + 3, sizeof(create) - 3,
+                                      "http://127.0.0.1:%u/", peer.port());
+                Message command = make_msg(create, length + 3);
+                const uint8_t handle[] = { 0 };
+                run_expect(target, "create bodyless header", &command, handle, 1, status_ok);
+                Message *reply, *status;
+                struct timespec start;
+                clock_gettime(CLOCK_MONOTONIC, &start);
+                quiet_begin();
+                run_command(target, raw ? &c_exchange_raw : &c_exchange, &reply, &status);
+                quiet_end();
+                long ms = elapsed_ms(start);
+                // Well inside the stall limit: nothing was waited out.
+                checks++;
+                if (ms > 2000) {
+                    failures++;
+                    printf("FAIL %s: took %d ms\n", label, (int)ms);
+                }
+                if (raw && c.body) {
+                    expect_bytes(label, "reply", reply, (const uint8_t *)c.body, strlen(c.body));
+                } else {
+                    expect_empty(label, "reply", reply);
+                }
+                if (c.fail) {
+                    expect_text(label, "status", status, "503 SERVICE UNAVAILABLE");
+                } else if (raw) {
+                    // The status channel carries the header block only.
+                    const char *end = strstr(c.response, "\r\n\r\n") + 4;
+                    expect_bytes(label, "status", status, (const uint8_t *)c.response, end - c.response);
+                } else {
+                    // There is no JSON in an empty body, as for Content-Length: 0.
+                    expect_text(label, "status", status, "400 NO VALID JSON");
+                }
+                expect_last(label, reply, true);
+                if (!c.hold_ms && !c.fail) {
+                    checks++;
+                    if (!peer.completed()) {
+                        failures++;
+                        printf("FAIL %s: peer did not finish\n", label);
+                    }
+                }
+                run_expect_empty(target, "release bodyless fixture", &c_cmd_free_all, status_ok);
+            }
+            expect_descriptor_count("bodyless response releases sockets", baseline);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--framing") == 0) return test_http_framing();
@@ -2075,6 +2173,13 @@ int main(int argc, char **argv)
     if ((argc > 1) && (strcmp(argv[1], "--response-completion") == 0)) {
         test_response_completion(target, argc > 2 ? atoi(argv[2]) : -1);
         printf("Response completion: %d checks, %d failures\n", checks, failures);
+        return failures ? 1 : 0;
+    }
+
+    if ((argc > 1) && (strcmp(argv[1], "--bodyless-responses") == 0)) {
+        signal(SIGPIPE, SIG_IGN);
+        test_bodyless_responses(target);
+        printf("Bodyless responses: %d checks, %d failures\n", checks, failures);
         return failures ? 1 : 0;
     }
 

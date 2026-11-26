@@ -57,13 +57,8 @@ and a 16384-byte body plus a separate terminator byte. Identical individual
 Content-Length fields are accepted; length lists and protocol upgrades are not.
 Failures release partial bodies rather than expose them as successful responses.
 
-The public HTTP submodule revision is accompanied by
-`patches/http-response-framing.patch`. Run `python3 tools/prepare_http_parser.py`
-after initializing submodules and before building. It checks every affected file
-against the public base or exact patched contents, refuses unrelated local edits,
-and verifies the result. CI performs the same preparation. The submodule then
-appears modified by this reviewed patch; do not commit those changes in the parent
-as a different, unpublished submodule reference.
+The pinned HTTP submodule includes response framing and explicit EOF completion.
+Initialize the submodule before building.
 
 ## Validation and remaining qualification
 

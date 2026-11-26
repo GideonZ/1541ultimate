@@ -45,7 +45,6 @@ def main():
 
     save()
     run("provider-boot-startup", [sys.executable, root / "tools/tests/test_provider_boot_startup.py"])
-    run("parser-prepare", [sys.executable, root / "tools/prepare_http_parser.py"])
     run("wifi-replies", ["make", "-C", root / "target/pc/linux/wifireply", "-j1", "test"])
     run("parser-tests", ["make", "-C", root / "software/httpd/c-version/tests",
                          "CXXFLAGS=-std=c++17 -g -fsanitize=address,undefined -fno-sanitize-recover=all", "all"])
@@ -81,7 +80,7 @@ def main():
     target = root / "target/pc/linux/test_http_target"
     run("http-build", ["make", "-j1", "CC=gcc " + flags, "CPP=g++ " + flags, "all"], cwd=target)
     for mode in ("", "framing", "transport", "integer-widths", "body-removal", "connect-cleanup",
-                 "response-completion", "response-boundaries", "response-cleanup"):
+                 "response-completion", "response-boundaries", "response-cleanup", "bodyless-responses"):
         run("http-" + (mode or "general"), [target / "result/test_http"] + (["--" + mode] if mode else []), cwd=target, timeout=40)
     model = output / "session-build"
     run("model-configure", ["cmake", "-S", root / "target/pc/linux/test_http_session", "-B", model])

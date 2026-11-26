@@ -84,8 +84,8 @@ test-connect-cleanup:
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all
 	@timeout 30s env LD_PRELOAD="$$($(CPP) -print-file-name=libasan.so)$${LD_PRELOAD:+:$$LD_PRELOAD}" result/connect-cleanup/$(PRJ) --connect-cleanup
 
-.PHONY: test-response-completion test-response-boundaries test-response-cleanup test-transport
-test-response-completion test-response-boundaries test-response-cleanup test-transport:
+.PHONY: test-response-completion test-response-boundaries test-response-cleanup test-transport test-bodyless-responses
+test-response-completion test-response-boundaries test-response-cleanup test-transport test-bodyless-responses:
 	@$(MAKE) OUTPUT=output/response-completion RESULT=result/response-completion \
 	    CC="$(CC) -fsanitize=address,undefined -fno-sanitize-recover=all" \
 	    CPP="$(CPP) -fsanitize=address,undefined -fno-sanitize-recover=all" all

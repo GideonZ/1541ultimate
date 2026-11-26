@@ -67,6 +67,8 @@ class HttpHeaderSlot
     uint16_t port;
     JSON_Object lines;
 public:
+    bool is_head() const { return verb == 6; } // HEAD, as the verbs[] lists below number it
+
     HttpHeaderSlot(uint8_t v, const char *u, int ulen) : verb(v), valid(true), lines(true)
     {
         // Force null-termination
@@ -665,6 +667,7 @@ public:
 struct HttpJob {
     uint32_t ticket;
     bool raw;
+    bool head;                // the request is HEAD: the reply has no body
     mstring host;
     uint16_t port;
     StreamRamFile *request;

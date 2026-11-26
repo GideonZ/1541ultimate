@@ -16,7 +16,6 @@ git -C /tmp/ultimate-tls checkout 529b0450955611bd82db921db3bae10222203eba
 git clone https://github.com/espressif/mbedtls.git /tmp/ultimate-tls/.deps/mbedtls
 git -C /tmp/ultimate-tls/.deps/mbedtls checkout 2b96dd8eebe880f304c69976b3c2fa0c5100cbb6
 git -C /tmp/ultimate-tls/.deps/mbedtls submodule update --init --recursive
-python3 tools/prepare_http_parser.py
 python3 tools/test_https_host.py --tls-root /tmp/ultimate-tls --output /tmp/https-host-run
 ```
 
@@ -30,7 +29,7 @@ evidence packages. A timeout or missing case is never a pass.
 ## Coverage
 
 - Existing HTTP modes: transport, framing, integer widths, body removal, connect
-  cleanup, response completion/boundaries/cleanup and the general suite.
+  cleanup, response completion/boundaries/cleanup, bodyless responses and the general suite.
 - Real TLS chain, hostname and date failures; unavailable trust, time and entropy;
   handshake/read/total deadlines; cancellation; authenticated and truncated EOF.
 - Direct adapter, target routing, owner, worker, connected, UART and bound-provider

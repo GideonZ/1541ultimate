@@ -82,7 +82,7 @@ public:
         if (connection_state == Connected) connection->close_session();
         connection_state = Failed;
     }
-    bool recv_response(void);
+    bool recv_response(bool head = false);
 
     HTTPReqHeader *get_header(void) {
         return &response.Header;

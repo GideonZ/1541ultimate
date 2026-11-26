@@ -137,11 +137,12 @@ int HttpRequest :: send_request(StreamRamFile *s)
     return 0;
 }
 
-bool HttpRequest :: recv_response(void)
+bool HttpRequest :: recv_response(bool head)
 {
     if (connection_state != Connected || body) {
         return false;
     }
+    if (head) response.responseToHead = 1;
     if (connection == &socket_connection) wait.progress();
     bool complete = get_response(*connection, collect_in_buffer, response);
     this->body = (t_BufferedBody *)response.userContext;
@@ -242,7 +243,9 @@ static bool get_response(HttpConnection& connection, HTTPREQ_CALLBACK callback, 
     do {
         int n = read_connection(connection, response);
         if (n <= 0) {
-            if (n == 0) FinishClientResponse(&response);
+            if (n == 0) {
+                FinishClientResponse(&response); // orderly EOF ends a connection-close body
+            }
             break;
         }
         state = ProcessClientData(&response, NULL, callback);

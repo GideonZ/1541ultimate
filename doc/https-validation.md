@@ -101,10 +101,9 @@ The candidate includes upstream `03c70e6e` and preserves published PR history at
 `26a8938319e35494c5a7371d992797bc0f8743fb`. The TLS core is pinned to
 `529b0450955611bd82db921db3bae10222203eba`, Mbed TLS to
 `2b96dd8eebe880f304c69976b3c2fa0c5100cbb6`, and ESP-IDF to
-`79e3454c68248bd7d881721c9b2e94561378a8ce`. The public HTTP submodule base is
+`79e3454c68248bd7d881721c9b2e94561378a8ce`. For that validation the public HTTP submodule base was
 `ad73d3217bb0e1b3f37e0dbba595309b942aea17`; the checked-in framing patch and hash
-manifest are applied by `tools/prepare_http_parser.py`. A private submodule
-commit is not required.
+manifest were applied by `tools/prepare_http_parser.py`. Current builds use the merged parser directly from the pinned submodule.
 
 QEMU ran source `645a15cc4d0b6f349920b3def04ead3e296c7ec5`. Archive comparison
 confirms that its embedded runtime inputs are byte-identical to the final host
