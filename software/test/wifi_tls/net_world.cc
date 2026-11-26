@@ -703,6 +703,20 @@ static RpcCall &log_call(int cmd, uint8_t slot, uint16_t tag, const wifi_tls_can
     return world_module.calls.back();
 }
 
+// CLOSEs that were queued on the module run in the order they came, before the call after them. A CLOSE names
+// slot and tag, as the module's tls_find does: a session under another tag is not touched.
+static void run_pending_closes(void)
+{
+    FakeModule &m = world_module;
+    for (size_t i = 0; i < m.pending_closes.size(); i++) {
+        FakeSession &s = m.sess[m.pending_closes[i].first];
+        if (s.live && (s.tag == m.pending_closes[i].second)) {
+            s.live = false;
+        }
+    }
+    m.pending_closes.clear();
+}
+
 static bool unsent(void)
 {
     if (world_module.unsent_next > 0) {
@@ -723,6 +737,9 @@ int wifi_tls_open(const wifi_tls_open_t *open, uint32_t timeout_ms, const wifi_t
     }
     if (unsent()) {
         return WIFI_TLS_UNSENT;
+    }
+    if (!m.close_late_after_open) {
+        run_pending_closes();
     }
     RpcCall &c = log_call(0x30, open->slot, open->tag, cancel);
     c.open = *open;
@@ -760,6 +777,9 @@ int wifi_tls_open(const wifi_tls_open_t *open, uint32_t timeout_ms, const wifi_t
     s.tag = open->tag;
     s.trust = open->trust;
     s.state = WIFI_TLS_HANDSHAKING;
+    if (m.close_late_after_open) {
+        run_pending_closes();
+    }
     return 0;
 }
 
@@ -829,6 +849,7 @@ int wifi_tls_step(uint8_t slot, uint16_t tag, wifi_tls_step_t *st, uint32_t time
     if (!m.available) {
         return WIFI_TLS_NO_MODULE;
     }
+    run_pending_closes();
     if (unsent()) {
         return WIFI_TLS_UNSENT;
     }
@@ -970,7 +991,12 @@ int wifi_tls_close(uint8_t slot, uint16_t tag, uint8_t *ct_out, uint16_t room, u
     if (!m.available) {
         return WIFI_TLS_NO_MODULE;
     }
-    log_call(0x32, slot, tag, cancel);
+    if (m.close_unsent_next > 0) {
+        m.close_unsent_next--;
+        return WIFI_TLS_UNSENT;
+    }
+    run_pending_closes();
+    log_call(0x32, slot, tag, cancel).timeout_ms = timeout_ms;
     bool cancelled;
     if (!module_wait(timeout_ms, cancel, m.close_delay_ms, &cancelled) && m.close_delay_ms) {
         return WIFI_TLS_BUSY;
@@ -987,6 +1013,32 @@ int wifi_tls_close(uint8_t slot, uint16_t tag, uint8_t *ct_out, uint16_t room, u
     bytes notify = record('C', 0);
     memcpy(ct_out, notify.data(), notify.size());
     *ct_out_len = notify.size();
+    return 0;
+}
+
+// A CLOSE that nobody waits for: sent, and the module acts on it in its own time (or never, or late).
+int wifi_tls_close_send(uint8_t slot, uint16_t tag)
+{
+    FakeModule &m = world_module;
+    if (!m.available) {
+        return WIFI_TLS_NO_MODULE;
+    }
+    if (m.close_unsent_next > 0) {
+        m.close_unsent_next--;
+        return WIFI_TLS_UNSENT;
+    }
+    log_call(0x32, slot, tag, NULL).send_only = true;
+    if (m.close_dropped) {
+        return 0;
+    }
+    if (m.close_late || m.close_late_after_open) {
+        m.pending_closes.push_back(std::make_pair(slot, tag));
+        return 0;
+    }
+    FakeSession &s = m.sess[slot];
+    if (s.live && (s.tag == tag)) {
+        s.live = false;
+    }
     return 0;
 }
 

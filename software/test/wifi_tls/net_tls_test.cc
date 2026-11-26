@@ -1370,6 +1370,120 @@ static void test_close(void)
     check(r.status == "00,OK" && !sock(h).open, "close: 00,OK even when the module does not answer");
 }
 
+// --- the CLOSE that cleans up is sent, not waited for ------------------------------------------
+
+// An aborted handshake: the OPEN was answered, the server stalls, and the abort comes 600 ticks in.
+static Res abort_in_handshake(uint32_t *late)
+{
+    sock(0).srv.on_hello = SRV_STALL;
+    world_abort_at = world_tick + 600;
+    Res r = run(open_cmd(0, 0, "example.com"));
+    *late = (world_tick - world_abort_at) * 5;
+    world_abort_at = 0xFFFFFFFF;
+    sock(0).srv.on_hello = 0; // the next connection to this handle's server answers
+    return r;
+}
+
+// The module serves its commands in order. A cleanup CLOSE names (slot, tag): the OPEN that follows into the
+// same slot takes a new tag, and frees whatever the slot still holds, so no answer is needed.
+static void test_cleanup_close_sent_not_waited(void)
+{
+    printf("Cleanup CLOSE: sent without waiting for the answer\n");
+
+    // (a) a module that never answers: the worker is free at the abort, not 1 s later
+    fresh();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    uint32_t late;
+    Res r = abort_in_handshake(&late);
+    check(late <= 10, "cleanup: the aborted OPEN returns at the abort, with a silent module (%u ms late)", late);
+    check(world_count(0x32) == 1 && call_no(1).cmd == 0x32 && world_open_sockets() == 0,
+          "cleanup: one CLOSE sent, the socket closed");
+    check(info_byte(2) == 0, "cleanup: the entry is free");
+
+    // (b) the CLOSE never reaches the session (the module's queue refused it): the next OPEN into the slot works
+    // and frees the orphan
+    fresh();
+    world_module.close_dropped = true;
+    r = abort_in_handshake(&late);
+    uint16_t old_tag = world_module.sess[0].tag;
+    check(world_module.sess[0].live && late <= 10, "cleanup: a refused CLOSE leaves the session on the module");
+    world_module.close_dropped = false;
+    int h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && world_module.sess[0].tag != old_tag && info_byte(2) == 1,
+          "cleanup: the next OPEN into the slot works, under a new tag");
+    check(close_cmd(h).status == "00,OK" && !world_module.sess[0].live && info_byte(2) == 0,
+          "cleanup: and that session closes as usual");
+
+    // (b2) a CLOSE queued behind a step runs before the OPEN that follows it
+    fresh();
+    world_module.close_late = true;
+    r = abort_in_handshake(&late);
+    check(world_module.sess[0].live, "cleanup: a queued CLOSE has not run yet");
+    h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && world_module.sess[0].tag != 0 && info_byte(2) == 1,
+          "cleanup: the queued CLOSE runs before the next OPEN, which then holds the slot");
+
+    // (b3) even a CLOSE that comes after the new OPEN closes the old tag only, never the new session
+    fresh();
+    world_module.close_late_after_open = true;
+    r = abort_in_handshake(&late);
+    old_tag = world_module.sess[0].tag;
+    h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && world_module.sess[0].tag != old_tag && world_module.pending_closes.empty(),
+          "cleanup: a late CLOSE of the old tag leaves the new session in the slot alone");
+    world_module.close_late_after_open = false;
+
+    // (c) a CLOSE that could not be sent (UNSENT) leaves the session marked for later
+    fresh();
+    world_module.close_unsent_next = 1;
+    r = abort_in_handshake(&late);
+    check(world_count(0x32) == 0 && world_module.sess[0].live && late <= 10,
+          "cleanup: an UNSENT CLOSE is not retried, and not waited for (%u ms late)", late);
+    h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && info_byte(2) == 1,
+          "cleanup: the next OPEN into the slot frees the session that was never closed");
+
+    fresh();
+    h = open_ok();
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    world_module.close_unsent_next = 1;
+    server_push(h, EV_DATA, record('D', 10, 1));
+    r = read_cmd(h, 100);
+    check(r.status == "17,TLS MODULE NOT RESPONDING" && world_module.sess[0].live,
+          "cleanup: a READ that fails with 17 and cannot send its CLOSE leaves the session on the module");
+    world_module.calls.clear();
+    r = close_cmd(h);
+    check(r.status == "00,OK" && world_count(0x32) == 1 && !world_module.sess[0].live,
+          "cleanup: CLOSE_SOCKET then sends the CLOSE the cleanup could not");
+    check(world_module.calls.empty() || !call_no(0).send_only, "cleanup: that CLOSE is the ordinary one, which waits");
+
+    // (d) the answer of a CLOSE nobody waits for comes later and finds no one: the real wifi_call drops it
+    // (test/wifi_reply, test_call_send_only_late_reply), and take checks the sequence number (wifi_tls_test.cc)
+
+    // (e) the ordinary CLOSE still waits for the module, and still sends the close_notify to the peer
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 900;
+    world_module.calls.clear();
+    uint32_t t0 = world_ms();
+    r = close_cmd(h);
+    uint32_t spent = world_ms() - t0;
+    check(r.status == "00,OK" && spent >= 900 && spent < 1100 && !call_no(0).send_only && call_no(0).timeout_ms == 5000,
+          "close: the CLOSE the C64 asked for waits for the answer, up to the step timeout (%u ms, %u)", spent,
+          (unsigned)call_no(0).timeout_ms);
+    check(sock(h).srv.saw_notify && !world_module.sess[0].live, "close: the close_notify goes to the peer");
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_module.calls.clear();
+    t0 = world_ms();
+    r = close_cmd(h);
+    spent = world_ms() - t0;
+    check(r.status == "00,OK" && spent >= 5000 && spent < 5300 && !sock(h).open,
+          "close: a module that never answers holds CLOSE_SOCKET for the step timeout, no longer (%u ms)", spent);
+}
+
 // --- latch-and-drain after a receive error -------------------------------
 
 // An established session whose module holds n bytes of plaintext and then
@@ -2012,6 +2126,7 @@ int main(int argc, char **argv)
     test_abort_during_read_step();
     test_write();
     test_close();
+    test_cleanup_close_sent_not_waited();
     test_latch();
     test_claims();
     test_ca();

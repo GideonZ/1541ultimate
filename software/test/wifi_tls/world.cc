@@ -98,6 +98,9 @@ int wifi_call(const wifi_call_t *call)
     last_tx_size = tx_buf.size;
     uint16_t sequence = hdr->sequence;
 
+    if (call->send_only) {
+        return WIFI_CALL_SENT;
+    }
     if (world_outcome == WORLD_RESTARTS) {
         return WIFI_CALL_RESTARTED;
     }
