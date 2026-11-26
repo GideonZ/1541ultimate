@@ -53,6 +53,13 @@ first command on a bench you have not used before. When a run does not work,
 `python3 tests/lib/health.py -H u64` is the smallest thing that talks to the
 device and it says which of the device's listeners answered.
 
+The controlled `https-hardware` suite is an exception to ordinary bench setup:
+it requires `-s https-hardware` alone and is never selected by profiles, `--all`
+or `--manual`. Its default action validates a plan offline; execution requires
+an explicit action and a fresh, evidence-backed installation record. See
+[HTTPS bring-up](../doc/https-hardware-runner.md#standard-runner-entry) for
+preparation, execution, independent audit, exit statuses and stop handling.
+
 `./run-tests --help` is authoritative for every option. The rest of this file
 is the background it has no room for.
 
@@ -309,6 +316,7 @@ e2e:
   g71-mfm-bounds                    .      x      x      x      x
   g71-mfm-format-refused            .      .      x      x      x
   gmod2-eeprom-dirty                .      .      x      x      x
+  https-runner-policy               .      x      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-directory-rename              .      .      x      x      x
   iec-dos-commands                  .      .      x      x      x
@@ -373,6 +381,7 @@ e2e:
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
+  web-tokenizer                     .      .      .      x      x
 
 perf:
   rest-latency                      .      .      x      x      x
@@ -396,8 +405,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           16     38     91    107    107
-  suite runs                       16     38     91    214    321
+  suites                           16     39     93    110    110
+  suite runs                       16     39     93    220    330
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

@@ -13,6 +13,10 @@ typedef void *SemaphoreHandle_t;
 #define pdFALSE 0
 #define portMAX_DELAY ((TickType_t)0xFFFFFFFFu)
 #define configTICK_RATE_HZ 200
+#define portTICK_PERIOD_MS (1000 / configTICK_RATE_HZ)
+// The scripted task and receive callbacks run on a single host thread.
+#define portENTER_CRITICAL() ((void)0)
+#define portEXIT_CRITICAL() ((void)0)
 #define pdMS_TO_TICKS(ms) ((TickType_t)(((TickType_t)(ms) * configTICK_RATE_HZ) / 1000))
 #define ENTER_SAFE_SECTION
 #define LEAVE_SAFE_SECTION

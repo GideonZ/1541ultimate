@@ -6,6 +6,7 @@
  */
 #include <stdio.h>
 #include "wifi_cmd.h"
+#include "provider_wifi_ingress.h"
 
 Esp32 :: Esp32() : uart(NULL) {}
 Esp32 esp32;
@@ -17,6 +18,13 @@ static command_buf_t *notify_value; // the notification value of the waiting tas
 static bool notify_pending;
 static TickType_t first_wait;       // the ticks of the first wait of a request
 static int waits;
+static int provider_frames, freed;
+static bool provider_consumes;
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
+bool wifi_provider_receive(command_buf_t *) { ++provider_frames; return provider_consumes; }
+#endif
+extern "C" BaseType_t cmd_buffer_free_isr(command_buf_context_t *, command_buf_t *, BaseType_t *)
+{ ++freed; return pdFALSE; }
 enum reply_time { NEVER, ON_TIME, AT_TIMEOUT, AFTER_RELEASE };
 static reply_time reply_at;
 static bool timed_out;
@@ -50,6 +58,7 @@ static void answer(rpc_header_t hdr)
     resp->esp_err = 0;
     resp->mode = 3;
     resp->last_state = 1;
+    rxbuf.size = sizeof(*resp);
     BaseType_t w;
     wifi_rx_isr(NULL, &rxbuf, &w);
 }
@@ -188,9 +197,33 @@ static void test_reply_after_release(void)
     CHECK(all_slots_free());
 }
 
+static void test_provider_ingress(void)
+{
+    BaseType_t wake = pdFALSE;
+    queued = provider_frames = freed = 0;
+    notify_pending = false;
+    provider_consumes = true;
+    rxbuf.size = sizeof(rpc_header_t) - 1;
+    wifi_rx_isr(NULL, &rxbuf, &wake);
+    CHECK(freed == 1 && provider_frames == 0 && queued == 0 && !notify_pending);
+    rxbuf.size = sizeof(rxbuf.data) + 1;
+    wifi_rx_isr(NULL, &rxbuf, &wake);
+    CHECK(freed == 2 && provider_frames == 0 && queued == 0 && !notify_pending);
+    rxbuf.size = sizeof(rpc_header_t);
+    *(rpc_header_t *)rxbuf.data = {};
+    wifi_rx_isr(NULL, &rxbuf, &wake);
+#if !defined(RECOVERYAPP) && !defined(WIFI_COMMANDS_ONLY)
+    CHECK(freed == 3 && provider_frames == 1 && queued == 0 && !notify_pending);
+#else
+    CHECK(freed == 2 && provider_frames == 0 && queued == 1 && !notify_pending);
+#endif
+    provider_consumes = false;
+}
+
 int main(void)
 {
     esp32.uart = &uart;
+    test_provider_ingress();
     test_no_tx_buffer();
     test_no_tx_buffer_keeps_slots();
     test_no_reply();

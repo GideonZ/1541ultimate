@@ -1441,6 +1441,8 @@ static void test_silent_server(void)
     }
 }
 
+int test_http_transport(void);
+int test_http_framing(void);
 
 // --- The exchange runs on the target's worker (command_defer) -------------------------
 
@@ -1663,7 +1665,7 @@ static void test_trickle(HttpTarget *target)
 static char stream_response[4096];
 static int stream_length(void)
 {
-    int h = snprintf(stream_response, sizeof(stream_response), "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n");
+    int h = snprintf(stream_response, sizeof(stream_response), "HTTP/1.1 200 OK\r\nContent-Length: 3000\r\n\r\n");
     memset(stream_response + h, 'x', 3000);
     return h + 3000;
 }
@@ -2116,6 +2118,10 @@ static void test_bodyless_responses(HttpTarget *target)
 
 int main(int argc, char **argv)
 {
+    if (argc > 1 && strcmp(argv[1], "--framing") == 0) return test_http_framing();
+    if (argc > 1 && strcmp(argv[1], "--transport") == 0) {
+        return test_http_transport();
+    }
     if ((argc > 1) && (strcmp(argv[1], "--slow-server") == 0)) {
         // A server that dies early must fail a check, not end the run unreported.
         signal(SIGPIPE, SIG_IGN);

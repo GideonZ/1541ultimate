@@ -65,13 +65,13 @@ static inline bool socket_timed_out(void)
     return (errno == EAGAIN) || (errno == EWOULDBLOCK);
 }
 
-static inline void set_socket_slices(int socket_fd)
+static inline bool set_socket_slices(int socket_fd)
 {
     struct timeval tv;
     tv.tv_sec = SOCKET_SLICE_MS / 1000;
     tv.tv_usec = (SOCKET_SLICE_MS % 1000) * 1000;
-    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
-    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
+    return setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv)) == 0 &&
+           setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv)) == 0;
 }
 
 static inline int set_socket_blocking(int socket_fd, bool blocking)

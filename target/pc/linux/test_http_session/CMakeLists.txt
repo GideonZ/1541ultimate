@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.20)
+project(http_session_contract CXX)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+get_filename_component(SW "${CMAKE_CURRENT_SOURCE_DIR}/../../../../software" ABSOLUTE)
+add_executable(test_http_session ${SW}/network/tests/test_http_session.cc)
+target_compile_options(test_http_session PRIVATE -Wall -Wextra -Werror
+    -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+target_link_options(test_http_session PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+enable_testing()
+add_test(NAME session_contract COMMAND test_http_session)
+set_tests_properties(session_contract PROPERTIES TIMEOUT 10)

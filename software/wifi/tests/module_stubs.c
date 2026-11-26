@@ -25,6 +25,13 @@
 
 // What the extracted code refers to
 const char *TAG = "test";
+#ifdef MODULE_U64CTRL
+// The scripted radio has no boot entropy source or TLS sessions.
+void provider_boot_init(void) {}
+const uint8_t *provider_boot_identity(void) { return NULL; }
+void provider_sources_wifi_started(bool success) {}
+void provider_sources_wifi_stopping(void) {}
+#endif
 volatile bool user_disconnected;
 volatile bool off_asked; // the U64 and U2+L modules: a Disable since the last CMD_IDENTIFY
 uint16_t connected_g, disabled_g, ap_count;

@@ -41,7 +41,21 @@ SRCS_C   =	itu.c \
 			cmd_buffer.c \
 			url.c
 
-SRCS_CC	 =  u64ii_init.cc \
+SRCS_CC	 =  provider_manager.cc \
+               provider_data.cc \
+               provider_data_client.cc \
+               owner_http_provider.cc \
+            provider_manager_runner.cc \
+            provider_manager_task.cc \
+            provider_flash_journal.cc \
+            provider_journal_startup.cc \
+            provider_native_startup.cc \
+            https_installation.cc \
+            provider_manager_delivery.cc \
+            provider_manager_uart.cc \
+            provider_control.cc \
+            provider_session_owner.cc \
+            u64ii_init.cc \
 			color_timings.cc \
 			hdmi_scan.cc \
 			usb_hwinit.cc \
@@ -245,6 +259,12 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) $(EFFORT) -ffunction-sections -fdata-sections -nostartfiles -mno-div
 OPTIONS += -gdwarf-2 -Os -DRISCV -DU64=2 -DUSB2513 -DOS -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000 -DCLOCK_FREQ=100000000 -Wno-write-strings -DFP_SUPPORT=1
+
+# Local qualification build only; installation is never performed by startup.
+PROVIDER_JOURNAL ?= 0
+ifeq ($(PROVIDER_JOURNAL),1)
+OPTIONS += -DULTIMATE_PROVIDER_JOURNAL
+endif
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x

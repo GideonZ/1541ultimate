@@ -316,6 +316,19 @@ void UART_ISR_ATTR my_uart_intr_handler(void *param)
 //    WRITE_PERI_REG(debug_uart, '=');
 }
 
+BaseType_t my_uart_try_transmit_packet(uint8_t uart_num, command_buf_t *buf)
+{
+    my_uart_obj_t *obj = p_uart_obj[uart_num];
+    if (xQueueSend(obj->buffer_context->transmitQueue, &buf, 0) != pdTRUE) {
+        cmd_buffer_free(obj->buffer_context, buf);
+        return pdFALSE;
+    }
+    UART_ENTER_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+    uart_hal_ena_intr_mask(&(uart_context[uart_num].hal), UART_INTR_TXFIFO_EMPTY);
+    UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
+    return pdTRUE;
+}
+
 BaseType_t my_uart_transmit_packet(uint8_t uart_num, command_buf_t *buf)
 {
 #if UART_DEBUG_TX

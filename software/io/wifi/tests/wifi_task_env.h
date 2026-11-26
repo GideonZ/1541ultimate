@@ -29,6 +29,13 @@ typedef int err_t;
 #include "browsable.h"
 #include "dump_hex.h"
 #include "wifi.h"
+#include "provider_wifi_ingress.h"
+#if U64 == 2
+class ProviderManagerUart {
+public:
+    void invalidate_isr() {}
+};
+#endif
 #include "wifi_connect.h"
 #include "wifi_enable_default.h" // CFG_WIFI_ENABLE and the default of that setting, from network_esp32.cc / .h
 
