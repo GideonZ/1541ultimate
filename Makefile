@@ -94,6 +94,7 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/syslog test
 	@$(MAKE) -C target/pc/linux/ucitargets test
 	@$(MAKE) -C target/pc/linux/wifitls test
+	@$(MAKE) -C target/pc/linux/httpdbody test
 	@$(MAKE) -C software/userinterface/tests
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
