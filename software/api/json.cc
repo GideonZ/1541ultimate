@@ -87,6 +87,14 @@ static JSON *convert(char *text, jsmntok_t *tokens, size_t num_tokens)
         //     printf("%d %s (%d-%d):'%.*s' P=%d\n", i, types[t->type], t->start, t->end, t->end - t->start, text + t->start, t->parent);
         // }
 
+        // A second top-level value: the caller takes objects[0] only, so nothing
+        // would ever own this one. Reject the document and free it here.
+        if (!parent && i > 0) {
+            invalidJson = true;
+            delete objects[i];
+            objects[i] = NULL;
+        }
+
         if (parent) {
             if (parent->type == JSMN_KEY) {
                 if (objects[i] == NULL) {

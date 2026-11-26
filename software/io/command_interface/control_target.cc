@@ -31,6 +31,7 @@ static Message c_status_no_data             = { 19, true, (uint8_t *)"83,NOT IN 
 static Message c_status_reu_disabled        = { 18, true, (uint8_t *)"84,REU NOT ENABLED" };
 static Message c_status_cannot_open_file    = { 28, true, (uint8_t *)"85,REU FILE CANNOT BE OPENED" };
 static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFFSET > SIZE. NOT SAVED" };
+static Message c_status_menu_busy           = { 20, true, (uint8_t *)"8A,MENU NOT RELEASED" };
 static Message c_status_cannot_open_config  = { 26, true, (uint8_t *)"88,CANNOT OPEN CONFIG FILE" };
 static Message c_status_config_had_errors   = { 25, true, (uint8_t *)"89,CONFIG FILE HAD ERRORS" };
 
@@ -133,8 +134,11 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             break;
         case CTRL_CMD_REBOOT:
             cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, (int)0, "", "");
-            cmd->execute();
-            *status = &c_message_empty;
+            if (cmd->execute().status == SSRET_OK) {
+                *status = &c_message_empty;
+            } else {
+                *status = &c_status_menu_busy;
+            }
             break;
         case CTRL_CMD_FINISH_CAPTURE:
             printf("Finish tape capture command!\n");
@@ -529,11 +533,9 @@ void ControlTarget :: save_u64_memory(Message *command)
         printf("Opened file successfully.\n");
 
         uint8_t *dest = new uint8_t[65536];
-        portENTER_CRITICAL();
-        C64_DMA_MEMONLY = 1;
-        memcpy(dest, (const void *)C64_MEMORY_BASE, 65536);
-        C64_DMA_MEMONLY = 0;
-        portEXIT_CRITICAL();
+        // The same copy as "Save C64 Memory": the machine is stopped for it, so the 64K are one
+        // moment of the C64 and the C64 raises no interrupt while the scheduler is suspended.
+        C64 :: getMachine()->get_all_memory(dest);
         uint32_t bytes_written;
 
         res = f->write(dest, 0x10000, &bytes_written);

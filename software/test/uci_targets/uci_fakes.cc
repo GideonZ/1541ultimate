@@ -43,6 +43,7 @@ std::vector<SubsysCall> subsys_calls;
 std::vector<IoEvent> io_log;
 int yields;
 std::function<void(const IoEvent &)> on_io;
+FRESULT read_result = FR_OK;
 bool c64_reset_pending = false;
 int mp3_ramdrive_type[4];
 int mp3_native_size[4];
@@ -160,6 +161,7 @@ void reset(void)
     io_log.clear();
     yields = 0;
     on_io = NULL;
+    read_result = FR_OK;
     c64_reset_pending = false;
     memset(mp3_ramdrive_type, 0, sizeof(mp3_ramdrive_type));
     memset(mp3_native_size, 0, sizeof(mp3_native_size));
@@ -222,6 +224,8 @@ C64 *C64::getMachine(void)
     machine.cfg = &uci_fake::cfg;
     return &machine;
 }
+void (*uci_fake_all_memory_hook)(uint8_t *) = NULL;
+void C64::get_all_memory(uint8_t *pb) { if (uci_fake_all_memory_hook) uci_fake_all_memory_hook(pb); }
 int C64::isMP3RamDrive(int dev) { return mp3_ramdrive_type[dev & 3]; }
 int C64::getSizeOfMP3NativeRamdrive(int dev) { return mp3_native_size[dev & 3]; }
 uint8_t *C64::get_cartridge_rom_addr(void) { static uint8_t rom[0x100000]; return rom; }
@@ -280,6 +284,10 @@ FRESULT File::read(void *buffer, uint32_t len, uint32_t *transferred)
     if (!(flags & FA_READ)) {
         if (transferred) *transferred = 0;
         return FR_DENIED;
+    }
+    if (uci_fake::read_result != FR_OK) {
+        if (transferred) *transferred = 0;
+        return uci_fake::read_result;
     }
     if (pos < data->size()) {
         n = (uint32_t)data->size() - pos;

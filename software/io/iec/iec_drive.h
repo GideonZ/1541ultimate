@@ -75,6 +75,12 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     SemaphoreHandle_t mutex;
 #endif
     int lock_depth;
+    void *lock_owner; // the task that holds the lock, NULL when nobody does
+    // A read that the UCI aborted while another task held the lock; the next holder
+    // pops it before it touches the channels.
+    IecChannel *deferred_channel;
+    int deferred_pop;
+    void take_deferred_pop(void);
 public:
     IecDrive();
     virtual ~IecDrive();
@@ -134,6 +140,11 @@ public:
 
     void lock(void);
     void unlock(void);
+    // Ends a read of `channel` after `bytes` were taken, without waiting for the lock: the
+    // UCI's abort must not wait for the IEC task, nor read a file. The next holder of the
+    // lock pops the bytes, before it touches the channels. A task that holds the lock itself
+    // (SoftIEC's CHKOUT) has the bytes popped at once, before it changes the channel.
+    void abort_read(IecChannel *channel, int bytes);
 
     friend class IecChannel;
     friend class IecCommandChannel;
