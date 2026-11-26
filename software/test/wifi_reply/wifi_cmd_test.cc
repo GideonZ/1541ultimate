@@ -10,12 +10,14 @@
 #include <string.h>
 #include "wifi_cmd.h"
 #include "wifi_random.h"
+#include "wifi_tls.h"
 
 Esp32 :: Esp32() : uart(NULL) {}
 Esp32 esp32;
 static DmaUART uart;
 static command_buf_t txbuf, rxbuf;
 static int failures;
+static BaseType_t isr_result;       // what wifi_rx_isr answered to the last frame: pdFALSE has the interrupt free it
 static int queued;                  // frames the ISR passed to the receive queue
 static command_buf_t *notify_value; // the notification value of the waiting task
 static bool notify_pending;
@@ -85,7 +87,7 @@ static void answer(rpc_header_t hdr)
         }
         rxbuf.size = offsetof(rpc_get_random_resp, data) + random_length;
         BaseType_t w;
-        wifi_rx_isr(NULL, &rxbuf, &w);
+        isr_result = wifi_rx_isr(NULL, &rxbuf, &w);
         return;
     }
     rpc_get_power_mode_resp *resp = (rpc_get_power_mode_resp *)rxbuf.data;
@@ -94,7 +96,7 @@ static void answer(rpc_header_t hdr)
     resp->mode = 3;
     resp->last_state = 1;
     BaseType_t w;
-    wifi_rx_isr(NULL, &rxbuf, &w);
+    isr_result = wifi_rx_isr(NULL, &rxbuf, &w);
 }
 
 BaseType_t xTaskNotifyFromISR(TaskHandle_t t, uint32_t v, int a, BaseType_t *w)
@@ -828,6 +830,27 @@ static void test_call_reset_while_making_request(void)
     check_clean();
 }
 
+// The answer of a TLS call that was given up on (a cancel, a timeout) comes after its slot is released: the
+// WiFi task does not know it, so it is not queued for it; the interrupt frees it, once. The late answer of
+// any other call is the WiFi task's to log, as before.
+static void test_call_late_tls_reply(void)
+{
+    for (int command = WIFI_TLS_CMD_FIRST - 1; command <= WIFI_TLS_CMD_LAST + 1; command++) {
+        call_setup();
+        wifi_call_t call = power_call(5000, true);
+        call.command = (uint8_t)command;
+        cancel_flag = true;
+        CHECK(wifi_call(&call) == WIFI_CALL_CANCELLED);
+        check_clean();
+        isr_result = -1;
+        answer(*(rpc_header_t *)txbuf.data);
+        bool tls = (command >= WIFI_TLS_CMD_FIRST) && (command <= WIFI_TLS_CMD_LAST);
+        CHECK(isr_result == pdFALSE || !tls);
+        CHECK(queued == (tls ? 0 : 1));
+        CHECK(!notify_pending);
+    }
+}
+
 // A restart of the module during the wait ends it at once, with a result of its own: no answer will come
 static void restart_in_wait(int n)
 {
@@ -904,6 +927,7 @@ int main(void)
     test_call_reply_before_reset();
     test_call_module_restart();
     test_call_reset_while_making_request();
+    test_call_late_tls_reply();
     printf(failures ? "wifi_cmd: %d FAILED\n" : "wifi_cmd: all passed\n", failures);
     return failures ? 1 : 0;
 }

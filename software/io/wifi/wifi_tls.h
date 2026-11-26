@@ -7,6 +7,9 @@
 
 #include <stdint.h>
 
+// The commands of the module's TLS calls, CMD_TLS_OPEN to CMD_TLS_SET_CA: an answer to one is never for the WiFi task
+#define WIFI_TLS_CMD_FIRST      0x30
+#define WIFI_TLS_CMD_LAST       0x35
 #define WIFI_TLS_MAX_SESSIONS   2    // the module's cap
 #define WIFI_TLS_MAX_SNI        253
 #define WIFI_TLS_STEP_MAX_IN    1536 // ct_in_len + pt_in_len in one step

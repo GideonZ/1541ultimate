@@ -22,6 +22,11 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
     if (thread) {
         ioWrite8(UART_DATA, 'N');
         res = xTaskNotifyFromISR(thread, (uint32_t)buf, eSetValueWithOverwrite, w);
+    } else if ((hdr->command >= WIFI_TLS_CMD_FIRST) && (hdr->command <= WIFI_TLS_CMD_LAST)) {
+        // The late answer of a TLS call that was cancelled or timed out: nobody is to read it, and the WiFi task
+        // does not know it. pdFALSE makes the interrupt handler free the buffer.
+        ioWrite8(UART_DATA, '-');
+        res = pdFALSE;
     } else {
         ioWrite8(UART_DATA, '~');
         res = cmd_buffer_received_isr(context, buf, w);

@@ -122,6 +122,7 @@ static_assert(WIFI_TLS_HANDSHAKING == TLS_STATE_HANDSHAKING, "states differ");
 static_assert(WIFI_TLS_ESTABLISHED == TLS_STATE_ESTABLISHED, "states differ");
 static_assert(WIFI_TLS_CLOSED == TLS_STATE_CLOSED, "states differ");
 static_assert(WIFI_TLS_FAILED == TLS_STATE_FAILED, "states differ");
+static_assert((WIFI_TLS_CMD_FIRST == CMD_TLS_OPEN) && (WIFI_TLS_CMD_LAST == CMD_TLS_SET_CA), "commands differ");
 static_assert(WIFI_TLS_BUSY == WIFI_CALL_BUSY, "codes differ");
 static_assert(WIFI_TLS_FOREIGN == WIFI_CALL_FOREIGN, "codes differ");
 static_assert(WIFI_TLS_UNSENT == WIFI_CALL_UNSENT, "codes differ");
