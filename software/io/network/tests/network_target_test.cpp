@@ -6,6 +6,7 @@
 // on the device is the UCI Server task, so a C64 reset waits with it.
 #include "network_target.h"
 #include "socket_slices.h"
+#include "wifi_random.h"
 
 #include <errno.h>
 #include <netinet/in.h>
@@ -640,6 +641,71 @@ static void test_zero_write(void)
     peer_stop(&peer);
 }
 
+// --- GET_RANDOM: which UCI status and which bytes each answer of the WiFi module gives, and which
+// command lengths are taken. wifi_random.cc is the real one; the module's answer is stubbed. -------
+static int module_result;
+static int asked;
+
+int wifi_get_random(uint8_t *buf, uint16_t len)
+{
+    asked++;
+    if (module_result == 0) {
+        memset(buf, 0x5A, len);
+    }
+    return module_result;
+}
+
+static void test_get_random(void)
+{
+    Message *reply, *status;
+    const uint8_t sixteen[] = { 3, 0x20, 16, 0 };
+
+    module_result = 0;
+    asked = 0;
+    CHECK(run(sixteen, 4, &reply, &status), "get random: no reply");
+    CHECK(status_is(status, "00,OK") && reply->length == 16 && reply->message[0] == 0x5A && reply->message[15] == 0x5A,
+          "get random: bytes, 00,OK");
+
+    const struct { int result; const char *text; } refused[] = {
+        { WIFI_RANDOM_BUSY,    "88,ENTROPY SOURCE BUSY" },
+        { WIFI_RANDOM_REFUSED, "87,NO ENTROPY SOURCE" },
+        { WIFI_RANDOM_INVALID, "86,INTERNAL ERROR" },
+        { WIFI_RANDOM_NO_MODULE, "87,NO ENTROPY SOURCE" },
+        { WIFI_RANDOM_FOREIGN, "87,NO ENTROPY SOURCE" },
+    };
+    for (unsigned i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        module_result = refused[i].result;
+        CHECK(run(sixteen, 4, &reply, &status) && status_is(status, refused[i].text) && reply == &c_message_empty,
+              "get random: %s, and no bytes", refused[i].text);
+    }
+
+    // The length is checked before the module is asked
+    module_result = 0;
+    asked = 0;
+    const uint8_t none[] = { 3, 0x20, 0, 0 };
+    const uint8_t over[] = { 3, 0x20, (uint8_t)((NET_MAX_RANDOM + 1) & 0xFF), (uint8_t)((NET_MAX_RANDOM + 1) >> 8) };
+    run(none, 4, &reply, &status);
+    CHECK(status_is(status, "82,PARAMETER(S) OUT OF RANGE") && asked == 0, "get random: 0 bytes is 82, module not asked");
+    run(over, 4, &reply, &status);
+    CHECK(status_is(status, "82,PARAMETER(S) OUT OF RANGE") && asked == 0, "get random: 513 bytes is 82, module not asked");
+    const uint8_t most[] = { 3, 0x20, (uint8_t)(NET_MAX_RANDOM & 0xFF), (uint8_t)(NET_MAX_RANDOM >> 8) };
+    run(most, 4, &reply, &status);
+    CHECK(status_is(status, "00,OK") && asked == 1 && reply->length == NET_MAX_RANDOM, "get random: 512 bytes is asked");
+
+    // The command is exactly four bytes: target, command, length low, length high
+    for (int len = 2; len <= 6; len++) {
+        const uint8_t cmd[6] = { 3, 0x20, 16, 0, 0, 0 };
+        asked = 0;
+        run(cmd, len, &reply, &status);
+        if (len == 4) {
+            CHECK(status_is(status, "00,OK") && asked == 1, "get random: four bytes are asked");
+        } else {
+            CHECK(status_is(status, "81,INVALID PARAMS") && asked == 0 && reply->length == 0,
+                  "get random: %d bytes is 81, no data, module not asked", len);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     signal(SIGPIPE, SIG_IGN);
@@ -655,6 +721,7 @@ int main(int argc, char **argv)
     if (!only || !strcmp(only, "nomem")) test_write_nomem();
     if (!only || !strcmp(only, "zero")) test_zero_write();
     if (!only || !strcmp(only, "partial")) test_partial_error();
+    if (!only || !strcmp(only, "random")) test_get_random();
     printf("Network target: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

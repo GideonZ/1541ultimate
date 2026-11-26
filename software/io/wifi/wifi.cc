@@ -21,6 +21,7 @@
 #include "init_function.h"
 #include "wifi_dedicated.h"
 #include "wifi_tls.h"
+#include "wifi_random.h"
 
 #define DEBUG_INPUT  0
 #define EVENT_START  0xF1

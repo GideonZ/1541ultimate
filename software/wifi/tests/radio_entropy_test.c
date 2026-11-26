@@ -6,7 +6,7 @@
 //   - any chip call made without the gate held exclusively, or a log line written with it held;
 //   - a source other than NONE reported while the radio starts or stops.
 // The radio is started and stopped through wifi_radio.c, which is built in too.
-//   make -C target/pc/linux/radioentropy test
+//   make -C software/wifi/tests entropy
 // Each case runs in a process of its own, because the helper keeps its state in statics.
 #include <pthread.h>
 #include <stdarg.h>
@@ -245,11 +245,9 @@ static void start_from_adc(void)
 {
     radio_entropy_init();
     reset_trace();
-    uint32_t epoch = entropy_epoch();
     CHECK(radio_start() == 0, "start");
     CHECK(trace_is("DS"), "disable, then start");
     CHECK(entropy_source() == ENTROPY_RADIO, "RADIO");
-    CHECK(entropy_epoch() == epoch, "the epoch counts stops, not starts");
     CHECK(radio_start() == 0, "start again");
     CHECK(trace_is("DS"), "a second start does nothing");
     CHECK(violations == 0, "no violations");
@@ -259,14 +257,11 @@ static void stop_enables(void)
 {
     CHECK(radio_start() == 0, "start");
     reset_trace();
-    uint32_t epoch = entropy_epoch();
     CHECK(radio_stop() == 0, "stop");
     CHECK(trace_is("PE"), "stop, then enable");
     CHECK(entropy_source() == ENTROPY_ADC, "ADC");
-    CHECK(entropy_epoch() == epoch + 1, "epoch moved");
     CHECK(radio_stop() == 0, "stop again");
     CHECK(trace_is("PE"), "a second stop does nothing");
-    CHECK(entropy_epoch() == epoch + 1, "and does not move the epoch");
     CHECK(violations == 0, "no violations");
 }
 

@@ -19,7 +19,7 @@
  *
  * Built into both ESP modules (software/wifi/raw_u64 and software/u64ctrl). The logic is
  * in radio_entropy.c, the chip side in radio_entropy_esp.c, and the host test
- * (target/pc/linux/radioentropy) replaces the latter.
+ * (software/wifi/tests/radio_entropy_test.c) replaces the latter.
  */
 
 #ifndef SOFTWARE_WIFI_COMMON_RADIO_ENTROPY_H_
@@ -50,9 +50,8 @@
 // Readback attempts after the first one failed, per transition
 #define RE_RETRIES 3
 
-// The source now feeding the RNG, and a count of the radio's stops so far
+// The source now feeding the RNG
 entropy_source_t entropy_source(void);
-uint32_t entropy_epoch(void);
 
 // Once, after wifi_init() and before the first RPC is served. The U64 module starts with
 // its radio off, so it enables the ADC source here; a boot that started the radio does not.

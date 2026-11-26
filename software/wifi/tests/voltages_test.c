@@ -54,9 +54,9 @@ int main(void)
     CHECK((resp->esp_err == 0) && (resp->vbus == 1000) && (resp->vusb == 1006), "a good read");
 
     if (failures) {
-        printf("getrandompaths voltages: %d check(s) failed\n", failures);
+        printf("voltages: %d check(s) failed\n", failures);
         return 1;
     }
-    printf("getrandompaths voltages: all checks passed\n");
+    printf("voltages: all checks passed\n");
     return 0;
 }
