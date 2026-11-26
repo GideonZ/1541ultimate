@@ -172,8 +172,15 @@ bool wifi_module_ready(void)
     return module_ready;
 }
 
+static void (*safe_hook)(void);     // runs once, at the next critical section
+
 extern "C" void enter_safe_section(void)
 {
+    if (safe_hook) {
+        void (*hook)(void) = safe_hook;
+        safe_hook = NULL;
+        hook();
+    }
     if (timed_out) {
         timed_out = false;
         answer(*(rpc_header_t *)txbuf.data);
@@ -438,6 +445,7 @@ static void call_setup(void)
     wait_elapse = 0;
     on_wait = NULL;
     after_wait = NULL;
+    safe_hook = NULL;
     cancel_flag = false;
     cancel_polls = 0;
     takes = 0;
@@ -508,6 +516,12 @@ static void reply_in_wait(int n)
 static void wake_after_reply(void)
 {
     wifi_wake(me());
+}
+
+// A wake that lands as the call ends: after its last check, before it stops being the waiter
+static void wake_at_leave_in_wait(int n)
+{
+    safe_hook = wake_after_reply;
 }
 
 static void foreign_wake_in_wait(int n)
@@ -630,10 +644,12 @@ static void test_call_no_stale_wake(void)
     CHECK(mode == 3 && last == 1);
     check_clean();
 
-    // And after a timeout
+    // And after a timeout, where no reply is there to tell it from
     call_setup();
+    on_wait = wake_at_leave_in_wait;
     call = power_call(100, true);
     CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
+    CHECK(takes == 0);
     check_clean();
 }
 
@@ -703,6 +719,7 @@ static void test_call_unsent(void)
 
     // A second request while one waits: nothing is sent for it
     call_setup();
+    uart.buffers_free = 2;
     on_wait = call_in_wait;
     nested_result = -1;
     CHECK(wifi_call(&call) == WIFI_CALL_BUSY);
