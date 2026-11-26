@@ -61,13 +61,18 @@ static Res run(const bytes &command)
     if (net.is_quick(&m)) {
         net.parse_command(&m, &reply, &status);
     } else {
-        static volatile bool not_cancelled;
-        not_cancelled = false;
+        // The command the C64 waits for: an abort reaches it through the job, as it does on the device
+        static NetJob job;
+        memset(&job, 0, sizeof(job));
+        job.in_use = true;
+        job.opened = -1;
         net.close_sockets_after_reset();
-        net.cancel = &not_cancelled;
+        net.job = &job;
+        net.cancel = &job.cancel;
         net.opened_socket = -1;
         net.execute(&m, &reply, &status);
         net.cancel = NULL;
+        net.job = NULL;
         net.close_sockets_after_reset();
     }
     Res r;
@@ -773,6 +778,50 @@ static void expect_kept(int h, const bytes &cmd, const char *want, const char *w
     bool untouched = sock(h).open && !sock(h).nodelay && !sock(h).nonblocking && (sock(h).sndtimeo_ms == PLAIN_SNDTIMEO_MS);
     check(r.status == want && r.data.empty() && untouched, "start: %s -> %s, TCP handle unchanged (got %s)", what,
           want, r.status.c_str());
+}
+
+// --- a cancel while the worker waits for the module -------------------------------------
+
+// The UCI Server task tells the waiting call (wifi_wake) that the job was cancelled or the C64 reset, so the call
+// asks its cancel function then: nothing polls, and the time the worker is held is what the cleanup takes.
+static void test_cancel_wakes_the_wait(void)
+{
+    printf("A cancel or a reset ends the wait for the module at once\n");
+    fresh();
+    world_module.open_delay_ms = 3000; // the OPEN RPC is answered 3 s from now
+    world_abort_at = world_tick + 104; // 520 ms in: not at the end of a 100 ms slice
+    int wakes = world_wakes;
+    world_wake_task = NULL;
+    Res r = run(open_cmd(0, 0, "example.com"));
+    uint32_t late = (world_tick - world_abort_at) * 5;
+    check(world_wakes == wakes + 1 && world_wake_task == &world_wake_task,
+          "abort: the waiting worker is woken once, by name (%d)", world_wakes - wakes);
+    check(late <= 10, "abort: the OPEN RPC wait ends at the abort, not at the end of a slice (%u ms late)", late);
+    check(world_count(0x30) == 1 && world_count(0x32) == 1 && world_open_sockets() == 0,
+          "abort: the module is told to CLOSE what the OPEN may have started");
+    world_abort_at = 0xFFFFFFFF;
+
+    fresh();
+    world_module.open_delay_ms = 3000;
+    world_reset_at = world_tick + 104;
+    wakes = world_wakes;
+    r = run(open_cmd(0, 0, "example.com"));
+    late = (world_tick - world_reset_at) * 5;
+    check(world_wakes > wakes && world_wake_task == &world_wake_task,
+          "reset: the waiting worker is woken, by name (%d)", world_wakes - wakes);
+    check(late <= 10, "reset: the OPEN RPC wait ends at the reset, not at the end of a slice (%u ms late)", late);
+    world_reset_at = 0xFFFFFFFF;
+
+    // Woken, and nothing to cancel: the wait goes on to the answer
+    fresh();
+    world_module.open_delay_ms = 1000;
+    world_abort_at = world_tick + 50;
+    world_abort_hook = [] { world_wakes++; };
+    r = run(open_cmd(0, 0, "example.com"));
+    world_abort_hook = [] { net.abort(0); };
+    world_abort_at = 0xFFFFFFFF;
+    check(r.status != "15,TLS HANDSHAKE TIMEOUT" && world_count(0x30) == 1,
+          "a wake that cancels nothing does not end the call (%s)", r.status.c_str());
 }
 
 // --- an abort during OPEN, START_TLS and the CA upload ---------------------------------------
@@ -1841,7 +1890,8 @@ int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
     world_reset_hook = [] { net.c64_reset(); };
-    world_abort_hook = [] { if (net.cancel) { *net.cancel = true; } };
+    world_abort_hook = [] { net.abort(0); };
+    net.worker = (TaskHandle_t)&world_wake_task;
     test_info();
     test_open();
     test_grammar();
@@ -1849,6 +1899,7 @@ int main(int argc, char **argv)
     test_classify();
     test_dns_connect();
     test_reset_during_open();
+    test_cancel_wakes_the_wait();
     test_start_tls();
     test_abort_during_open();
     test_reset_during_start();

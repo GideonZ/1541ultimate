@@ -197,6 +197,8 @@ struct FakeModule {
                          // (the engine's skipped-warning WANT_READ case, tls_engine.c:503-505)
 };
 extern FakeModule world_module;
+extern void *world_wake_task;     // the task of the last one
+extern int world_wakes;           // wifi_wake calls: the network target tells a waiting call that something happened
 
 void world_reset(void);
 int world_count(int cmd);

@@ -627,35 +627,68 @@ uint32_t wifi_tls_generation(void)
     return world_module.generation;
 }
 
-// Waits as wifi_dedicated_call does: in slices when there is a cancel. The
-// answer comes after answer_ms; true when it came before the timeout and
-// before a cancel.
+// What wifi_wake does: the waiter looks at its cancel function. wifi_call blocks once, so nothing else wakes it.
+int world_wakes;
+void *world_wake_task;
+void wifi_wake(void *task)
+{
+    world_wakes++;
+    world_wake_task = task;
+}
+
+// Ticks until the reset or abort that the UCI Server task is going to note; ~0 for none.
+static uint32_t ticks_to_event(void)
+{
+    uint32_t best = 0xFFFFFFFF;
+    if ((world_reset_at != 0xFFFFFFFF) && (reset_fired_for != world_reset_at)) {
+        int32_t d = (int32_t)(world_reset_at - world_tick);
+        best = (d > 0) ? (uint32_t)d : 0;
+    }
+    if ((world_abort_at != 0xFFFFFFFF) && (abort_fired_for != world_abort_at)) {
+        int32_t d = (int32_t)(world_abort_at - world_tick);
+        if (((d > 0) ? (uint32_t)d : 0) < best) {
+            best = (d > 0) ? (uint32_t)d : 0;
+        }
+    }
+    return best;
+}
+
+// Waits as wifi_call does: one block to the answer, the timeout or the deadline, whichever is first. The
+// cancel function is asked before the wait and each time wifi_wake says that something happened, and the
+// wait goes on when it says no. The answer comes after answer_ms; true when it came before the end of the
+// wait and before a cancel.
 static bool module_wait(uint32_t timeout_ms, const wifi_tls_cancel_t *cancel, uint32_t answer_ms, bool *cancelled)
 {
     *cancelled = false;
-    uint32_t spent = 0;
+    const uint32_t start = world_tick;
+    const uint64_t answer_ticks = (answer_ms == 0xFFFFFFFF) ? 0xFFFFFFFFull : MS_TICKS((uint64_t)answer_ms);
+    const uint32_t answer = start + (uint32_t)(answer_ticks ? answer_ticks : 1);
+    uint32_t end = start + MS_TICKS(timeout_ms);
+    if (cancel && cancel->use_deadline && ((int32_t)(cancel->deadline - end) < 0)) {
+        end = cancel->deadline;
+    }
+    bool ask = true;
     while (true) {
-        if (answer_ms <= spent) {
-            world_advance(1);
-            return true;
-        }
-        if (spent >= timeout_ms) {
-            return false;
-        }
-        uint32_t slice = timeout_ms - spent;
-        if (cancel && (slice > 100)) {
-            slice = 100;
-        }
-        if (answer_ms - spent < slice) {
-            world_advance(MS_TICKS(answer_ms - spent));
-            return true;
-        }
-        world_advance(MS_TICKS(slice));
-        spent += slice;
-        if (cancel && cancel->cancelled(cancel->context)) {
+        if (ask && cancel && cancel->cancelled(cancel->context)) {
             *cancelled = true;
             return false;
         }
+        ask = false;
+        if ((answer_ms != 0xFFFFFFFF) && ((int32_t)(world_tick - answer) >= 0)) {
+            return true;
+        }
+        if ((int32_t)(world_tick - end) >= 0) {
+            return false;
+        }
+        uint32_t target = ((answer_ms != 0xFFFFFFFF) && ((int32_t)(answer - end) < 0)) ? answer : end;
+        uint32_t step = target - world_tick;
+        uint32_t event = ticks_to_event();
+        if (event < step) {
+            step = event;
+        }
+        int wakes = world_wakes;
+        world_advance(step);
+        ask = (world_wakes != wakes);
     }
 }
 
