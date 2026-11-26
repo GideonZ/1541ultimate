@@ -231,7 +231,7 @@ def main() -> int:
                   (RAM_VIEW, saved, False, "CPU0 matches Save C64 Memory")))
         for status, reference, cpu_view, name in views:
             if status:
-                mon.ensure_status(session, status)
+                mon.ensure_view_bank_status(session, status)
             for address in MONITOR_PAGES:
                 def same_page(address=address, reference=reference, cpu_view=cpu_view) -> None:
                     page = monitor_page(session, address)
@@ -241,7 +241,7 @@ def main() -> int:
         if not cartridge:
             # A ROM window shows what the monitor's bank maps, whatever the program's
             # $01, even with the RAM beneath the port claiming the monitor's bank.
-            mon.ensure_status(session, CPU_VIEW)
+            mon.ensure_view_bank_status(session, CPU_VIEW)
             mon.leave_monitor_fully(session)
             session = None
             api.machine.close_menu_from_anywhere()
@@ -261,7 +261,7 @@ def main() -> int:
             browser = open_ui()
             session = mon.MonitorSession(browser.backend)
             mon.ensure_hex_width(session, 8)
-            mon.ensure_status(session, CPU_VIEW)
+            mon.ensure_view_bank_status(session, CPU_VIEW)
 
             def basic_page() -> None:
                 page = monitor_page(session, BANKED_PAGE)
@@ -278,7 +278,7 @@ def main() -> int:
         return 1
     finally:
         if session is not None and not cartridge:
-            teardown_step("put the monitor back on CPU7", lambda: mon.ensure_status(session, CPU_VIEW))
+            teardown_step("put the monitor back on CPU7", lambda: mon.ensure_view_bank_status(session, CPU_VIEW))
         if session is not None:
             teardown_step("leave the monitor", lambda: mon.leave_monitor_fully(session))
         teardown_step("close the menu", api.machine.close_menu_from_anywhere)
