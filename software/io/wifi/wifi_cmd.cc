@@ -80,6 +80,160 @@ command_buf_t *wifi_wait_reply(rpc_header_t hdr, int timeout_ms)
     return NULL;
 }
 
+// The task that waits in wifi_call, which wifi_wake may notify. Set and cleared in a critical section.
+static TaskHandle_t wifi_wait_owner = NULL;
+#define WIFI_WAKE 1 // its notification value; a reply's is the address of its buffer
+
+// A notification that is pending stays: a reply is not replaced, and the interrupt that delivers one
+// overwrites a wake.
+void wifi_wake(TaskHandle_t task)
+{
+    vTaskSuspendAll();
+    if (task && (task == wifi_wait_owner)) {
+        xTaskNotify(task, WIFI_WAKE, eSetValueWithoutOverwrite);
+    }
+    xTaskResumeAll();
+}
+
+uint32_t wifi_tls_generation(void)
+{
+    return esp32.uart->generation;
+}
+
+// Gives the packet to take, unless the buffer pool was reset since the request was sent: the reset put
+// the buffer back in the pool, and it may be in other hands by now. No reset (only tasks do one) can come
+// between the check and the free, as the scheduler stays suspended.
+static int wifi_call_deliver(const wifi_call_t *call, command_buf_t *packet, uint16_t sequence, uint32_t generation)
+{
+    int result = WIFI_CALL_RESTARTED;
+    int size = 0;
+    int esp_err = 0;
+    vTaskSuspendAll();
+    if (generation == esp32.uart->generation) {
+        size = packet->size;
+        if (size >= (int)sizeof(rpc_espcmd_resp)) {
+            esp_err = ((rpc_espcmd_resp *)packet->data)->esp_err;
+        }
+        result = call->take(packet->data, size, sequence, call->context);
+        esp32.uart->FreeBuffer(packet); // does not block
+    }
+    xTaskResumeAll();
+    if ((result != 0) && (result != WIFI_CALL_FOREIGN) && (result != WIFI_CALL_RESTARTED)) {
+        printf("%s failed (%d). Size: %d. Error: %d.\n", call->name, result, size, esp_err);
+    }
+    return (result == WIFI_CALL_FOREIGN) ? WIFI_CALL_BUSY : result;
+}
+
+// The end of every call, in this order: no more wakes, the slot released, and then what was delivered
+// to the task in the meantime: a reply (a wake is not one) is returned.
+static command_buf_t *wifi_call_leave(rpc_header_t tag)
+{
+    wifi_reply_tag_t slot = { tag.thread, tag.sequence };
+    ENTER_SAFE_SECTION;
+    wifi_wait_owner = NULL;
+    wifi_reply_abandon(replySlots, &slot);
+    LEAVE_SAFE_SECTION;
+    uint32_t value = 0;
+    if ((xTaskNotifyWait(0, 0, &value, 0) == pdTRUE) && (value != WIFI_WAKE)) {
+        return (command_buf_t *)value;
+    }
+    return NULL;
+}
+
+int wifi_call(const wifi_call_t *call)
+{
+    command_buf_t *buf;
+    if (esp32.uart->GetBuffer(&buf, 4) == pdFALSE) { // 20 ms
+        printf(no_wifi_buf);
+        return WIFI_CALL_UNSENT;
+    }
+    rpc_header_t *hdr = (rpc_header_t *)buf->data;
+    hdr->command = call->command;
+    buf->size = call->fill(buf->data, call->context);
+    if (!wifi_reply_register(hdr)) {
+        esp32.uart->FreeBuffer(buf);
+        printf(no_wifi_slot);
+        return WIFI_CALL_UNSENT;
+    }
+    // The UART frees the buffer once sent: the tag is read first
+    rpc_header_t tag = *hdr;
+    uint32_t generation = esp32.uart->generation;
+    bool alone;
+    ENTER_SAFE_SECTION;
+    alone = (wifi_wait_owner == NULL);
+    if (alone) {
+        wifi_wait_owner = xTaskGetCurrentTaskHandle();
+    }
+    LEAVE_SAFE_SECTION;
+    if (!alone) {
+        wifi_reply_tag_t slot = { tag.thread, tag.sequence };
+        ENTER_SAFE_SECTION;
+        wifi_reply_abandon(replySlots, &slot);
+        LEAVE_SAFE_SECTION;
+        esp32.uart->FreeBuffer(buf);
+        return WIFI_CALL_UNSENT;
+    }
+    if (esp32.uart->TransmitPacket(buf) == pdFALSE) { // the UART freed the buffer
+        wifi_call_leave(tag);
+        printf("%s: not sent.\n", call->name);
+        return WIFI_CALL_UNSENT;
+    }
+
+    int result = WIFI_CALL_BUSY;
+    command_buf_t *reply = NULL;
+    const TickType_t timeout = pdMS_TO_TICKS(call->timeout_ms);
+    const TickType_t start = xTaskGetTickCount();
+    for (;;) {
+        if (call->cancel && call->cancel(call->cancel_context)) {
+            result = WIFI_CALL_CANCELLED;
+            break;
+        }
+        if (esp32.uart->generation != generation) {
+            result = WIFI_CALL_RESTARTED;
+            break;
+        }
+        const TickType_t now = xTaskGetTickCount();
+        const TickType_t spent = now - start;
+        if (spent >= timeout) {
+            break;
+        }
+        TickType_t wait = timeout - spent;
+        if (call->use_deadline) {
+            int32_t left = (int32_t)(call->deadline - now);
+            if (left <= 0) {
+                break;
+            }
+            if ((TickType_t)left < wait) {
+                wait = left;
+            }
+        }
+        uint32_t value = 0;
+        if (xTaskNotifyWait(0, 0, &value, wait) != pdTRUE) {
+            break;
+        }
+        if (value != WIFI_WAKE) {
+            reply = (command_buf_t *)value;
+            break;
+        }
+    }
+    // A reply that came with the end of the wait, whatever it was, is the caller's
+    command_buf_t *late = wifi_call_leave(tag);
+    if (!reply) {
+        reply = late;
+    }
+    if (reply) {
+        return wifi_call_deliver(call, reply, tag.sequence, generation);
+    }
+    if (result == WIFI_CALL_CANCELLED) {
+        printf("%s: cancelled.\n", call->name);
+    } else if (result == WIFI_CALL_RESTARTED) {
+        printf("%s: the module restarted.\n", call->name);
+    } else {
+        printf("%s: no reply.\n", call->name);
+    }
+    return result;
+}
+
 void wifi_command_init(void)
 {
     // A task that was deleted while it waited must not be notified later
