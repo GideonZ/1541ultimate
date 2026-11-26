@@ -237,6 +237,12 @@ bool U2MemoryBackend :: reset_machine(void)
     // A reset puts the 6510's port back to its default, so the last BRK
     // capture no longer describes the machine.
     invalidate_live_cpu_port_cache();
+    // The menu on the C64 screen is a freeze the reset does not end. Hand the
+    // machine back first, so the reopened monitor freezes it again and reads
+    // the keyboard.
+    if (machine->is_accessible()) {
+        machine->unfreeze();
+    }
     machine->reset();
     return true;
 }
