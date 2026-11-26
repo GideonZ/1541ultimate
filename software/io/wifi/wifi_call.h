@@ -10,7 +10,9 @@
 
 // A request that another task can end early. wifi_call gets a buffer, registers a reply slot, has fill write
 // the request after its header, sends it and waits for the reply for timeout_ms. The wait also ends when
-// cancel (if any) says so, at the deadline (if any), and when the module restarts. A reply that comes
+// cancel (if any) says so, at the deadline (if any), and when wifi_command_init restarts the channel to the
+// module (the other resets of the buffer pool, in esp32.cc, do not wake it: it waits its timeout out, and
+// ends BUSY, as no reply can come). A reply that comes
 // first is the caller's, whichever of these comes with it: take checks it and returns 0 or its own code,
 // and WIFI_CALL_FOREIGN for a reply that is not the answer (the call then ends BUSY).
 // One call at a time may wait this way; a second is UNSENT. wifi_wake is for the task that raises a cancel:
