@@ -30,6 +30,9 @@ void send_keepalive();
 #define IDENT_MAJOR   1
 // 1.33: a bytes-lost overflow of the UART RX FIFO throws away the frame it hit and skips to the next frame
 // instead of delivering a cut or glued frame to the dispatcher.
+// 1.30: the recovery's root list drops the roots NSS master has deleted, no longer trusts
+// for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
+// QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
 // 1.29: the idle connector handles every queued command and event before it waits, so a
 // Disable behind an Enable is not left queued; the wait for its own disconnect is bounded
 // (3 s); events from before a radio stop are dropped; a CMD_WIFI_CONNECT must hold the

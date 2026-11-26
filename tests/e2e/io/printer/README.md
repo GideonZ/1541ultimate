@@ -187,6 +187,14 @@ covers most of the page — width, height, and ink density within the covered
 area — using the bundled pure-stdlib PNG decoder (`png_lite.py`), not just
 that a plausible-looking file was produced.
 
+## Enabling the printer by itself
+
+Before the combinations run, the suite sets `IEC printer` to Disabled, then to Enabled as the
+only change, and runs a short job on the bus. The job must finish with the printer answering.
+The combinations set `IEC printer` together with ten other items, and each set applies the
+whole page again, so only this step shows a printer that comes up on the second set but not on
+the first. It is skipped with `--no-config-change` and `--issue-717-basic`.
+
 ## OCR text verification (optional enhancement)
 
 ```sh
@@ -268,3 +276,25 @@ provided the JTAG cable stays connected.
   `temp_auto_cleanup_perf_test.py` but are no-ops here — this harness is a
   single deterministic print-and-verify per combination, not a
   throughput/soak benchmark.
+
+## Printing must not block the bus or REST (`printer_stall_test.py`)
+
+Regression test for #1052, registered as `printer-stall` (standard profile: B&W, about 75 s;
+deep profile: B&W and PNG COLOR, about 5 min). A 240-line Commodore MPS job
+(four pages) is printed as PNG B&W, and in deep also as PNG COLOR, while a SoftIEC drive on bus 11 and `GET
+/v1/drives` are probed during the job and right after the printer's CLOSE. Any
+probe over 0.5 s, 5 lines that took the C64 over 2 s to print, a job that does not finish, or pages that are not the four
+byte-identical reference pages fails the run, and the message names the worst
+probe. The C64 side is `printer_stall_e2e.asm`, committed with its assembled
+`printer_stall_e2e.prg` (`make` here rebuilds both PRGs).
+
+```sh
+./run-tests -H u64 -s printer-stall
+python3 tests/e2e/io/printer/printer_stall_test.py -H u64 --control-drive 8
+python3 tests/e2e/io/printer/printer_stall_test.py -H u64 --profile deep --control-drive 8
+```
+
+`--control-drive BUS` also probes a second drive that does not go through the
+printer, and reports a bench fault instead of judging the firmware if that
+drive is slow. `--print-hashes` prints the page hashes to refresh
+`REFERENCE_SHA256` when the renderer changes on purpose.

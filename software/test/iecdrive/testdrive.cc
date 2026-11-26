@@ -377,6 +377,8 @@ extern IecDrive *s11_lock_watch;
 extern int s11_lock_watch_locked;
 extern int s11_lock_watch_unlocked;
 extern int iec_drive_lock_depth(IecDrive *drive) __attribute__((weak));
+extern void *iec_drive_pc_task;
+int s11_read_fault = 0; // set: every sector read of the FAT file fails
 class LockWatchingBlockDevice : public BlockDevice_Emulated
 {
     void note(void)
@@ -392,7 +394,14 @@ class LockWatchingBlockDevice : public BlockDevice_Emulated
     }
 public:
     LockWatchingBlockDevice(const char *name, int sec_size) : BlockDevice_Emulated(name, sec_size) { }
-    DRESULT read(uint8_t *buf, uint32_t sector, int count) { note(); return BlockDevice_Emulated::read(buf, sector, count); }
+    DRESULT read(uint8_t *buf, uint32_t sector, int count)
+    {
+        note();
+        if (s11_read_fault) {
+            return RES_ERROR; // a stick that stops answering
+        }
+        return BlockDevice_Emulated::read(buf, sector, count);
+    }
     DRESULT write(const uint8_t *buf, uint32_t sector, int count) { note(); return BlockDevice_Emulated::write(buf, sector, count); }
 };
 
@@ -4705,6 +4714,7 @@ int s11_lock_watch_unlocked = 0;
 int s11_lock_watch_locked = 0;
 IecDrive *s11_lock_watch = NULL;
 extern int iec_drive_lock_depth(IecDrive *drive) __attribute__((weak));
+extern void *iec_drive_pc_task;
 
 static void s11_cr6_lock(FileManager *fm, IecDrive *dr)
 {
@@ -4734,6 +4744,140 @@ static void s11_cr6_lock(FileManager *fm, IecDrive *dr)
     REQUIRE(iec_drive_lock_depth(dr) == 0);
     expect_command_response(testname, dr, "CP40\r", "02,PARTITION SELECTED,40,00\r");
     expect_directory_contains(testname, dr, "$", "\"PENDING\"");
+}
+
+// The UCI's abort of a SoftIEC read must not wait for the drive's lock, which the IEC
+// task can hold, nor read a file. The bytes the C64 took are popped by the next holder of
+// the lock, before it touches the channels.
+static void s11_abort_without_lock(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-AbortWithoutLock";
+    s11_partition(fm, dr, "x21");
+    expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
+    open_file(dr, 2, "READ");
+    get_status(dr);
+    expect_status_ok(testname, "open READ");
+    IecChannel *chan = dr->get_data_channel(2);
+    uint8_t *data;
+    int size;
+    chan->talk(); // as SoftIEC's LOAD and CHKIN do
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
+
+    dr->lock();               // another task holds the drive
+    iec_drive_pc_task = (void *)2; // this is the UCI task, which does not hold it
+    dr->abort_read(chan, 3);  // the C64 took 3 bytes and aborted
+    iec_drive_pc_task = (void *)1;
+    REQUIRE(iec_drive_lock_depth(dr) == 1);
+    chan->reset_prefetch();
+    chan->prefetch_more(256, data, size);
+    if (size != 10 || data[0] != 'a') {
+        printf("%s: the channel moved while another task held the drive\n", testname);
+    }
+    REQUIRE(size == 10 && data[0] == 'a');
+    dr->unlock();
+
+    dr->lock();               // the next holder pops the 3 bytes first
+    REQUIRE(iec_drive_lock_depth(dr) == 1);
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    REQUIRE(size == 7 && !memcmp(data, "defghij", 7));
+
+    // With the drive free the pop also waits for the next holder: the abort never reads
+    // a file itself, as pop_more can.
+    iec_drive_pc_task = (void *)2;
+    dr->abort_read(chan, 2);
+    iec_drive_pc_task = (void *)1;
+    REQUIRE(iec_drive_lock_depth(dr) == 0);
+    chan->reset_prefetch();
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 7 && data[0] == 'd');
+    dr->lock();
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    REQUIRE(size == 5 && !memcmp(data, "fghij", 5));
+    close_file(dr, 2);
+    expect_status_ok(testname, "close READ");
+}
+
+// SoftIEC's CHKOUT aborts a read and then opens a file, or sends P (below), with the drive
+// locked by the same task. The pop of the aborted read must land before that command changes the
+// channel, not after it on the new file or position.
+static void s11_abort_then_command(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-AbortThenCommand";
+    s11_partition(fm, dr, "x25");
+    expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
+    expect_iec_write_ok(testname, dr, 1, "OTHER", "0123456789");
+    uint8_t *data;
+    int size;
+
+    // The open: the 3 bytes taken from READ must not be popped from OTHER.
+    open_file(dr, 2, "READ");
+    get_status(dr);
+    IecChannel *chan = dr->get_data_channel(2);
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
+    dr->lock();
+    dr->abort_read(chan, 3);
+    close_file(dr, 2);
+    open_file(dr, 2, "OTHER");
+    dr->unlock();
+    get_status(dr);
+    dr->lock();               // the next holder
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    if (size != 10 || memcmp(data, "0123456789", 10)) {
+        printf("%s: the pop of the aborted read landed on the file opened after it\n", testname);
+    }
+    REQUIRE(size == 10 && !memcmp(data, "0123456789", 10));
+    close_file(dr, 2);
+}
+
+// P: the 3 bytes taken must not be popped from the new position. With nested, the task
+// takes the lock again and releases it once before it aborts (the UCI target's own entry
+// point locks inside parse_command's lock), so the lock must still be known as its own.
+static void s11_abort_position(FileManager *fm, IecDrive *dr, const char *testname, bool nested)
+{
+    s11_partition(fm, dr, nested ? "x25n" : "x25p");
+    expect_iec_write_ok(testname, dr, 1, "READ", "abcdefghij");
+    uint8_t *data;
+    int size;
+    open_file(dr, 2, "READ");
+    get_status(dr);
+    IecChannel *chan = dr->get_data_channel(2);
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    REQUIRE(size == 10 && !memcmp(data, "abcdefghij", 10));
+    dr->lock();
+    if (nested) {
+        dr->lock();
+        dr->unlock();
+    }
+    dr->abort_read(chan, 3);
+    expect_command_ok(testname, dr, "P\x02\x05\r");
+    dr->unlock();
+    dr->lock();
+    chan->talk();
+    chan->prefetch_more(256, data, size);
+    dr->unlock();
+    if (size != 5 || memcmp(data, "fghij", 5)) {
+        printf("%s: the pop of the aborted read landed on the new position\n", testname);
+    }
+    REQUIRE(size == 5 && !memcmp(data, "fghij", 5));
+    close_file(dr, 2);
+}
+
+static void s11_abort_then_position(FileManager *fm, IecDrive *dr)
+{
+    s11_abort_position(fm, dr, "Suite11-AbortThenPosition", false);
+}
+
+static void s11_abort_nested_lock(FileManager *fm, IecDrive *dr)
+{
+    s11_abort_position(fm, dr, "Suite11-AbortNestedLock", true);
 }
 
 // Changes one byte of the name of the first directory entry of sector 18/1 whose name
@@ -5538,6 +5682,132 @@ static void s11_image_write_lock(FileManager *fm, IecDrive *dr)
     close_file(dr, 1);
     expect_command_ok(testname, dr, "EU64:$\r");
     expect_iec_write_ok(testname, dr, 1, "64:NEW", "n");
+}
+
+// A file read that fails while the file streams must reach the C64 as an error it can
+// read, not as a short file with a status of 00. The channel ends the talk (the interface
+// answers with a terminate), and the error channel must then say why: 74,DRIVE NOT READY,
+// the code a Commodore drive gives for a medium that does not deliver.
+static void s11_read_fault_status(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-ReadFaultStatus";
+    const char *path = s11_partition(fm, dr, "readfault");
+    uint32_t tr;
+    uint8_t data[3000];
+    for (int i = 0; i < (int)sizeof(data); i++) {
+        data[i] = (uint8_t)(i * 7);
+    }
+    REQUIRE(fm->save_file(true, path, "BIG.prg", data, sizeof(data), &tr) == FR_OK);
+
+    // Streaming works while the medium answers, and the status stays 00.
+    open_file(dr, 3, "BIG");
+    get_status(dr);
+    expect_status_ok(testname, "open");
+    REQUIRE(read_file_limited(dr, 3, NULL, 3000) == 3000);
+    get_status(dr);
+    expect_status_ok(testname, "healthy read");
+    close_file(dr, 3);
+
+    // Two blocks are in memory after the open; the third read fails.
+    open_file(dr, 3, "BIG");
+    get_status(dr);
+    expect_status_ok(testname, "open again");
+    s11_read_fault = 1;
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x63);
+    dr->talk();
+    int delivered = 0;
+    t_channel_retval ret = IEC_OK;
+    while (delivered < 3000) {
+        uint8_t byte;
+        ret = dr->prefetch_data(byte);
+        if ((ret != IEC_OK) && (ret != IEC_LAST)) {
+            break;
+        }
+        delivered++;
+        dr->pop_data(); // the interface ignores what a pop answers
+    }
+    s11_read_fault = 0;
+    printf("%s: %d bytes delivered, then %d\n", testname, delivered, (int)ret);
+    REQUIRE(delivered < 3000);
+    REQUIRE((ret != IEC_OK) && (ret != IEC_LAST)); // the talk ends with a terminate, no EOI
+
+    get_status(dr);
+    expect_status_prefix(testname, "after the failed read", "74,DRIVE NOT READY,00,00");
+    get_status(dr);
+    expect_status_ok(testname, "second read of the status"); // SI-154: reading clears it
+    close_file(dr, 3);
+
+    // The same failure inside a bulk talk (what the UCI target and JiffyDOS use).
+    open_file(dr, 3, "BIG");
+    get_status(dr);
+    expect_status_ok(testname, "open for the bulk read");
+    s11_read_fault = 1;
+    int got = read_file_limited(dr, 3, NULL, 3000);
+    s11_read_fault = 0;
+    printf("%s: bulk read got %d bytes\n", testname, got);
+    REQUIRE(got < 3000);
+    get_status(dr);
+    expect_status_prefix(testname, "after the failed bulk read", "74,DRIVE NOT READY,00,00");
+    close_file(dr, 3);
+}
+
+// The same failure inside a disk image: a sector chain that loops back on itself is a
+// read the file system refuses with FR_INT_ERR. SI-036: that must not reach the user as 69.
+static void s11_read_fault_chain_loop(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite11-ReadFaultChainLoop";
+    create_formatted_image(fm, "/Fat/s11_loop.d64", "LOOP", 683, e_image_d64);
+    dr->add_partition(56, "/Fat/s11_loop.d64", "LOOP");
+    expect_command_status_prefix(testname, dr, "CP56\r", "02,PARTITION SELECTED");
+    uint8_t data[1600];
+    memset(data, 'l', sizeof(data));
+    open_file(dr, 2, "LOOPED,S,W");
+    get_status(dr);
+    send_channel_data(dr, 2, data, sizeof(data));
+    close_file(dr, 2);
+    open_buffer_channel(testname, dr, 3);
+    expect_command_ok(testname, dr, "U1:3,0,18,1\r");
+    uint8_t dir[256];
+    read_buffer_channel(testname, dr, 3, dir, sizeof(dir));
+    int track = dir[3], sector = dir[4];
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "U1:3,0,%d,%d\r", track, sector);
+    expect_command_ok(testname, dr, cmd);
+    uint8_t block[256];
+    read_buffer_channel(testname, dr, 3, block, sizeof(block));
+    // The sixth sector links back to the first. The open reads the first 1024 bytes (the
+    // sectors hold 254 each); the third read is the one that finds the loop.
+    int t = track, sct = sector;
+    for (int i = 0; i < 5; i++) {
+        snprintf(cmd, sizeof(cmd), "U1:3,0,%d,%d\r", t, sct);
+        expect_command_ok(testname, dr, cmd);
+        read_buffer_channel(testname, dr, 3, block, sizeof(block));
+        t = block[0];
+        sct = block[1];
+    }
+    snprintf(cmd, sizeof(cmd), "U1:3,0,%d,%d\r", t, sct);
+    expect_command_ok(testname, dr, cmd);
+    read_buffer_channel(testname, dr, 3, block, sizeof(block));
+    block[0] = track;
+    block[1] = sector;
+    expect_command_ok(testname, dr, "B-P 3 0\r");
+    send_channel_data(dr, 3, block, sizeof(block));
+    snprintf(cmd, sizeof(cmd), "U2:3,0,%d,%d\r", t, sct);
+    expect_command_ok(testname, dr, cmd);
+    close_file(dr, 3);
+
+    open_file(dr, 2, "LOOPED,S,R");
+    get_status(dr);
+    expect_status_ok(testname, "open of the looping file");
+    int got = read_file(dr, 2, NULL, 4096);
+    get_status(dr);
+    printf("%s: %d bytes, then %s", testname, got, last_status);
+    expect_status_prefix(testname, "after the looping chain", "20,READ ERROR,00,00");
+    close_file(dr, 2);
+    // The FAT file has room for the images of the suites, not for one more.
+    expect_command_status_prefix(testname, dr, "CP1\r", "02,PARTITION SELECTED");
+    REQUIRE(fm->delete_file("/Fat/s11_loop.d64") == FR_OK);
 }
 
 // SI-153: a JiffyDOS LOAD streams through the interface's talk loop, which pops what each
@@ -6885,6 +7155,10 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-CR4-AbandonedListing",    s11_cr4_abandoned_listing },
     { "Suite11-CR5-FailedDirectoryOpen", s11_cr5_failed_directory_open },
     { "Suite11-CR6-Lock",                s11_cr6_lock },
+    { "Suite11-AbortWithoutLock",    s11_abort_without_lock },
+    { "Suite11-AbortThenCommand",    s11_abort_then_command },
+    { "Suite11-AbortThenPosition",   s11_abort_then_position },
+    { "Suite11-AbortNestedLock",     s11_abort_nested_lock },
     { "Suite11-CR8-ScratchScan",         s11_cr8_scratch_scan },
     { "Suite11-FailureLog",              s11_failure_log },
     { "Suite11-OperationLog",            s11_operation_log },
@@ -6892,6 +7166,8 @@ static const Suite11Case suite11_cases[] = {
     { "Suite11-OperationLogNoReconfigure", s11_operation_log_no_reconfigure },
     { "Suite11-ResetRestartsProcessor",  s11_reset_restarts_processor },
     { "Suite11-JiffyLoadStream",         s11_jiffy_load_stream },
+    { "Suite11-ReadFaultStatus",         s11_read_fault_status },
+    { "Suite11-ReadFaultChainLoop",      s11_read_fault_chain_loop },
     { "Suite11-SI077-ImageWriteLock",    s11_image_write_lock },
     { "Suite11-SI070-ModifyOpen",        s11_modify_open },
     { "Suite11-CommonBugs",             s11_common_bugs },
