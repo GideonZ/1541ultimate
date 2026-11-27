@@ -1,6 +1,6 @@
-// Captures through the real TapeRecorder. The healthy ones show that the register model, the
-// fake file system and the scripted task follow what the firmware expects, so that the tests
-// of the defects fail for the defect and not for the harness.
+// Healthy captures through the real TapeRecorder. They show that the register model, the fake
+// file system and the scripted task follow what the firmware expects, so that the fault
+// tests (tape_recorder_faults.cpp) fail for the defect and not for the harness.
 #include "tape_recorder_util.h"
 
 using namespace tapetest;
@@ -88,4 +88,31 @@ TEST(TapeRecorder, FinishWithoutACaptureReportsNoFile)
     ASSERT_EQ((int)c.finish(), (int)SSRET_OK);      // flush() with no file: the error code is set, nothing is closed
     EXPECT_EQ(fs.opens, 0);
     EXPECT_EQ(fs.closes, 0);
+}
+
+// T1: the capture overflows the cache; the task calls stop(REC_ERR_OVERFLOW). stop() flushes,
+// flush() closes the file and clears the member, and stop() then closes it again.
+TEST(TapeRecorder, T1_OverflowStopDoesNotCloseANullHandle)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    for (int i = 0; i < REC_NUM_CACHE_BLOCKS; i++) c.block_arrives();   // the task has not run for a long time
+    bool ran = guarded("task step after a cache overflow", [&]() { c.run_task_steps(2); });
+    EXPECT_EQ(fs.null_closes, 0);
+    if (ran) {
+        EXPECT_EQ(fs.opens, fs.closes);
+    }
+}
+
+// T1, second way in: stopping through the destructor while a capture is running.
+TEST(TapeRecorder, T1_DestroyingTheRecorderMidCaptureClosesTheFileOnce)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    TapeRecorder *r = c.rec;
+    c.rec = NULL;
+    guarded("destroying the recorder during a capture", [&]() { delete r; });
+    EXPECT_EQ(fs.null_closes, 0);
+    EXPECT_EQ(fs.opens, fs.closes);
 }

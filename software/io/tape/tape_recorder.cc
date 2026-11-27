@@ -146,15 +146,13 @@ void TapeRecorder :: stop(int error)
     	// FIXME: freeze
     }
 	if(file) {	
+        // flush() writes out what is left and closes the file, and it is the only place that does.
         printf("Flush TAP..\n");
         flush();
-		printf("Closing tape file..\n");
-		fm->fclose((File *)file);
 	} else {
 	    printf("Stopping. File = NULL. ERR = %d\n", error);
     }
 	RECORD_CONTROL = REC_CLEAR_ERROR | REC_FLUSH_FIFO;
-	file = NULL;
 }
 	
 void TapeRecorder :: start()
