@@ -75,6 +75,9 @@ public:
 #define FLASH_CMD_GETPAGE  2
 #define REU_MEMORY_BASE 0
 
+#define SSRET_OK 0
+struct SubsysResultCode_t { int status; };
+
 class SubsysCommand {
 public:
     int function_id;
@@ -84,7 +87,7 @@ public:
     void *direct_call;
     SubsysCommand(void *ui, int id, int func, int mode, const void *buf, int len);
     SubsysCommand(void *ui, int id, int func, int mode, const char *p, const char *f);
-    int execute(void);
+    SubsysResultCode_t execute(void);
 };
 
 class C64 {

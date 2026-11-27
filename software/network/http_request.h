@@ -66,7 +66,7 @@ public:
     int send_request(StreamRamFile *req);
     // After this, the exchange no longer looks at the cancel flag it was given.
     void detach(void) { wait.detach(); }
-    bool recv_response(void);
+    bool recv_response(bool head = false);
     // Closes the socket; the response stays.
     void disconnect(void) {
         if(socket_fd >= 0) {

@@ -62,6 +62,7 @@ software/io/usb/tests/keyboardC64ClearTest
 software/io/usb/tests/usbHidKeyboardTest
 software/io/usb/tests/usbHidMouseTest
 software/io/usb/tests/usbScsiExecTest
+software/io/usb/tests/usbHidParserFaultsTest
 software/io/usb/tests/usbHidSelectionTest
 software/io/usb/tests/usbKeyboardQueueTest
 software/io/usb/tests/vt100EscapeTest
@@ -304,4 +305,7 @@ tools/64tass/.build-lock
 python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
+
+# Python bytecode cache
+__pycache__/
 .gstack/

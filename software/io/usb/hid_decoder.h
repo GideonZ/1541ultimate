@@ -10,7 +10,6 @@
 
 #include "fifo.h"
 #include "indexed_list.h"
-#include "stack.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -144,11 +143,18 @@ typedef struct {
 
 class UsageFifo
 {
+  public:
+    static const int CAPACITY = 256;
+
+  private:
     Fifo<uint32_t> fifo;
     uint32_t lastUsage;
 
   public:
-    UsageFifo() : fifo(256, 0) { lastUsage = 0; }
+    // The enclosing collection's usages while this one is open (NULL at the top level).
+    UsageFifo *parent;
+
+    UsageFifo() : fifo(CAPACITY, 0) { lastUsage = 0; parent = NULL; }
 
     uint32_t pop()
     {
@@ -159,6 +165,7 @@ class UsageFifo
     }
     void push(uint32_t value) { fifo.push(value); }
     bool is_empty() { return fifo.is_empty(); }
+    bool is_full() { return fifo.get_count() >= CAPACITY; }
 
     uint32_t head()
     {
@@ -1109,9 +1116,13 @@ class HidItemList
 
 class HidReportParser
 {
-    Stack<t_globals *> globalsStack;
-    Stack<UsageFifo *> usageFifoStack;
-    UsageFifo *usageFifo;
+    // GLOBAL PUSH saves a copy of the globals here; the list grows with the descriptor.
+    struct GlobalsSave {
+        t_globals globals;
+        GlobalsSave *next;
+    };
+    GlobalsSave *globalsStack;
+    UsageFifo *usageFifo; // innermost open collection; its parent chain holds the outer ones
     t_globals globals;
     t_locals locals;
     uint32_t applicationUsage;
@@ -1163,7 +1174,10 @@ class HidReportParser
             getReport(reportList, globals.report_id)
                 ->addItem(usageFifo->head(), flags, globals.report_size, globals.report_count,
                           globals.logical_minimum, globals.logical_maximum);
-            for (int i = globals.logical_minimum; i <= globals.logical_maximum; i++) {
+            // 64-bit count: the range may span the whole int range. Nothing is left to pop once
+            // the usages are used up.
+            int64_t n = (int64_t)globals.logical_maximum - (int64_t)globals.logical_minimum + 1;
+            for (int64_t i = 0; i < n && !usageFifo->is_empty(); i++) {
                 usageFifo->pop();
             }
         }
@@ -1175,13 +1189,16 @@ class HidReportParser
 
     void cleanup(void)
     {
-        do {
-            if (usageFifo)
-                delete usageFifo;
-            if (usageFifoStack.is_empty())
-                break;
-            usageFifo = usageFifoStack.pop();
-        } while (1);
+        while (usageFifo) {
+            UsageFifo *outer = usageFifo->parent;
+            delete usageFifo;
+            usageFifo = outer;
+        }
+        while (globalsStack) {
+            GlobalsSave *next = globalsStack->next;
+            delete globalsStack;
+            globalsStack = next;
+        }
     }
 
     void init(void)
@@ -1193,8 +1210,9 @@ class HidReportParser
     }
 
   public:
-    HidReportParser() : globalsStack(8, NULL), usageFifoStack(8, NULL)
+    HidReportParser()
     {
+        globalsStack = NULL;
         usageFifo = NULL;
         applicationUsage = 0;
     }
@@ -1207,7 +1225,6 @@ class HidReportParser
         init();
         result->reset();
 
-        t_globals *tempGlobals;
         uint32_t usage;
 
         for (int i = 0; i < length;) {
@@ -1224,15 +1241,19 @@ class HidReportParser
             i += advance;
             switch (cmd & ITEM_MASK) {
             case GLOBAL_PUSH:
-                tempGlobals = new t_globals;
-                *tempGlobals = globals; // struct copy
-                globalsStack.push(tempGlobals);
+                {
+                    GlobalsSave *save = new GlobalsSave;
+                    save->globals = globals; // struct copy
+                    save->next = globalsStack;
+                    globalsStack = save;
+                }
                 break;
             case GLOBAL_POP:
-                if (!globalsStack.is_empty()) {
-                    tempGlobals = globalsStack.pop();
-                    globals = *tempGlobals; // struct copy
-                    delete tempGlobals;
+                if (globalsStack) {
+                    GlobalsSave *save = globalsStack;
+                    globals = save->globals; // struct copy
+                    globalsStack = save->next;
+                    delete save;
                 }
                 break;
             case GLOBAL_REPORT_ID:
@@ -1292,8 +1313,11 @@ class HidReportParser
 
             case MAIN_COLLECTION:
                 usage = usageFifo->pop();
-                usageFifoStack.push(usageFifo);
-                usageFifo = new UsageFifo();
+                {
+                    UsageFifo *inner = new UsageFifo();
+                    inner->parent = usageFifo;
+                    usageFifo = inner;
+                }
                 switch (value) {
                 case COLLECTION_LOGICAL:
                     break;
@@ -1305,8 +1329,11 @@ class HidReportParser
                 }
                 break;
             case MAIN_END_COLL:
-                delete usageFifo;
-                usageFifo = usageFifoStack.pop();
+                if (usageFifo->parent) { // an END with no open collection is ignored
+                    UsageFifo *outer = usageFifo->parent;
+                    delete usageFifo;
+                    usageFifo = outer;
+                }
                 break;
             case MAIN_INPUT:
                 iterate(result->inputReportList, value);
@@ -1321,7 +1348,8 @@ class HidReportParser
                 usageFifo->push(globals.usage_page << 16 | value);
                 break;
             case LOCAL_USAGE_MAX:
-                for (uint32_t n = locals.usage_min & 0xFFFF; n <= (value & 0xFFFF); n++) {
+                // A full fifo drops further pushes, so stop at its capacity.
+                for (uint32_t n = locals.usage_min & 0xFFFF; n <= (value & 0xFFFF) && !usageFifo->is_full(); n++) {
                     usageFifo->push(globals.usage_page << 16 | n);
                 }
                 break;

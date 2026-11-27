@@ -282,6 +282,23 @@ void IecPrinter::update_task_items(bool writablePath)
     }
 }
 
+/* What the GUI task keeps while it waits for a flush: the blocks of the printer task not drawn yet */
+struct FlushProgress {
+    UserInterface *ui;
+    volatile uint32_t *blocks;
+    uint32_t seen;
+};
+
+static void flush_progress_tick(void *arg)
+{
+    FlushProgress *fp = (FlushProgress *) arg;
+    uint32_t now = *fp->blocks;
+    if (now != fp->seen) {
+        fp->ui->update_progress(NULL, (int)(now - fp->seen));
+        fp->seen = now;
+    }
+}
+
 /************************************************************************
 *                     IecPrinter::executeCommand(cmd)           Public  *
 *                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                   *
@@ -301,8 +318,7 @@ void IecPrinter::update_task_items(bool writablePath)
 
 SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
 {
-    /* Record user_interface for modal popup */
-    cmd_ui = cmd->user_interface;
+    UserInterface *ui = cmd->user_interface;    /* all screen work is done here, in the GUI task */
 
     switch(cmd->functionID)
     {
@@ -331,7 +347,7 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
              *  B&W printer pages and 20 blocs for color pages
             -*/
 
-            cmd_ui->show_progress("Flushing/Ejecting page...", is_color ? 20 : 8);
+            ui->show_progress("Flushing/Ejecting page...", is_color ? 20 : 8);
 
             /*-
              *  Post the flush and wait for the printer task to do it, but not for ever: when the
@@ -339,10 +355,11 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
              *  ejected when the printer task gets there (in stream order) all the same.
             -*/
             {
-                bool done = spool.flush_and_wait(IEC_PRINTER_FLUSH_WAIT_MS);
-                cmd_ui->hide_progress();
+                FlushProgress fp = { ui, &flush_blocks, flush_blocks };
+                bool done = spool.flush_and_wait(IEC_PRINTER_FLUSH_WAIT_MS, flush_progress_tick, &fp);
+                ui->hide_progress();
                 if (!done)      /* still being rendered: say so, the page is saved when it is done */
-                    cmd_ui->popup("The page is still printing.\nIt is saved when it is done.", BUTTON_OK);
+                    ui->popup("The page is still printing.\nIt is saved when it is done.", BUTTON_OK);
             }
             break;
 
@@ -354,8 +371,6 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
             break;
     }
 
-    cmd_ui = NULL;
-
     return SSRET_OK;
 }
 
@@ -363,8 +378,8 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
 *                 IecPrinter::updateFlushProgressBar()          Public  *
 *                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                  *
 * Function : Callback called when one bloc has been compressed in PNG   *
-*            generation routine. It updates the progress bar when eject *
-*            has been started by the Action menu                        *
+*            generation routine (printer task). It only counts; the GUI *
+*            task moves the progress bar of the Action menu             *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
@@ -379,12 +394,8 @@ SubsysResultCode_e IecPrinter::executeCommand(SubsysCommand *cmd)
 
 void IecPrinter::updateFlushProgressBar(void)
 {
-    UserInterface *ui = cmd_ui;
-    if (ui)
-    {
-        /* One step ahead for progress bar in interactive mode only */
-        ui->update_progress(NULL, 1);
-    }
+    /* Called from the printer task: it only counts. The GUI task draws (flush_progress_tick). */
+    flush_blocks++;
 }
 
 /************************************************************************
@@ -418,7 +429,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     mps = MpsPrinter::getMpsPrinter();
     buffer_pointer = 0;
     output_type = PRINTER_UNSET_OUTPUT;
-    cmd_ui = 0;
+    flush_blocks = 0;
     is_color = false;
     printer_enable = 0;
     output_filename_buf[0] = 0;

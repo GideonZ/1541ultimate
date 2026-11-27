@@ -66,8 +66,9 @@ int HttpRequest :: send_request(StreamRamFile *s)
     return 0;
 }
 
-bool HttpRequest :: recv_response(void)
+bool HttpRequest :: recv_response(bool head)
 {
+    response.responseToHead = head; // a reply to HEAD has no body, whatever its headers say
     wait.progress(); // the server waits for the response from here
     bool complete = get_response(this->socket_fd, collect_in_buffer, response, &wait);
     this->body = (t_BufferedBody *)response.userContext;
@@ -159,6 +160,9 @@ bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& resp
             continue;
         }
         if (n <= 0) {
+            if (n == 0) {
+                FinishClientResponse(&response); // orderly EOF ends a connection-close body
+            }
             break;
         }
         if (wait) {
@@ -177,7 +181,7 @@ bool get_response(int socket_fd, HTTPREQ_CALLBACK callback, HTTPReqMessage& resp
         response.BodyCB = NULL;
         response.BodyContext = NULL;
     }
-    return state >= WRITING_SOCKET && response.protocol_state != eReq_HeaderTooBig;
+    return response.protocol_state == eReq_Complete;
 }
 
 JSON *convert_buffer_to_json(t_BufferedBody *body)

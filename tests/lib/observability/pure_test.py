@@ -3544,6 +3544,22 @@ def the_job_summary_step_does_nothing_outside_ci() -> str:
 
 
 @case(1)
+def the_canonical_report_ignores_the_double_rest_port() -> str:
+    diagnostic = ("GET http://localhost:43947/v1/configs/C64%20and%20Cartridge%20Settings/"
+                  "Cartridge%20Preference returned HTTP 404")
+    expected = diagnostic.replace(":43947/", ":0/")
+    expect("the REST diagnostic", canonicalize_document(diagnostic), expected)
+    expect("another listener", canonicalize_document(diagnostic.replace(":43947/", ":51832/")),
+           expected)
+    expect("the numeric loopback address", canonicalize_document(diagnostic.replace("localhost", "127.0.0.1")),
+           expected.replace("localhost", "127.0.0.1"))
+    expect("a second pass", canonicalize_document(expected), expected)
+    device = "GET http://192.0.2.1:8080/v1/configs returned HTTP 404"
+    expect("a device's configured port", canonicalize_document(device), device)
+    return "loopback ports canonical, path and status preserved, device port unchanged"
+
+
+@case(1)
 def the_canonical_timeline_is_its_events_sorted() -> str:
     """The events without clock or requests, sorted; a second pass changes nothing.
 

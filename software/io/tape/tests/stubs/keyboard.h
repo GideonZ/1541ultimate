@@ -1,0 +1,4 @@
+#ifndef TAPE_TESTS_KEYBOARD_H
+#define TAPE_TESTS_KEYBOARD_H
+#define KEY_RIGHT 0x1D
+#endif

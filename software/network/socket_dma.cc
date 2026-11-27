@@ -162,7 +162,9 @@ bool SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_RESET:
         sys_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
-        sys_command->execute();
+        if (sys_command->execute().status != SSRET_OK) {
+            ok = false; // the menu did not let go: tell the client by closing the connection
+        }
         break;
     case SOCKET_CMD_POWEROFF:
         sys_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_POWEROFF, 0, buf, len);

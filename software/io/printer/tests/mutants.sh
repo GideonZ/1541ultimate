@@ -79,12 +79,14 @@ spool post-waits-when-full 's/if \(ctl_count == PRINTER_SPOOL_CTRL_DEPTH\) \{\n\
 spool flush-not-posted    's/uint32_t gen = post_flush\(\);/uint32_t gen = flush_gen + 1;/' || bad=1
 spool flush-wait-unbounded 's/if \(used >= total\)\n\s+return false;//' || bad=1
 spool flush-ignores-generation 's/if \(\(int32_t\)\(done_gen - gen\) >= 0\)\n(\s+)return true;/if (true)\n$1return true;/' || bad=1
-spool flush-stale-give    's/while \(xSemaphoreTake\(flush_sem, 0\) == pdTRUE\)\n\s+;//; s/xSemaphoreTake\(flush_sem, total - used\);/if (xSemaphoreTake(flush_sem, total - used) == pdTRUE) return true;/' || bad=1
+spool flush-stale-give    's/while \(xSemaphoreTake\(flush_sem, 0\) == pdTRUE\)\n\s+;//; s/xSemaphoreTake\(flush_sem, slice\);/if (xSemaphoreTake(flush_sem, slice) == pdTRUE) return true;/' || bad=1
 spool flush-done-not-published 's/\n            done_gen = gen;//' || bad=1
 # --- the printer's own command paths
-printer menu-flush-not-posted   's/bool done = spool\.flush_and_wait\(IEC_PRINTER_FLUSH_WAIT_MS\);/bool done = true;/' || bad=1
-printer menu-flush-timeout-silent 's/cmd_ui->popup\("The page is still printing[^\n]*/;/' || bad=1
-printer menu-flush-unbounded    's/spool\.flush_and_wait\(IEC_PRINTER_FLUSH_WAIT_MS\)/spool.flush_and_wait(0x7FFFFFFF)/' || bad=1
+printer menu-flush-not-posted   's/bool done = spool\.flush_and_wait\(IEC_PRINTER_FLUSH_WAIT_MS, flush_progress_tick, &fp\);/bool done = true;/' || bad=1
+printer menu-flush-timeout-silent 's/ui->popup\("The page is still printing[^\n]*/;/' || bad=1
+# the printer task draws the progress bar itself again, through the UI of the running command (the freed box of the report)
+printer flush-bar-from-printer-task 's/(SubsysResultCode_e IecPrinter::executeCommand)/static UserInterface *mut_ui;\n$1/; s/(UserInterface \*ui = cmd->user_interface;)/$1 mut_ui = ui;/; s/(    return SSRET_OK;\n\}\n\n\/\*+\n\*\s+IecPrinter::updateFlushProgressBar)/    mut_ui = NULL;\n$1/; s/flush_blocks\+\+;/flush_blocks++; if (mut_ui) mut_ui->update_progress(NULL, 1);/' || bad=1
+printer menu-flush-unbounded    's/spool\.flush_and_wait\(IEC_PRINTER_FLUSH_WAIT_MS,/spool.flush_and_wait(0x7FFFFFFF,/' || bad=1
 printer turn-off-without-reset  's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET \| PRINTER_SPOOL_ABORT_RELEASE\);   \/\* what is not printed yet is lost, the ring is given back \*\//spool.abort(PRINTER_SPOOL_ABORT_RELEASE);/' || bad=1
 printer turn-off-without-release 's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET \| PRINTER_SPOOL_ABORT_RELEASE\);   \/\* what/spool.abort(PRINTER_SPOOL_ABORT_RESET);   \/* what/' || bad=1
 printer reset-without-reset     's/spool\.abort\(PRINTER_SPOOL_ABORT_RESET\);   \/\* what is not printed yet is lost \*\//spool.abort(0);/' || bad=1
