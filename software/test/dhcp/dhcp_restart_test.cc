@@ -183,11 +183,21 @@ static void test_link_cycle()
     dhcp_cleanup(&ni->my_net_if); delete ni;
 }
 
+static void test_destructor_frees_client()
+{
+    reset();
+    NetworkInterface *ni = new NetworkInterface; bring_up(*ni);
+    CHECK(g_live_clients == 1, "no client allocated");
+    delete ni;
+    CHECK(g_live_clients == 0, "%d DHCP client(s) leaked when the interface was removed", g_live_clients);
+}
+
 int main()
 {
     test_toggle_off_on();
     test_reapply_keeps_running_client();
     test_link_cycle();
+    test_destructor_frees_client();
     printf(failures ? "dhcp_restart_test: %d FAILED\n" : "dhcp_restart_test: all passed\n", failures);
     return failures ? 1 : 0;
 }
