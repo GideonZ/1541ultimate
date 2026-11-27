@@ -148,6 +148,16 @@ PROBE_ATTEMPTS = 3
 SOCKETS_LEFT_OPEN_AT_RESET = 4
 RESET_CYCLES = 3
 
+# http-backlog-starvation: idle connections held to the HTTP port, further attempts
+# behind them, the timeout of each, and how soon FTP has to greet and REST has to answer.
+HTTP_PORT = 80
+FTP_PORT = 21
+HTTP_IDLE_HELD = 4
+HTTP_EXTRA_ATTEMPTS = 8
+HTTP_CONNECT_TIMEOUT = 3.0
+FTP_BANNER_BOUND = 5.0
+REST_RECOVERY_BOUND = 15.0
+
 # The two ways of reaching the registers, described at the top of this file.
 ROUTES = ["rest", "native"]
 
@@ -164,6 +174,9 @@ TESTS = [
     "multi-block-state-does-not-leak",
     "reset-closes-uci-sockets",
 ]
+# Not a network target scenario: it needs no peer and does not depend on the route, and
+# sits here only so that it is chosen by --test like the others.
+ALL_TESTS = [*TESTS, "http-backlog-starvation"]
 
 
 def pattern(size: int, seed: int = 0) -> bytes:
@@ -1220,6 +1233,99 @@ def restore_settings(device, original: dict[str, str], keep: bool) -> bool:
     return ok
 
 
+def close_all(socks: list[socket.socket]) -> None:
+    for sock in socks:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    socks.clear()
+
+
+def ftp_banner(address: str) -> bytes:
+    """The first line a fresh FTP control connection receives, within FTP_BANNER_BOUND."""
+    end = time.monotonic() + FTP_BANNER_BOUND
+    try:
+        sock = socket.create_connection((address, FTP_PORT), timeout=FTP_BANNER_BOUND)
+    except OSError as exc:
+        raise Failure(f"FTP connect: {format_exception(exc)}") from exc
+    try:
+        line = b""
+        while b"\n" not in line:
+            sock.settimeout(max(end - time.monotonic(), 0.01))
+            try:
+                chunk = sock.recv(256)
+            except OSError as exc:  # a reset is what a starved device answers with
+                raise Failure(f"FTP banner: {format_exception(exc)}") from exc
+            if not chunk:
+                raise Failure(f"FTP closed the connection after {line!r}")
+            line += chunk
+        return line
+    finally:
+        sock.close()
+
+
+def run_http_backlog_starvation(address: str, device) -> bool:
+    """Idle callers of the HTTP server must not take the other services' connections.
+
+    The HTTP server serves 4 connections and stops accepting while they are
+    busy; a caller beyond them has still completed its handshake in lwIP, and
+    each such caller holds one of the 16 connections that all services share.
+    So 4 idle connections to the HTTP port and 8 more attempts behind them
+    must leave FTP able to greet, and REST able to answer once the idle ones
+    are closed. Raw sockets, because the subject is what the device does with
+    connections nobody serves.
+    """
+    section("http-backlog-starvation")
+    held: list[socket.socket] = []
+    extra: list[socket.socket] = []
+    ftp_failure: Failure | None = None
+    try:
+        with check(f"{HTTP_IDLE_HELD} idle connections to the HTTP port are held, nothing sent"):
+            try:
+                for _ in range(HTTP_IDLE_HELD):
+                    held.append(socket.create_connection((address, HTTP_PORT),
+                                                         timeout=HTTP_CONNECT_TIMEOUT))
+            except OSError as exc:
+                raise Failure(format_exception(exc)) from exc
+        with check(f"{HTTP_EXTRA_ATTEMPTS} more attempts, {HTTP_CONNECT_TIMEOUT:.0f}s each"):
+            not_connected = 0
+            for _ in range(HTTP_EXTRA_ATTEMPTS):
+                try:
+                    extra.append(socket.create_connection((address, HTTP_PORT),
+                                                          timeout=HTTP_CONNECT_TIMEOUT))
+                except OSError:
+                    not_connected += 1
+            detail(f"{len(extra)} connected, {not_connected} not")
+        try:
+            with check(f"a fresh FTP connection gets its 220 banner within {FTP_BANNER_BOUND:.0f}s"):
+                line = ftp_banner(address)
+                if not line.startswith(b"220"):
+                    raise Failure(f"the first line was {line!r}")
+        except Failure as exc:
+            # Keep going: the device has to be healthy again once the idle connections
+            # are closed, whatever it did while they were held.
+            ftp_failure = exc
+        close_all(held)
+        close_all(extra)
+        with check(f"REST answers within {REST_RECOVERY_BOUND:.0f}s of closing the idle connections"):
+            end = time.monotonic() + REST_RECOVERY_BOUND
+            while True:
+                try:
+                    device.version()
+                    break
+                except (Failure, OSError) as exc:
+                    if time.monotonic() >= end:
+                        raise Failure(f"REST did not answer: {format_exception(exc)}") from exc
+                    time.sleep(0.5)
+    finally:
+        close_all(held)
+        close_all(extra)
+    if ftp_failure is not None:
+        raise ftp_failure
+    return True
+
+
 def build_driver(route: str, computer, busy_timeout: float):
     """The driver for one route, ready to use."""
     if route == "rest":
@@ -1238,7 +1344,7 @@ def main() -> int:
     parser.add_argument("-b", "--busy-timeout", type=float, default=15.0,
                         help="How long one command may stay in Command Busy before it "
                              "counts as wedged.")
-    parser.add_argument("--test", action="append", choices=["all", *TESTS])
+    parser.add_argument("--test", action="append", choices=["all", *ALL_TESTS])
     parser.add_argument("--route", action="append", choices=["all", *ROUTES],
                         help="How to reach $DF1C-$DF1F: 'rest' for DMA cycles the "
                              "Ultimate issues, 'native' for 6502 code running on the "
@@ -1247,7 +1353,8 @@ def main() -> int:
                         help="Don't restore the original Command Interface setting on exit.")
     args = parser.parse_args()
 
-    selected = TESTS if not args.test or "all" in args.test else [t for t in TESTS if t in args.test]
+    selected = (ALL_TESTS if not args.test or "all" in args.test
+                else [t for t in ALL_TESTS if t in args.test])
     routes = ROUTES if not args.route or "all" in args.route else [r for r in ROUTES if r in args.route]
     target = targets.parse(args.host)
     device = UltimateApi(target.device, args.password, args.timeout)
@@ -1371,6 +1478,9 @@ def main() -> int:
                 detail(identity.data.decode("latin-1"))
 
             run(route, "read-length-limit", run_read_length_limit, net)
+            if route == routes[0]:  # a property of the device, not of the route
+                run(route, "http-backlog-starvation", run_http_backlog_starvation,
+                    target.device, device)
             if peer is None:
                 for name in needs_peer:
                     results.setdefault(f"{name} [{route}]", None)
