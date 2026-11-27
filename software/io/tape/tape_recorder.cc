@@ -232,14 +232,27 @@ int TapeRecorder :: write_block()
     return REC_ERR_OK;
 }
 
+// Ends the capture at the user's request. The interrupt is turned off first, so that it cannot
+// cache a block while the rest of the FIFO is read: that block would take the bytes that come
+// next in the file, and the cache it fills is the one the rest of the FIFO is read through. The
+// block stays enabled, with the mode that start() gave it: disabling it makes the encoder write
+// one more entry for the pulse in progress (c2n_record.vhd:104-106), and the register write at
+// the end of end_capture() disables it and empties the FIFO in one go, which drops that entry.
 void TapeRecorder :: flush()
 {
+    if (file) {
+        if (select)
+            RECORD_CONTROL = REC_ENABLE | REC_MODE_RISING | REC_SELECT_WRITE;
+        else
+            RECORD_CONTROL = REC_ENABLE | REC_MODE_FALLING | REC_SELECT_READ;
+    }
     end_capture(true);
 }
 
-// Ends the capture: the interrupt is disabled, what has been captured is written out (unless
-// write_out is false), the length is put in the header and the file is closed. A write that
-// fails ends the writing out, and the error is left in error_code for the task to show.
+// Ends the capture: what has been captured is written out (unless write_out is false), the
+// length is put in the header, the file is closed, and the block is disabled and its FIFO
+// emptied. A write that fails ends the writing out, and the error is left in error_code for
+// the task to show.
 void TapeRecorder :: end_capture(bool write_out)
 {
 	if(!file) {

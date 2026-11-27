@@ -367,3 +367,145 @@ TEST(TapeRecorder, FinishGivesTheMutexBackAndTheTaskCanRunAgain)
     EXPECT_EQ(fs.writes_total, writes);
     EXPECT_FALSE(has_popup(c.ui, "Error during tape capture."));
 }
+
+// ---- Finish and the interrupt
+// "Finish Rec. to TAP" reads the rest of the FIFO into the same cache that the interrupt fills.
+// The interrupt can run at any point of Finish, and does when the almost-full line is up and
+// the interrupt is enabled in the block. The test lets the encoder fill a block (and so the
+// interrupt run) at every operation Finish performs on the registers, the file system and the
+// close, one run per point, and checks that
+//  - no file call is made on a closed file (the fake raises a Fault),
+//  - the file is closed exactly once,
+//  - the file holds every byte that arrived while the interrupt was enabled, in order, once,
+//  - its length field says so,
+//  - and the file has nothing else: the pulse the encoder writes when the block is disabled
+//    never reaches it.
+// The recorder task runs at every point too; it must find the capture in the hands of Finish.
+namespace {
+void encoder_interrupt_and_task(Capture &c, std::string &injected)
+{
+    if (recorder.enabled && recorder.irq_en) {
+        injected += expected_block(c.blocks_sent);
+        c.block_arrives();                 // the encoder fills a block; the interrupt caches it
+    }
+    c.run_task_steps(1);                   // one pass of the task loop
+}
+}
+
+TEST(TapeRecorder, FinishWhileTheInterruptAndTheTaskCanRunAtAnyPoint)
+{
+    int fired_total = 0;
+    for (int k = 1; k < 3000; k++) {
+        Capture c;
+        ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+        std::string stream;
+        for (int i = 0; i < 3; i++) { stream += expected_block(i); c.block_arrives(); }   // cached by the interrupt, task has not run
+        stream += expected_tail(100);
+        c.tail_arrives(100);                                                               // sits in the FIFO
+        int n = 0;
+        bool fired = false;
+        std::string at;
+        preempt.hook = [&](const char *what) {
+            if (++n == k) { fired = true; at = what; encoder_interrupt_and_task(c, stream); }
+        };
+        bool ran = guarded(("finish, task and interrupt at point " + std::to_string(k)).c_str(), [&]() { c.finish(); });
+        preempt.hook = 0;
+        if (!fired) break;                 // Finish has fewer points than k
+        fired_total++;
+        EXPECT_TRUE(ran);
+        EXPECT_EQ(fs.null_closes, 0);
+        EXPECT_EQ(fs.opens, 1);
+        EXPECT_EQ(fs.closes, 1);
+        const std::string &data = fs.file("cap.tap").content;
+        bool same = data.size() == 20 + stream.size() && data.compare(20, std::string::npos, stream) == 0;
+        if (!same) host_test::record_failure("content differs when the interrupt and the task run at point " + std::to_string(k) + " (" + at + ")", false);
+        if (data.size() >= 20) EXPECT_EQ((int)length_field(data), (int)stream.size());
+        EXPECT_FALSE(has_popup(c.ui, "Error during tape capture."));
+    }
+    EXPECT_TRUE(fired_total > 8);          // the sweep really went through Finish
+}
+
+// An interrupt that was already pending when Finish ran must find the capture over: it reads
+// nothing from the FIFO, and the task step has nothing to write.
+TEST(TapeRecorder, AfterFinishAnInterruptCachesNothingAndTheTaskWritesNothing)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    int writes = fs.writes_total;
+    int reads = recorder.data_reads;
+    uint8_t b[512] = { 0 };
+    recorder.capture(b, 512);                // the FIFO holds a block (the model does not look at the enable bit)
+    c.rec->irq();
+    EXPECT_EQ(recorder.data_reads, reads);
+    c.run_task_steps(2);
+    EXPECT_EQ(fs.writes_total, writes);
+    EXPECT_EQ(fs.closes, 1);
+}
+
+// While Finish reads the FIFO the interrupt is off, but the block is still enabled: disabling
+// it makes the encoder write one more entry for the pulse in progress (c2n_record.vhd:104-106),
+// which Finish has always dropped by emptying the FIFO in the same register write. A
+// capture must come out byte for byte as it always has.
+TEST(TapeRecorder, TheEntryThatDisablingTheBlockWritesNeverReachesTheFile)
+{
+    for (int longpause = 0; longpause < 2; longpause++) {
+        Capture c;
+        if (longpause) { recorder.final_entry.clear(); recorder.final_entry.push_back(0); recorder.final_entry.push_back(0x11); recorder.final_entry.push_back(0x22); recorder.final_entry.push_back(0x33); }
+        ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+        c.block_arrives();
+        c.tail_arrives(30);
+        ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+        const std::string &data = fs.file("cap.tap").content;
+        EXPECT_TRUE(data.substr(20) == expected_block(0) + expected_tail(30));
+        EXPECT_EQ((int)length_field(data), 512 + 30);
+        EXPECT_EQ(recorder.final_entries, 0);       // the block is disabled and emptied in one write
+        EXPECT_FALSE(recorder.enabled);
+        EXPECT_FALSE(recorder.flush_level);
+        EXPECT_EQ((int)recorder.fifo.size(), 0);
+    }
+}
+
+// A capture with no tail: Finish with an empty FIFO must not turn the entry into a tail.
+TEST(TapeRecorder, AnEmptyFifoStaysEmptyAtFinish)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    EXPECT_EQ((int)fs.file("cap.tap").content.size(), 20);
+}
+
+// While Finish reads the FIFO the block is enabled in the mode the capture was started with, and
+// only its interrupt is off. Seen from the first write Finish makes to the file.
+TEST(TapeRecorder, WhileFinishWritesTheBlockKeepsItsModeAndOnlyTheInterruptIsOff)
+{
+    for (int sample = 0; sample < 2; sample++) {
+        Capture c;
+        ASSERT_EQ((int)c.menu(sample ? MENU_REC_SAMPLE_TAPE : MENU_REC_RECORD_TO_TAP), (int)SSRET_OK);
+        int mode = recorder.mode, sel = recorder.sel;
+        EXPECT_TRUE(recorder.irq_en);
+        c.block_arrives();
+        bool seen = false;
+        preempt.hook = [&](const char *what) {
+            if (!seen && !strcmp(what, "file write")) {
+                seen = true;
+                EXPECT_TRUE(recorder.enabled);
+                EXPECT_FALSE(recorder.irq_en);
+                EXPECT_EQ(recorder.mode, mode);
+                EXPECT_EQ(recorder.sel, sel);
+            }
+        };
+        ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+        preempt.hook = 0;
+        EXPECT_TRUE(seen);
+    }
+}
+
+TEST(TapeRecorder, FinishWithoutACaptureDoesNotEnableTheBlock)
+{
+    Capture c;
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    EXPECT_EQ(recorder.enables, 0);
+    EXPECT_FALSE(recorder.enabled);
+}
