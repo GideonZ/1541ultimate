@@ -522,6 +522,7 @@ void Modem :: Caller()
         	responseString = (verbose==TRUE ? responseText[RESP_NO_CARRIER] : responseCode[RESP_NO_CARRIER]);
         	responseLen=strlen(responseString);
         	acia.SendToRx((uint8_t *)responseString, responseLen);
+            closesocket(sock_fd);
             xSemaphoreGive(connectionLock);
             continue;
         }

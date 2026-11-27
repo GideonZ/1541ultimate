@@ -159,7 +159,10 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     host = NULL;
     keyboard = NULL;
     screen = NULL;
+    status_box = NULL;
     doBreak = false;
+    ownerTask = NULL;
+    releaseState = 0;
     available = false;
     remote = false;
     color_sel_bg = 0;
@@ -176,6 +179,9 @@ UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
     set_available(false);
+    // Not a C64 client, and not inside run_once(), when it is deleted: only menus on
+    // a stream (Telnet, socket_gui.cc) are, and they use run_remote(), which never
+    // takes ownerTask. Nothing to clear.
     get_user_interfaces()->remove(this);
     do {
         if (ui_objects[focus]) {
@@ -332,6 +338,9 @@ void UserInterface :: run_once(void)
         return;
     }
 
+    // Set before take_ownership(): from then on another task may see the client.
+    releaseState = 0;
+    ownerTask = (void *)xTaskGetCurrentTaskHandle();
     host->take_ownership(this);
     // Whatever is on the keyboard or joystick port as the menu opens was not
     // meant for the menu; a single stale sample there moved the cursor (#935).
@@ -344,6 +353,10 @@ void UserInterface :: run_once(void)
 
     set_available(true);
     while(!doBreak) {
+        service_release_request();
+        if (doBreak) {
+            break;
+        }
         host->checkButton();
         if (!host->exists()) {
             break;
@@ -358,6 +371,10 @@ void UserInterface :: run_once(void)
             int ret = pollFocussed();
             if (ret != 0)
                 printf("Poll Focussed returned %d. DoBreak = %d.\n", ret, doBreak);
+            service_release_request();
+            if (doBreak) {
+                break; // served in this pass: do not tear down a second time below
+            }
             switch(ret) {
             case MENU_NOP:
                 break;
@@ -378,6 +395,9 @@ void UserInterface :: run_once(void)
     }
     set_available(false);
     doBreak = false;
+    // Nobody will service a request from here on; let a waiting caller go.
+    ownerTask = NULL;
+    releaseState = 0;
 #endif
 }
 
@@ -535,12 +555,79 @@ void UserInterface :: appear(void)
 	}
 }
 
-void UserInterface :: release_host(void)
+// Runs in the task that owns the menu, between its draws.
+void UserInterface :: service_release_request(void)
 {
+    bool serve = false;
+    portENTER_CRITICAL();
+    if (releaseState == 1) {
+        releaseState = 2;
+        serve = true;
+    }
+    portEXIT_CRITICAL();
+    if (!serve) {
+        return;
+    }
     for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
     doBreak = true;
+    releaseState = 0;
+}
+
+bool UserInterface :: release_host(void)
+{
+    // A task other than the menu's own (REST, UCI) must not delete the windows
+    // the menu task is drawing on. Ask it to do that, and wait a bounded time.
+    // False if it did not: the menu is then still up, and the caller must not
+    // go on as if the host were free. The menu task serves the request between
+    // polls of its menu. Of the nested loops only the read-only text viewer
+    // (help, logs) closes on it. Known limit: a REST reset is refused while a
+    // question or input dialog (popup, choice, string box, form, hex editor,
+    // monitor) is open on the menu, because ending those loops would hand their
+    // callers a result they read as an answer. Work in the menu task that does
+    // not poll (a command's file I/O) also delays the service. The caller then
+    // fails after the wait and nothing is changed.
+    if (ownerTask && ownerTask != (void *)xTaskGetCurrentTaskHandle()) {
+        bool queued = false;
+        portENTER_CRITICAL();
+        if (ownerTask && releaseState == 0) {
+            releaseState = 1;
+            queued = true;
+        }
+        portEXIT_CRITICAL();
+        if (!queued) {
+            // Another request is pending, or the menu closed meanwhile.
+            return ownerTask == NULL;
+        }
+        const TickType_t start = xTaskGetTickCount();
+        const TickType_t limit = 2000 / portTICK_PERIOD_MS;
+        while (releaseState != 0 && ownerTask) {
+            if (releaseState == 1 && (xTaskGetTickCount() - start) >= limit) {
+                bool withdrawn = false;
+                portENTER_CRITICAL();
+                if (releaseState == 1) { // not taken up in the meantime
+                    releaseState = 0;
+                    withdrawn = true;
+                }
+                portEXIT_CRITICAL();
+                if (withdrawn) {
+                    printf("UI: menu task did not release the host in time\n");
+                    return false;
+                }
+            }
+            vTaskDelay(1);
+        }
+        return true; // served, or the menu was closed in the meantime
+    }
+    for(int i=focus;i>=0;i--) {  // tear down
+        ui_objects[i]->deinit();
+    }
+    doBreak = true;
+    // The windows are gone, so a caller waiting for that is done. This also lets it
+    // go when this task goes on to wait for a lock that caller holds.
+    releaseState = 0;
+    return true;
 }
 
 bool UserInterface :: is_available(void)
@@ -797,24 +884,37 @@ void UserInterface :: show_progress(const char *msg, int steps)
 
 void UserInterface :: update_progress(const char *msg, int steps)
 {
-    status_box->update(msg, steps);
+    if (status_box)
+        status_box->update(msg, steps);
 }
 
 void UserInterface :: hide_progress(void)
 {
+    if (!status_box)
+        return;
     status_box->deinit();
     delete status_box;
+    status_box = NULL;
 }
 
-void UserInterface :: run_editor(Editor *editor)
+void UserInterface :: run_editor(Editor *editor, bool abortable)
 {
     editor->init(screen, keyboard);
     int ret = 0;
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = editor->poll(0);
-        if (!ret && pollMenuButtonPush()) {
-            break;
+        if (!ret) {
+            // A read-only viewer decides nothing and takes no input that anyone
+            // acts on, so it can simply close when another task asks for the
+            // teardown. Dialogs that ask or take input are not ended this way.
+            const int state = releaseState;
+            if (abortable && state == 1) {
+                break;
+            }
+            if (pollMenuButtonPush()) {
+                break;
+            }
         }
     }
     editor->deinit();
@@ -823,7 +923,7 @@ void UserInterface :: run_editor(Editor *editor)
 
 void UserInterface :: run_editor(const char *text_buf, int max_len)
 {
-    run_editor(new Editor(this, text_buf, max_len));
+    run_editor(new Editor(this, text_buf, max_len), true); // read-only text
 }
 
 void UserInterface :: run_hex_editor(const char *text_buf, int max_len)
@@ -844,7 +944,9 @@ void UserInterface :: postMessage(const char *msg)
     // Message handler becomes owner of object
     mstring *message = new mstring(msg);
 
-    xQueueSend(userMessageQueue, &message, 0);
+    if (xQueueSend(userMessageQueue, &message, 0) != pdTRUE) {
+        delete message; // the queue is full: nobody else owns it
+    }
 }
 
 mstring *UserInterface :: getMessage(void)

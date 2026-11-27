@@ -66,6 +66,13 @@ private:
 
     bool initialized;
     bool doBreak;
+    // The task that is inside run_once() (NULL otherwise), and a teardown that
+    // another task asked for. The menu is torn down only by that task, never
+    // while it is drawing: see release_host().
+    void *volatile ownerTask;
+    // 0 none, 1 requested by another task, 2 being served; changed only inside a
+    // critical section, so a withdrawn request cannot overlap a serve.
+    volatile int releaseState;
     bool available;
     // A menu on a network stream (Telnet). It has its own keyboard, so it does
     // not count as a menu the USB keyboard and mouse, or REST, are driving.
@@ -73,16 +80,23 @@ private:
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
-    
-    void set_screen_title(void);
+
     void set_available(bool enable);
+    void service_release_request(void);
     int  pollFocussed(void);
     bool pollMenuButtonPush(void);
     void discardPendingMenuButton(void);
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
-    void run_editor(Editor *);
+    void run_editor(Editor *, bool abortable = false);
 public:
+    // Draws the firmware's chrome: the product title on the top row, and
+    // the horizontal rules under it and at the bottom of the screen. Public
+    // because a screen something else has written over has to be able to ask
+    // for it back; the machine code monitor does after a freeze-mode debug
+    // step, where the live C64 screen was on display while the machine ran.
+    void set_screen_title(void);
+
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive, color_configitem;
 
@@ -99,7 +113,7 @@ public:
     virtual ~UserInterface();
 
     // from HostClient
-    virtual void release_host();
+    virtual bool release_host();
 
     virtual bool is_available(void);
     virtual void run();

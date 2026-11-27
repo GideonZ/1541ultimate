@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 # The one stanza that puts the shared library on sys.path; see tests/lib/bootstrap.py.
@@ -47,14 +48,42 @@ REQUIRED = {  # the roots both built-in recovery servers chain to
     "ISRG Root X1": "96bcec06264976f37460779acf28c5a7cfe8a3c0aae11a8ffcee05c0bddf08c6",
     "ISRG Root X2": "69729b8e15a86efc177a57afb7171dfc64add28c2fca8cf1507e34453ccb1470",
 }
-REMOVED = {  # removed from Mozilla's list in NSS 3.131.1 (2026-10-20); G3 is bug 2084101, C1 and C3 bug 2083709
+REMOVED = {  # not in the store, though curl's copy may still hold them (it follows Mozilla's release branch)
+    # removed from Mozilla's list in NSS 3.131.1 (2026-10-20); G3 is bug 2084101, C1 and C3 bug 2083709
     "emSign ECC Root CA - G3": "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",
     "emSign Root CA - C1": "125609aa301da0a249b97a8239cb6a34216f44dcac9f3954b14292f2e8c8608f",
     "emSign ECC Root CA - C3": "bc4d809b15189d78db3e1d8cf4f9726a795da1643ca5f1358e1ddb0edc0d7eb3",
+    # Removed on NSS master only (2026-11-05). When curl's file no longer holds one of these, delete its line.
+    # Bug 2085917 (NSS commit 0bc5fc37c2): Buypass Class 2 and 3 removed from NSS.
+    "Buypass Class 2 Root CA": "9a114025197c5bb95d94e63d55cd43790847b646b23cdf11ada4a00eff15fb48",
+    "Buypass Class 3 Root CA": "edf7ebbca27a2a384d387b7d4010c666e2edb4843e4c29b4ae1d5b9332e6b24d",
+    # Bug 2088266 (99c6ac3f7c): Websites trust bit removed from QuoVadis Root CA 1 G3 and 3 G3.
+    "QuoVadis Root CA 1 G3": "8a866fd1b276b57e578e921c65828a2bed58e9f2f288054134b7f1f4bfc9cc74",
+    "QuoVadis Root CA 3 G3": "88ef81de202eb018452e43f864725cea5fbd1fc2d9d205730709c5d8b8690f46",
+    # Bug 2085928 (ca6b9b0021): Websites trust bit removed from Certigna Root CA.
+    "Certigna Root CA": "d48d3d23eedb50a459e55197601c27774b9d7b18c94d5a059511a10250b93168",
+    # Bug 2017322 (0dae6498e1, fc168131f8): distrust-after 2026-04-15. The Baseline Requirements cap TLS certificates
+    # at 200 days since 2026-03-15, so every certificate issued before that date has expired (by 2026-11-01);
+    # keeping the root would only admit certificates Firefox refuses.
+    "Izenpe.com": "2530cc8e98321502bad96f9b1fba1b099e2d299e0f4548bb914f363bc0d4531f",
 }
-# sha256 of the whole file, as curl publishes it next to cacert.pem: the file is curl's copy, unmodified.
+# Roots Mozilla trusts only for certificates issued before a date (CKA_NSS_SERVER_DISTRUST_AFTER). mbedTLS cannot
+# apply the date, so these also accept a certificate issued after it. Kept while a certificate issued before the date
+# can still be valid: the Baseline Requirements cap TLS certificates at 200 days. Once the date plus
+# MAX_CERT_DAYS has passed the test fails; move the line to REMOVED then.
+MAX_CERT_DAYS = 200
+DISTRUST_AFTER = {
+    # Bug 2085912 (e5cb445f1f)
+    "Autoridad de Certificacion Firmaprofesional CIF A62634068":
+        ("57de0583efd2b26e0361da99da9df4648def7ee8441c3b728afa9bcde0f9b26a", "2026-08-06"),
+    # Bug 2089115 (30e59d44dc)
+    "emSign Root CA - G1": ("40f6af0346a99aa1cd1d555a4e9cce62c7f9634603ee406615833dc8c8d00367", "2026-11-16"),
+    # Bug 2092662 (8c60e757c3, 2026-11-13): Websites trust bit restored with this date
+    "DigiCert Trusted Root G4": ("552f7bdcf1a7af9e6ce672017f4f12abf77240c78e761ac203d1d9d20ac89988", "2026-09-14"),
+}
+# sha256 of the whole file: curl's cacert.pem with the roots of REMOVED cut out (curl's own file when it holds none).
 # A refresh changes this, the date in ca/README.md and the lists above together.
-CACERT_SHA256 = "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe"
+CACERT_SHA256 = "91787cf04ecb352f74cc3bd18730f986d6238f83643db331a6c3f2b3f1d300c2"
 MAX_AGE_DAYS = 365  # the list is refreshed at least yearly; offline, so CI needs no network
 MIN_ROOTS = 100  # Mozilla's list has about 120; an empty or truncated file is not it
 
@@ -88,6 +117,18 @@ def bundle_path(settings):
     return os.path.join(PROJECT, path)
 
 
+def expiry_problems(today, distrust_after=None):
+    """The DISTRUST_AFTER roots whose last possible certificate (date + MAX_CERT_DAYS) has expired."""
+    distrust_after = DISTRUST_AFTER if distrust_after is None else distrust_after
+    problems = []
+    for name, (_, date) in distrust_after.items():
+        last = datetime.date.fromisoformat(date) + datetime.timedelta(days=MAX_CERT_DAYS)
+        if today > last:
+            problems.append(f"{name}: no certificate issued before its distrust-after date {date} is valid after {last}; "
+                            "move it from DISTRUST_AFTER to REMOVED and refresh")
+    return problems
+
+
 def list_problems(pem_text, required=None, removed=None):
     """What is wrong with a root list: the roots it lacks, the removed ones it holds."""
     required = REQUIRED if required is None else required
@@ -97,7 +138,9 @@ def list_problems(pem_text, required=None, removed=None):
     if len(seen) < MIN_ROOTS:
         problems.append(f"only {len(seen)} certificates (expected at least {MIN_ROOTS})")
     problems += [f"lacks {name}" for name, fp in required.items() if fp not in seen]
-    problems += [f"holds {name}, which Mozilla removed" for name, fp in removed.items() if fp in seen]
+    problems += [f"holds {name}, which is in REMOVED" for name, fp in removed.items() if fp in seen]
+    if removed is REMOVED:
+        problems += [f"lacks {name}, which DISTRUST_AFTER keeps" for name, (fp, _) in DISTRUST_AFTER.items() if fp not in seen]
     return problems
 
 
@@ -179,7 +222,7 @@ def run_contents_check(path):
         text = raw.decode("utf-8")
         problems = list_problems(text)
         if hashlib.sha256(raw).hexdigest() != CACERT_SHA256:
-            problems.insert(0, "is not the file CACERT_SHA256 pins (curl's published cacert.pem.sha256); "
+            problems.insert(0, "is not the file CACERT_SHA256 pins (curl's cacert.pem without REMOVED); "
                                "a refresh changes both together")
         if problems:
             raise Failure("; ".join(problems))
@@ -200,6 +243,24 @@ def run_contents_check(path):
         stand_in = {"stand-in": REQUIRED["ISRG Root X1"]}
         if not any("holds stand-in" in p for p in list_problems(text, removed=stand_in)):
             raise Failure("a list holding a removed root was accepted")
+
+
+    with check("a DISTRUST_AFTER root is kept, a list that lacks one is caught, and one that has expired is caught"):
+        name, (fp, _) = next(iter(DISTRUST_AFTER.items()))
+        without = PEM_BLOCK.sub(
+            lambda block: "" if hashlib.sha256(base64.b64decode("".join(block.group(1).split()))).hexdigest() == fp
+            else block.group(0), text)
+        if not any(f"lacks {name}" in p for p in list_problems(without)):
+            raise Failure("a list without a DISTRUST_AFTER root was accepted")
+        problems = expiry_problems(datetime.date.today())
+        if problems:
+            raise Failure("; ".join(problems))
+        probe = {"probe": ("", "2026-01-01")}
+        day = datetime.date(2026, 1, 1) + datetime.timedelta(days=MAX_CERT_DAYS)
+        if expiry_problems(day, probe) or not expiry_problems(day + datetime.timedelta(days=1), probe):
+            raise Failure("the expiry of a DISTRUST_AFTER root is not caught on the day after its last certificate")
+        if len(expiry_problems(datetime.date(2030, 1, 1))) != len(DISTRUST_AFTER):
+            raise Failure("expired DISTRUST_AFTER roots were not all caught")
 
 
 def run_embedded_check_mutants(text):
@@ -334,6 +395,28 @@ def run_refresh_checks(path):
         # the refreshed tree passes the checks that read it: the pin and the date the test now holds
         if re.search(r'^CACERT_SHA256 = "([0-9a-f]{64})"', done[4][2].decode(), re.MULTILINE).group(1) != new_hash:
             raise Failure("the pin in the test does not match the new list")
+        # a REMOVED root that curl still ships is cut, and the pin is the hash of the cut file, not of curl's
+        ca = types.ModuleType("ca_with_removed")
+        ca.__dict__.update(sys.modules[__name__].__dict__)
+        ca.REMOVED = {**REMOVED, name: victim}
+        original_load = refresh.load_test
+        refresh.load_test = lambda: ca
+        later_text = committed.replace(committed[committed.index("as of: ") + 7:committed.index(" GMT")],
+                                       later.strftime("%a %b %d 13:32:40 %Y"))
+        cut_text = later_text.replace(block.group(0) + "\n", "")
+        if cut_text == later_text or cut_text.count("\n\n\n") != later_text.count("\n\n\n"):
+            raise Failure("could not build the cut list; this check needs updating")
+        cut = run(served(later_text))
+        cut_hash = hashlib.sha256(cut_text.encode()).hexdigest()
+        if cut[0] is not True or cut[1] or cut[4][0] != cut_text.encode():
+            raise Failure(f"a REMOVED root that curl ships was not cut from the new list: {cut[1]}")
+        if f'CACERT_SHA256 = "{cut_hash}"'.encode() not in cut[4][2] \
+                or hashlib.sha256(later_text.encode()).hexdigest().encode() in cut[4][2]:
+            raise Failure("the pin is not the hash of the cut list")
+        if f"dropped: {name}" not in cut[2] or f"removed: {name}" in cut[2] \
+                or f"({roots - 1} roots)".encode() not in cut[4][1]:
+            raise Failure("the output or the README does not show the dropped root:\n" + cut[2])
+        refresh.load_test = original_load
         same = run(served(committed))
         if same[0] is not False or "no change" not in same[2]:
             raise Failure("the committed list was not reported as no change")

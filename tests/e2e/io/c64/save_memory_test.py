@@ -120,6 +120,13 @@ def write_pattern(api, seed: int) -> None:
             raise Failure(f"${start:04X}-${end - 1:04X} did not read back as written")
 
 
+def clear_pattern(api) -> None:
+    # A reset keeps RAM where Fast Reset skips the RAM test, and a program a
+    # later suite leaves running past its end would execute the pattern.
+    for start, end in PATTERN_RANGES:
+        api.machine.writemem(start, bytes(end - start))
+
+
 def save_and_fetch(browser, args, label: str) -> bytes:
     with check(label):
         save_through_menu(browser, browser.backend.machine.machine_task_category)
@@ -245,6 +252,7 @@ def main() -> int:
         if browser is not None:
             teardown_step("close the browser session", browser.close)
         teardown_step("remove the saved file", lambda: remove(args.host, args.password))
+        teardown_step("clear the RAM pattern", lambda: clear_pattern(api))
         teardown_step("reset the machine", lambda: api.machine.reset(force=True))
 
 

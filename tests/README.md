@@ -307,6 +307,7 @@ e2e:
   ftp-client                        .      x      x      x      x
   ftp-server                        x      x      x      x      x
   g71-mfm-bounds                    .      x      x      x      x
+  g71-mfm-format-refused            .      .      x      x      x
   gmod2-eeprom-dirty                .      .      x      x      x
   ident-service-switch              .      .      x      x      x
   iec-directory-rename              .      .      x      x      x
@@ -318,11 +319,18 @@ e2e:
   image-copy-oracle                 .      x      x      x      x
   input                             x      x      x      x      x
   input-batching                    x      x      x      x      x
+  jiffy-load                        .      x      x      x      x
   key-injection                     .      .      x      x      x
   keystroke-read-back               x      x      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
+  machine-code-monitor-debug        .      .      .      x      x
+  machine-code-monitor-harness      .      .      x      x      x
+  machine-code-monitor-matrix       .      .      .      x      x
+  machine-code-monitor-regression      .      .      .      x      x
   memory-views                      .      .      x      x      x
+  menu-freeze-dma                   .      .      x      x      x
+  menu-reset-race                   .      .      x      x      x
   menu-screen                       x      x      x      x      x
   micromys-wheel                    .      .      .      x      x
   mus-rest-play                     .      .      x      x      x
@@ -335,6 +343,7 @@ e2e:
   prg-context-menu                  .      .      x      x      x
   prg-load-path-trim                .      x      x      x      x
   printer                           .      x      x      x      x
+  printer-stall                     .      .      x      x      x
   readmem-writemem                  x      x      x      x      x
   registry                          x      x      x      x      x
   rel-copy                          .      .      x      x      x
@@ -354,6 +363,7 @@ e2e:
   telnet-sustained-input            .      .      .      x      x
   temp-auto-cleanup                 .      .      x      x      x
   transport-usage                   x      x      x      x      x
+  u64ctrl-ca                        x      x      x      x      x
   uci-net-route                     .      .      .      x      x
   uci-net-route-precondition        .      x      x      x      x
   uci-net-target                    .      .      .      x      x
@@ -367,6 +377,7 @@ e2e:
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
+  web-tokenizer                     .      .      .      x      x
 
 perf:
   rest-latency                      .      .      x      x      x
@@ -380,6 +391,7 @@ soak:
   browser-refresh-leak              .      .      x      x      x
   heap-leak                         .      .      x      x      x
   ident-leak                        .      .      x      x      x
+  jiffy-load-soak                   .      .      x      x      x
   listener-soak                     .      .      x      x      x
   menu-navigation                   .      .      x      x      x
   mount-cache-leak                  .      .      x      x      x
@@ -389,8 +401,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           15     36     85    101    101
-  suite runs                       15     36     85    202    303
+  suites                           16     38     93    113    113
+  suite runs                       16     38     93    226    339
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are

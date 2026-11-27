@@ -31,6 +31,7 @@ static Message c_status_no_data             = { 19, true, (uint8_t *)"83,NOT IN 
 static Message c_status_reu_disabled        = { 18, true, (uint8_t *)"84,REU NOT ENABLED" };
 static Message c_status_cannot_open_file    = { 28, true, (uint8_t *)"85,REU FILE CANNOT BE OPENED" };
 static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFFSET > SIZE. NOT SAVED" };
+static Message c_status_menu_busy           = { 20, true, (uint8_t *)"8A,MENU NOT RELEASED" };
 static Message c_status_cannot_open_config  = { 26, true, (uint8_t *)"88,CANNOT OPEN CONFIG FILE" };
 static Message c_status_config_had_errors   = { 25, true, (uint8_t *)"89,CONFIG FILE HAD ERRORS" };
 
@@ -133,8 +134,11 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             break;
         case CTRL_CMD_REBOOT:
             cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, (int)0, "", "");
-            cmd->execute();
-            *status = &c_message_empty;
+            if (cmd->execute().status == SSRET_OK) {
+                *status = &c_message_empty;
+            } else {
+                *status = &c_status_menu_busy;
+            }
             break;
         case CTRL_CMD_FINISH_CAPTURE:
             printf("Finish tape capture command!\n");
