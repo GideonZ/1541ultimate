@@ -134,14 +134,18 @@ TEST(FatMediaSwap, DirectoryOpenAcrossDetachFailsCleanly)
 TEST(FatMediaSwap, FailedMountWithNoFreeVolumeKeepsOtherVolumes)
 {
     Medium m;
-    // Occupy every slot with something that is not ours.
-    Partition others[FF_VOLUMES] = {
+    Medium other;
+    // A mounted volume in slot 0, and dummies in every other slot.
+    FileDevice *first = new_device(other);
+    first->attach_disk(SECTOR);
+    ASSERT_EQ(first->probe(), 1);
+    Partition dummies[FF_VOLUMES] = {
         Partition(m.blk, 0, SECTORS, 1), Partition(m.blk, 0, SECTORS, 1), Partition(m.blk, 0, SECTORS, 1),
         Partition(m.blk, 0, SECTORS, 1), Partition(m.blk, 0, SECTORS, 1), Partition(m.blk, 0, SECTORS, 1),
         Partition(m.blk, 0, SECTORS, 1), Partition(m.blk, 0, SECTORS, 1), Partition(m.blk, 0, SECTORS, 1),
         Partition(m.blk, 0, SECTORS, 1) };
-    for (int i = 0; i < FF_VOLUMES; i++) {
-        ASSERT_EQ(ChanFATManager::getManager()->addDrive(&others[i]), i);
+    for (int i = 1; i < FF_VOLUMES; i++) {
+        ASSERT_EQ(ChanFATManager::getManager()->addDrive(&dummies[i]), i);
     }
     // Leave zeroes where the next file system object will be allocated.
     void *poison = ::operator new(sizeof(FileSystemFAT));
@@ -154,9 +158,16 @@ TEST(FatMediaSwap, FailedMountWithNoFreeVolumeKeepsOtherVolumes)
     dev->detach_disk();
     delete dev;
 
+    // The volumes that were there are untouched, and the mounted one still works.
     EXPECT_EQ(used_slots(), FF_VOLUMES);
-    for (int i = 0; i < FF_VOLUMES; i++) {
-        EXPECT_TRUE(ChanFATManager::getPartition(i) == &others[i]);
+    for (int i = 1; i < FF_VOLUMES; i++) {
+        EXPECT_TRUE(ChanFATManager::getPartition(i) == &dummies[i]);
+    }
+    Directory *d = NULL;
+    EXPECT_EQ(first->get_file_info()->fs->dir_open("/", &d), FR_OK);
+    delete d;
+    for (int i = 1; i < FF_VOLUMES; i++) {
         ChanFATManager::getManager()->removeDrive(i);
     }
+    delete first;
 }
