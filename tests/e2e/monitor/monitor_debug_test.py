@@ -3803,6 +3803,25 @@ def run_brk_orchestrator_tests(rest_host: str, session: mt.MonitorSession) -> No
             raise mt.Failure(
                 f"BRK vector still points into the debug trampoline area: ${vec_addr:04X}")
 
+    with mt.check("Debug: G stops at a breakpoint the program reaches after half a second"):
+        # $2000: two passes of a 256 x 256 count, about 0.7 s, then the NOP at
+        # $2012. A debugger that stops waiting early shows other registers.
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0x2000, bytes.fromhex(
+            "A902" "85FB" "A200" "A000" "88" "D0FD" "CA" "D0FA" "C6FB" "D0F2"
+            "EA" "4C1320"))
+        session.goto("2000")
+        session.send_char("A")
+        session.send_char("D")
+        _ensure_breakpoint_at(session, 0x2012, "$2012 delayed breakpoint set")
+        session.goto("2000")
+        session.send_char("G")
+        parsed = _wait_for_go_pc(session, "2012")
+        if (parsed["ac"], parsed["xr"], parsed["yr"]) != ("02", "00", "00"):
+            raise mt.Failure(f"AC/XR/YR expected 02/00/00, got {parsed!r}")
+        _clear_breakpoint_at(session, 0x2012, "$2012 delayed breakpoint clear")
+        _ensure_no_debug(session)
+
 
 def run_side_effect_step_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Prove stepping executes real instructions by checking RAM side effects."""
