@@ -12,10 +12,15 @@
 #include "file_system.h"
 #include <ctype.h>
 
+class FileFAT;
+class FileSystemFAT;
+
 class DirectoryFAT : public Directory
 {
 	DIR *fatdir;
 	FileSystem *fs;
+	FileSystemFAT *owner; // NULL once the file system is gone
+	friend class FileSystemFAT;
 
 	void copy_info(FILINFO *fi, FileInfo *inf)
 	{
@@ -36,18 +41,15 @@ class DirectoryFAT : public Directory
 	}
 
 public:
-	DirectoryFAT(FileSystem *fs) {
-		this->fs = fs;
-		fatdir = new DIR;
-	}
-	~DirectoryFAT() {
-		f_closedir(fatdir);
-		delete fatdir;
-    }
+	DirectoryFAT(FileSystemFAT *fs);
+	~DirectoryFAT();
 
     DIR *getDIR(void) { return fatdir; }
 
     FRESULT get_entry(FileInfo &out) {
+    	if (!owner) {
+    		return FR_NO_FILESYSTEM; // the file system was released under this directory
+    	}
     	FILINFO inf;
     #if _USE_LFN
     	inf.lfname = out.lfname;
@@ -67,9 +69,11 @@ public:
 class FileFAT : public File
 {
 FIL fatfile;
+    FileSystemFAT *owner; // NULL once the file system is gone
+    friend class FileSystemFAT;
 public:
-    FileFAT(FileSystem *fs) : File(fs) { }
-    ~FileFAT() { }
+    FileFAT(FileSystemFAT *fs);
+    ~FileFAT();
     FIL *getFIL(void)  { return &fatfile; }
 
     FRESULT close(void);
@@ -86,6 +90,12 @@ class FileSystemFAT : public FileSystem
     FATFS fatfs;
     uint8_t driveIndex;
     char prefix[3];
+    // Files and directories handed out and not yet closed. The file system cannot
+    // go while they point into it, so its destructor cuts them loose.
+    IndexedList<FileFAT *> openFiles;
+    IndexedList<DirectoryFAT *> openDirs;
+    friend class FileFAT;
+    friend class DirectoryFAT;
 
     void copy_info(FILINFO *fi, FileInfo *inf);
 public:

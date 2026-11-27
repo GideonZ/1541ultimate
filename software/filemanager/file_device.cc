@@ -41,6 +41,13 @@ void FileDevice :: detach_disk(void)
 {
     if(disk) {
         cleanup_children();
+        // The file system belongs to this device and refers to the partitions of the
+        // disk, so it goes first. Anything still holding a file or directory of it is
+        // told by its destructor.
+        if (info.fs) {
+            delete info.fs;
+            info.fs = NULL;
+        }
         delete disk;
     }
     disk = NULL;
