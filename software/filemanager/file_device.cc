@@ -19,10 +19,7 @@ FileDevice :: FileDevice(BlockDevice *b, const char *n, const char *dn) : Cached
 FileDevice :: ~FileDevice()
 {
     //printf("Destructing FileDevice %p\n", this);
-    detach_disk();
-	if(info.fs) {
-		delete info.fs;
-    }
+    detach_disk(); // releases the file system by the same rule as a media swap
 }
 
 void FileDevice :: attach_disk(int block_size)
@@ -41,11 +38,16 @@ void FileDevice :: detach_disk(void)
 {
     if(disk) {
         cleanup_children();
-        // The file system belongs to this device and refers to the partitions of the
-        // disk, so it goes first. Anything still holding a file or directory of it is
-        // told by its destructor.
+        // The file system refers to the partitions of the disk, so it goes before the disk,
+        // but only when nothing is open in it. Handles that are still open are cut loose
+        // and fail from now on, and the file system is then left alone and never freed
+        // (as before this change), because FatFs calls running in other tasks are not
+        // locked against a detach and may still be inside it. That window predates this
+        // change; closing it needs a lock around every FatFs call.
         if (info.fs) {
-            delete info.fs;
+            if (info.fs->detach_handles()) {
+                delete info.fs;
+            }
             info.fs = NULL;
         }
         delete disk;

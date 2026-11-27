@@ -24,17 +24,28 @@ FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p), openFiles(4, NULL)
     }
 }
 
-FileSystemFAT :: ~FileSystemFAT()
+bool FileSystemFAT :: detach_handles(void)
 {
     // Whatever is still open cannot be used any more, and must not touch this object again.
-    for (int i = 0; i < openFiles.get_elements(); i++) {
-        openFiles[i]->owner = NULL;
-        openFiles[i]->invalidate();
+    bool none = (openFiles.get_elements() == 0) && (openDirs.get_elements() == 0);
+    while (openFiles.get_elements() > 0) {
+        FileFAT *f = openFiles[0];
+        f->owner = NULL;
+        f->invalidate();
+        openFiles.remove(f);
     }
-    for (int i = 0; i < openDirs.get_elements(); i++) {
-        openDirs[i]->owner = NULL;
-        openDirs[i]->fs = NULL;
+    while (openDirs.get_elements() > 0) {
+        DirectoryFAT *d = openDirs[0];
+        d->owner = NULL;
+        d->fs = NULL;
+        openDirs.remove(d);
     }
+    return none;
+}
+
+FileSystemFAT :: ~FileSystemFAT()
+{
+    detach_handles();
     if (driveIndex != 0xFF) { // without a volume there is nothing to unmount, and no slot to give back
         f_unmount(prefix);
         ChanFATManager :: getManager() -> removeDrive(driveIndex);
@@ -135,6 +146,9 @@ FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 FRESULT FileSystemFAT :: format(const char *name)
 {
 #if FF_USE_MKFS
+    if (driveIndex == 0xFF) {
+        return FR_NOT_ENABLED; // no volume; an empty prefix would format volume 0
+    }
     MKFS_PARM param;
     param.fmt = FM_SFD | FM_ANY;
     param.n_fat = 1;

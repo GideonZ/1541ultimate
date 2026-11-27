@@ -105,6 +105,7 @@ public:
     static FileSystem *test (Partition *prt);
 
     bool    init(void);              // Initialize file system
+    bool    detach_handles(void);
     FRESULT format(const char *name);// Format!
     FRESULT get_free (uint32_t *e, uint32_t *cs);  // Get number of free sectors on the file system
     FRESULT get_total(uint32_t *e, uint32_t *cs);  // Get number of clusters on the file system
