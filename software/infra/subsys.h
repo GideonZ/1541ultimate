@@ -79,6 +79,10 @@ public:
 		}
 		return retval;
 	}
+	// Takes the lock if it is free and does not wait for it. For a task that must never wait.
+	int  trylock() {
+		return xSemaphoreTake(myMutex, 0);
+	}
 	void unlock() {
 		xSemaphoreGive(myMutex);
 	}

@@ -314,3 +314,56 @@ TEST(TapeRecorder, AShortSignatureWriteIsAnErrorToo)
     EXPECT_EQ(fs.opens, fs.closes);
     EXPECT_FALSE(recorder.enabled);
 }
+
+// ---- the recorder task and the commands: the subsystem's mutex
+// The commands that start and finish a capture hold the recorder's mutex while they run
+// (SubsysCommand::execute). The task does its part of the capture only while it can take the
+// mutex, and does not wait for it.
+
+TEST(TapeRecorder, TheTaskDoesNothingWhileACommandHoldsTheMutex)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    c.block_arrives();
+    int writes = fs.writes_total;
+    ASSERT_TRUE(c.rec->lock("a command in progress"));
+    c.run_task_steps(3);                                    // it neither waits nor writes
+    EXPECT_EQ(fs.writes_total, writes);
+    EXPECT_TRUE(sched.failed_tries >= 3);
+    EXPECT_TRUE(recorder.enabled);                           // and it has not stopped the capture
+    c.rec->unlock();
+    c.run_task_steps(1);                                    // when the command is done, the cache is written
+    EXPECT_EQ(fs.writes_total, writes + 2);
+}
+
+TEST(TapeRecorder, TheTaskGivesTheMutexBackWhateverItDid)
+{
+    // a write error, a vanished file and an overflow all end the capture from inside the task
+    for (int what = 0; what < 3; what++) {
+        Capture c;
+        ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+        if (what == 0) { fs.file("cap.tap").fail_from_write = 2; c.block_arrives(); }
+        if (what == 1) { fs.live[0]->invalidate(); }
+        if (what == 2) { for (int i = 0; i < REC_NUM_CACHE_BLOCKS; i++) c.block_arrives(); }
+        guarded("task step", [&]() { c.run_task_steps(2); });
+        EXPECT_EQ(sched.takes, sched.gives);
+        EXPECT_FALSE(recorder.enabled);
+        fs.max_writes = 100000;
+        EXPECT_TRUE(c.rec->lock("check"));                  // free: the command that comes next can run
+        c.rec->unlock();
+    }
+}
+
+TEST(TapeRecorder, FinishGivesTheMutexBackAndTheTaskCanRunAgain)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    EXPECT_EQ(sched.takes, sched.gives);
+    int writes = fs.writes_total;
+    c.run_task_steps(3);                                    // nothing left to do, and no error
+    EXPECT_EQ(fs.writes_total, writes);
+    EXPECT_FALSE(has_popup(c.ui, "Error during tape capture."));
+}

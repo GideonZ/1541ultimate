@@ -214,17 +214,19 @@ int TapeRecorder :: write_block()
 	
 	uint32_t bytes_written = 0;
 
-    uint32_t *block = cache_blocks[block_out];
+    int out = block_out; // the block that is written is the one that is counted as written
+    uint32_t *block = cache_blocks[out];
 	FRESULT res = file->write((void *)block, 512, &bytes_written);
     total_length += bytes_written;
 	if((res != FR_OK) || (bytes_written != 512)) { // a full volume gives FR_OK and fewer bytes
 		return REC_ERR_WRITE_ERROR;
 	}
 	printf("$");
-    block_out++;
-    if(block_out == REC_NUM_CACHE_BLOCKS) {
-        block_out = 0;
+    out++;
+    if(out == REC_NUM_CACHE_BLOCKS) {
+        out = 0;
     }        
+    block_out = out;
     blocks_written++;
 
     return REC_ERR_OK;
@@ -320,23 +322,32 @@ void TapeRecorder :: poll()
 			}
 		}   */
 
-		if (file) { // check for invalidation
-			if(!file->isValid()) {
-				printf("TapeRecorder: Our file got killed...\n");
-				stop(REC_ERR_NO_FILE); // closes the handle too; FileManager::fclose accepts an invalidated file
-			}
-		}
-		if (recording > 0) {
-			if(blocks_cached >= (blocks_written+REC_NUM_CACHE_BLOCKS)) {
-				stop(REC_ERR_OVERFLOW);
-			}
-			while (blocks_cached > blocks_written) {
-				int err = write_block();
-				if (err != REC_ERR_OK) { // the capture is over; it does not try again
-					stop(err);
-					break;
+		// The commands that start and finish a capture run on other tasks with this subsystem's
+		// mutex held (SubsysCommand::execute), so the capture is only ever finished between two
+		// steps of this task, never while a block is being written. The task does not wait for
+		// the mutex: it has the highest priority, and what the other tasks do while they hold
+		// it (a name box, a popup) can take as long as the user does. The interrupt keeps
+		// caching meanwhile, and the cache holds 128 blocks.
+		if (trylock()) {
+			if (file) { // check for invalidation
+				if(!file->isValid()) {
+					printf("TapeRecorder: Our file got killed...\n");
+					stop(REC_ERR_NO_FILE); // closes the handle too; FileManager::fclose accepts an invalidated file
 				}
 			}
+			if ((recording > 0) && file) {
+				if(blocks_cached >= (blocks_written+REC_NUM_CACHE_BLOCKS)) {
+					stop(REC_ERR_OVERFLOW);
+				}
+				while (blocks_cached > blocks_written) {
+					int err = write_block();
+					if (err != REC_ERR_OK) { // the capture is over; it does not try again
+						stop(err);
+						break;
+					}
+				}
+			}
+			unlock();
 		}
 		vTaskDelay(10);
 	}
