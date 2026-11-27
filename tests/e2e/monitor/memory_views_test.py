@@ -288,6 +288,7 @@ def main() -> int:
         if mirror is not None:
             teardown_step("put the RAM under the CPU port back",
                           lambda: api.machine.writemem(PORT_MIRROR, mirror))
+        teardown_step("clear the RAM pattern", lambda: savemem.clear_pattern(api))
         teardown_step("reset the machine", lambda: api.machine.reset(force=True))
 
 
