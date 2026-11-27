@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "lwip/dhcp.h"
+#include "lwip/prot/dhcp.h"
 #include "lwip/dns.h"
 #include "lwip/sockets.h"
 #include "lwip/apps/mdns.h"
@@ -433,7 +434,10 @@ void NetworkInterface :: effectuate_settings(void)
                 // change at all, including the request that asked for this:
                 // applying these settings over REST answered nothing, because
                 // the answer went out on a connection it had just aborted.
-                if (!netif_dhcp_data(&my_net_if)) {
+                // dhcp_stop() leaves the client attached, in state OFF, so a
+                // client that is stopped counts as not running.
+                struct dhcp *client = netif_dhcp_data(&my_net_if);
+                if (!client || client->state == DHCP_STATE_OFF) {
                     dhcp_start(&my_net_if);
                 }
             } else {
