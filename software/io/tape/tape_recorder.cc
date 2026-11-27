@@ -278,9 +278,11 @@ void TapeRecorder :: end_capture(bool write_out)
         error_code = err;
     }
 
-    file->seek(16);
-    uint32_t le_size = cpu_to_32le(total_length);
-    file->write(&le_size, 4, &bytes_written);
+    if (file->isValid()) { // a file whose medium is gone only has to be closed
+        file->seek(16);
+        uint32_t le_size = cpu_to_32le(total_length);
+        file->write(&le_size, 4, &bytes_written);
+    }
 
 	fm->fclose(file);
 	file = NULL;
@@ -321,8 +323,7 @@ void TapeRecorder :: poll()
 		if (file) { // check for invalidation
 			if(!file->isValid()) {
 				printf("TapeRecorder: Our file got killed...\n");
-				file = NULL;
-				stop(REC_ERR_NO_FILE);
+				stop(REC_ERR_NO_FILE); // closes the handle too; FileManager::fclose accepts an invalidated file
 			}
 		}
 		if (recording > 0) {

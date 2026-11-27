@@ -249,3 +249,30 @@ TEST(TapeRecorder, FinishWithFailingWritesEndsTheCaptureAndTheUserIsTold)
     c.run_task_steps(1);                                     // the task shows the error
     EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
 }
+
+// T3: the medium is removed during the capture. The file becomes invalid; the owner still has
+// to close it, or the open file list keeps a handle that nothing releases.
+TEST(TapeRecorder, T3_FileInvalidatedDuringCaptureIsStillClosed)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    ASSERT_EQ((int)fs.live.size(), 1);
+    fs.live[0]->invalidate();       // what FileManager::invalidate does to every file of a removed medium (filemanager.cc:440)
+    c.block_arrives();
+    guarded("task step after the medium vanished", [&]() { c.run_task_steps(3); });
+    EXPECT_EQ(fs.opens, fs.closes);
+}
+
+TEST(TapeRecorder, AFileThatVanishedEndsTheCaptureWithoutWritingAndTheUserIsTold)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    int writes = fs.writes_total;
+    fs.live[0]->invalidate();
+    c.run_task_steps(2);
+    EXPECT_EQ(fs.writes_total, writes);                      // the file is not used any more, only closed
+    EXPECT_EQ(fs.closes, 1);
+    EXPECT_FALSE(recorder.enabled);
+    EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
+}
