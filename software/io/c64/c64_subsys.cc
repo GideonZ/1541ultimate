@@ -272,6 +272,9 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             c64->unfreeze();
             break;
         case MENU_C64_RESET:
+            if (machine_monitor_request_global_reset_cancel) {
+                machine_monitor_request_global_reset_cancel();
+            }
             if (!release_client(c64)) {
                 result = SSRET_INTERNAL_ERROR;
                 break;
@@ -280,7 +283,13 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             // Both then run the restore one after the other, not interleaved: the lock is
             // held for the whole command, see below.
             c64->unfreeze();
-            c64->reset();
+            // Cold-start if Debug may have left ROM banked out.
+            if (machine_monitor_global_reset_sees_debug_session &&
+                machine_monitor_global_reset_sees_debug_session()) {
+                c64->start_cartridge(NULL);
+            } else {
+                c64->reset();
+            }
             break;
 
         case MENU_C64_PAUSE:
@@ -654,6 +663,9 @@ int C64_Subsys :: dma_load_raw(File *f)
 
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
+    // Must not release the host while frozen, or it would tear down the freeze
+    // monitor; the frozen path instead routes through dma_transfer_frozen,
+    // which honours the freezer's own mode/cart banking.
     bool i_stopped_it = false;
     // freeze() and unfreeze() are not atomic: the bus is in Ultimax from the stop until isFrozen
     // is set, and a copy that sees !isFrozen then reads $FF and loses its writes. Hold the
@@ -676,9 +688,6 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
     }
 
     if (c64->isFrozen) {
-        // The freezer menu may have its own mode/cart banked in, so route through
-        // dma_transfer_frozen, which restores the frozen C64 mode for ROM/cart
-        // ranges instead of blindly bypassing to raw RAM.
         c64->dma_transfer_frozen(offset, buffer, length, rw);
     } else {
         volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
@@ -701,7 +710,12 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 		const char *name, uint8_t run_code, uint8_t drv, uint16_t reloc)
 {
 	// prepare DMA load
-    if(c64->client) { // we are locked by a client, likely: user interface
+    // Keep the client attached while a debug session owns the machine: a
+    // cartridge-target debug step's run comes back through this boot cart, and
+    // releasing it here skips the release_ownership() unfreeze, leaving the
+    // machine DMA-held after the monitor closes.
+    if(c64->client && !(machine_monitor_global_reset_sees_debug_session &&
+                        machine_monitor_global_reset_sees_debug_session())) {
     	if (!release_client(c64)) {
     	    return -1;
     	}
