@@ -74,6 +74,12 @@ protected:
     {
         if (machine && machine->is_accessible()) {
             machine->unfreeze();
+            // The cartridge releases the CPU on the next bad line and reads as
+            // stopped until then. A launch written in that window takes the CPU
+            // for held, and the CPU starts running in the middle of it.
+            for (int i = 0; i < 2500 && machine->is_stopped(); i++) {
+                wait_10us(1);
+            }
         }
     }
     virtual bool machine_is_frozen(void) const
