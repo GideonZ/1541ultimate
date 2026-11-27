@@ -68,9 +68,14 @@ protected:
     {
         return machine->peek(address);
     }
+    // A cartridge read of the running C64 can return $FF whatever RAM holds,
+    // which would end the wait before the CPU traps. Hold the CPU to read.
     virtual uint8_t peek_run_marker(uint16_t address)
     {
-        return machine->peek_while_running(address);
+        bool stopped_it = begin_stopped_session();
+        uint8_t marker = machine->peek(address);
+        end_stopped_session(stopped_it);
+        return marker;
     }
     virtual void poke_visible(uint16_t address, uint8_t byte)
     {

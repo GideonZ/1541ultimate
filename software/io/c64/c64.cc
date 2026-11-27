@@ -797,11 +797,6 @@ uint8_t C64::peek(uint16_t address)
     return value;
 }
 
-uint8_t C64::peek_while_running(uint16_t address) const
-{
-    return *((volatile uint8_t *)(C64_MEMORY_BASE + address));
-}
-
 void C64::poke(uint16_t address, uint8_t value)
 {
     bool stopped_it = false;
