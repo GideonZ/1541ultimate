@@ -43,12 +43,12 @@ TEST(UsbScsiMaxLunTest, ReplyFifteenIsLastValidSlot)
     EXPECT_EQ(USB_SCSI_LUN_SLOTS - 1, usb_scsi_max_lun(1, 15));
 }
 
-TEST(UsbScsiMaxLunTest, ReplySixteenIsClamped)
+TEST(UsbScsiMaxLunTest, ReplySixteenMeansSingleLun)
 {
-    EXPECT_EQ(USB_SCSI_LUN_SLOTS - 1, usb_scsi_max_lun(1, 16));
+    EXPECT_EQ(0, usb_scsi_max_lun(1, 16));
 }
 
-TEST(UsbScsiMaxLunTest, Reply255IsClamped)
+TEST(UsbScsiMaxLunTest, Reply255MeansSingleLun)
 {
-    EXPECT_EQ(USB_SCSI_LUN_SLOTS - 1, usb_scsi_max_lun(1, 255));
+    EXPECT_EQ(0, usb_scsi_max_lun(1, 255));
 }
