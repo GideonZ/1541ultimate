@@ -1485,6 +1485,8 @@ class RestDebugDriver(BaseDriver):
         self.wait_rest_ready("post-reset", timeout=25.0)
         if not L.ensure_menu_closed(self.rest):
             raise GateError("menu did not close during local-UI baseline recovery")
+        # A program or a jammed 6510 left by an earlier cell still shows READY.
+        overlay_lifecycle.reset_to_basic(self.rest, "matrix baseline")
         self.wait_rest_ready("post-menu-close")
 
     def apply_interface_type(self):
@@ -1968,18 +1970,18 @@ class RestDebugDriver(BaseDriver):
         time.sleep(1.5)
 
     def reset_from_debug_ui(self):
-        self.send_key("C=+R")
-        try:
-            overlay_lifecycle.wait_ready(self.rest, timeout=10.0)
-            self.event("reset_from_debug_ui", method=f"{self.row['interface']} C=+R")
-            return
-        except Exception as exc:
-            self.event(
-                "reset_from_debug_ui_fallback",
-                attempted=f"{self.row['interface']} C=+R",
-                error=str(exc),
-                reason=("Continue closes the local monitor/UI, so the post-Continue "
-                        "C=+R chord is not guaranteed to be consumed by Debug"))
+        # Continue closes the local monitor, and the chord then reaches the C64
+        # instead. The screen still reads READY, so waiting for it proves nothing;
+        # a program left running there is overwritten by the next cell's fixture.
+        if "MONITOR" in (L.screen_or_none(self.rest) or "").upper():
+            self.send_key("C=+R")
+            try:
+                overlay_lifecycle.wait_ready(self.rest, timeout=10.0)
+                self.event("reset_from_debug_ui", method=f"{self.row['interface']} C=+R")
+                return
+            except Exception as exc:
+                self.event("reset_from_debug_ui_fallback",
+                           attempted=f"{self.row['interface']} C=+R", error=str(exc))
         self.rest.reset()
         overlay_lifecycle.wait_ready(self.rest, timeout=12.0)
         self.event("reset_from_debug_ui", method="REST /v1/machine:reset fallback")
