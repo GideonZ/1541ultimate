@@ -60,6 +60,17 @@ FileTypeTap :: FileTypeTap(BrowsableDirEntry *node) : tapIndices(4, NULL)
 	indexValid = false;
 }
 
+FileTypeTap :: ~FileTypeTap()
+{
+    // The entries belong to this object. The BrowsableTapEntry children only point at them and
+    // never touch them when they are deleted, and BrowsableDirEntry deletes this object
+    // before its children, so freeing them here is safe.
+    for (int i = 0; i < tapIndices.get_elements(); i++) {
+        delete tapIndices[i];
+    }
+    tapIndices.clear_list();
+}
+
 void FileTypeTap :: readIndexFile(void)
 {
     FileManager *fm = FileManager :: getFileManager();

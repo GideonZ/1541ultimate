@@ -114,3 +114,17 @@ TEST(TapFile, X_IndexBuffersAreReleasedWithDeleteArray)
     browse_with_index();
     EXPECT_EQ((int)(mismatched_deletes() - before), 0);
 }
+
+// T6: FileTypeTap has no destructor, so the index entries it parsed are never freed.
+TEST(TapFile, T6_IndexEntriesAreFreedWithTheFileType)
+{
+    reset_env();
+    fs.put("game.idx", "0x0 Intro\n0x1234 Level 1\n0x20000 Level 2\n");
+    browse_with_index();                  // warm-up: containers of the fake reach their size
+    fs.release_graveyard();
+    long before = live_allocations();
+    browse_with_index();
+    fs.release_graveyard();
+    long leaked = live_allocations() - before;
+    EXPECT_EQ((int)leaked, 0);            // three TapIndexEntry objects, if the defect is real
+}

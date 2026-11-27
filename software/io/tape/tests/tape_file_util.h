@@ -29,16 +29,17 @@ struct TapeEnvScope {
     }
 };
 
-// A full cycle of what the browser does with a .tap that has an index: create the type,
-// ask for the entries, let the browser drop the entries, delete the type.
+// A full cycle of what the browser does with a .tap that has an index: create the type, ask
+// for the entries, then delete the type and then the entries, which is the order in which
+// ~BrowsableDirEntry deletes its file type and then (in ~Browsable) its children.
 inline void browse_with_index()
 {
     BrowsableDirEntry entry("game.tap", "/Usb0", "TAP");
     FileType *ft = FileTypeTap::test_type(&entry);
     IndexedList<Browsable *> list(4, NULL);
     ft->getCustomBrowsables(&entry, list);
-    for (int i = 0; i < list.get_elements(); i++) delete list[i];
     delete ft;
+    for (int i = 0; i < list.get_elements(); i++) delete list[i];
 }
 }
 #endif
