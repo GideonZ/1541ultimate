@@ -8,6 +8,8 @@
 
 using namespace tapetest;
 
+static const int TAPFILE_START = 0x3110;
+
 TEST(TapFile, OpenWithIndexListsTheEntriesAndClosesTheIndexFile)
 {
     reset_env();
@@ -69,5 +71,35 @@ TEST(TapFile, MissingTapIsReportedAndNothingIsOpen)
     SubsysResultCode_e r = scope.execute(0x3110, "nothere.tap");
     EXPECT_EQ((int)r, (int)SSRET_CANNOT_OPEN_FILE);
     EXPECT_TRUE(has_popup(scope.ui, "Can't open TAP file."));
+    EXPECT_EQ(fs.opens, fs.closes);
+}
+
+// T5: a file that is not a good TAP is opened, rejected, and must be closed again.
+TEST(TapFile, T5_BadSignatureClosesTheFile)
+{
+    TapeEnvScope scope;
+    fs.put("bad.tap", "NOT-A-TAPE-FILE-AT-ALL-0123456789");
+    SubsysResultCode_e r = scope.execute(TAPFILE_START, "bad.tap");
+    EXPECT_EQ((int)r, (int)SSRET_ERROR_IN_FILE_FORMAT);
+    EXPECT_EQ(tape_controller->set_file_calls, 0);
+    EXPECT_EQ(fs.opens, fs.closes);
+}
+
+TEST(TapFile, T5_ShortFileClosesTheFile)
+{
+    TapeEnvScope scope;
+    fs.put("short.tap", "C64-TAPE-RAW");
+    SubsysResultCode_e r = scope.execute(TAPFILE_START, "short.tap");
+    EXPECT_EQ((int)r, (int)SSRET_ERROR_IN_FILE_FORMAT);
+    EXPECT_EQ(fs.opens, fs.closes);
+}
+
+TEST(TapFile, T5_ReadErrorOnTheHeaderClosesTheFile)
+{
+    TapeEnvScope scope;
+    scope.put_tap("err.tap", 10);
+    fs.file("err.tap").read_error = 1;
+    SubsysResultCode_e r = scope.execute(TAPFILE_START, "err.tap");
+    EXPECT_EQ((int)r, (int)SSRET_FILE_READ_FAILED);
     EXPECT_EQ(fs.opens, fs.closes);
 }

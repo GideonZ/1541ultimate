@@ -247,10 +247,12 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 	}
 	fres = file->read(read_buf, 20, &bytes_read);
 	if(fres != FR_OK) {
+		FileManager :: getFileManager() -> fclose(file);
 		cmd->user_interface->popup("Error reading TAP file header.", BUTTON_OK);
 		return SSRET_FILE_READ_FAILED;
 	}
 	if((bytes_read != 20) || (memcmp(read_buf, signature, 12))) {
+		FileManager :: getFileManager() -> fclose(file);
 		cmd->user_interface->popup("TAP file: invalid signature.", BUTTON_OK);
 		return SSRET_ERROR_IN_FILE_FORMAT;
 	}
