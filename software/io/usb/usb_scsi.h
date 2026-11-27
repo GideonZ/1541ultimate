@@ -8,6 +8,7 @@
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
+#include "usb_scsi_max_lun.h"
 
 struct t_cbw
 {
@@ -31,11 +32,11 @@ class UsbScsiDriver : public UsbDriver
 {
 	bool poll_enable;
 	FileManager *file_manager;
-	FileDevice *path_dev[16];
-	UsbScsi *scsi_blk_dev[16];
-	t_device_state state_copy[16];
-	uint16_t poll_interval[16];
-	bool media_seen[16];
+	FileDevice *path_dev[USB_SCSI_LUN_SLOTS];
+	UsbScsi *scsi_blk_dev[USB_SCSI_LUN_SLOTS];
+	t_device_state state_copy[USB_SCSI_LUN_SLOTS];
+	uint16_t poll_interval[USB_SCSI_LUN_SLOTS];
+	bool media_seen[USB_SCSI_LUN_SLOTS];
 	SemaphoreHandle_t mutex;
 	
 	int max_lun;

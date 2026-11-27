@@ -14,8 +14,10 @@
 // only meaningful when at least one byte was received.
 static inline int usb_scsi_max_lun(int result, uint8_t first_byte)
 {
-    if (!result)
+    if (result < 1)
         return 0;
+    if (first_byte > USB_SCSI_LUN_SLOTS - 1)
+        return USB_SCSI_LUN_SLOTS - 1;
     return (int)first_byte;
 }
 
