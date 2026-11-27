@@ -140,8 +140,8 @@ void FileTypeTap :: parseIndexFile(File *f)
             tapIndices.append(entry);
         }
     }
-    delete linebuf;
-    delete buffer;
+    delete[] linebuf;
+    delete[] buffer;
     indexValid = true;
 }
 

@@ -103,3 +103,14 @@ TEST(TapFile, T5_ReadErrorOnTheHeaderClosesTheFile)
     EXPECT_EQ((int)r, (int)SSRET_FILE_READ_FAILED);
     EXPECT_EQ(fs.opens, fs.closes);
 }
+
+// Found while building the harness: parseIndexFile allocates two char arrays with new[] and
+// releases them with delete.
+TEST(TapFile, X_IndexBuffersAreReleasedWithDeleteArray)
+{
+    reset_env();
+    fs.put("game.idx", "0x0 Intro\n0x1234 Level 1\n");
+    long before = mismatched_deletes();
+    browse_with_index();
+    EXPECT_EQ((int)(mismatched_deletes() - before), 0);
+}
