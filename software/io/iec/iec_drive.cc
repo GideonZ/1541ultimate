@@ -148,6 +148,9 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     partition_config_task = NULL;
 #endif
     lock_depth = 0;
+    deferred_channel = NULL;
+    deferred_pop = 0;
+    lock_owner = NULL;
     intf = IecInterface :: get_iec_interface();
 	fm = FileManager :: getFileManager();
     my_bus_id = 0;
@@ -222,16 +225,70 @@ IecDrive :: ~IecDrive()
     intf->unregister_slave(slot_id);
 }
 
+#ifdef RUNS_ON_PC
+// The tests stand in for a second task by changing this.
+void *iec_drive_pc_task = (void *)1;
+static void *current_task(void) { return iec_drive_pc_task; }
+#else
+static void *current_task(void) { return (void *)xTaskGetCurrentTaskHandle(); }
+#endif
+
 void IecDrive :: lock(void)
 {
 #ifndef RUNS_ON_PC
     xSemaphoreTakeRecursive(mutex, portMAX_DELAY);
 #endif
-    lock_depth++;
+    if (lock_depth++ == 0) {
+        lock_owner = current_task();
+        take_deferred_pop();
+    }
+}
+
+// Another task's abort leaves the pop to the next holder of the lock, so it never waits
+// for the IEC task and never reads a file (pop_more can read the next block). The task
+// that holds the lock pops at once, and may read the block itself.
+void IecDrive :: abort_read(IecChannel *channel, int bytes)
+{
+    if (lock_owner == current_task()) {
+        // This task holds the lock, so nobody else touches the channels: pop now, before
+        // the caller's next command opens another file or moves the position.
+        channel->pop_more(bytes);
+        channel->reset_prefetch();
+        return;
+    }
+#ifndef RUNS_ON_PC
+    portENTER_CRITICAL();
+#endif
+    deferred_pop = bytes;
+    deferred_channel = channel;
+#ifndef RUNS_ON_PC
+    portEXIT_CRITICAL();
+#endif
+}
+
+// With the lock held.
+void IecDrive :: take_deferred_pop(void)
+{
+#ifndef RUNS_ON_PC
+    portENTER_CRITICAL();
+#endif
+    IecChannel *channel = deferred_channel;
+    int bytes = deferred_pop;
+    deferred_channel = NULL;
+#ifndef RUNS_ON_PC
+    portEXIT_CRITICAL();
+#endif
+    if (channel) {
+        channel->pop_more(bytes);
+        channel->reset_prefetch();
+    }
 }
 
 void IecDrive :: unlock(void)
 {
+    if (lock_depth == 1) {
+        lock_owner = NULL;
+    }
     lock_depth--;
 #ifndef RUNS_ON_PC
     xSemaphoreGiveRecursive(mutex);

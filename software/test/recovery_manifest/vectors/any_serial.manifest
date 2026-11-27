@@ -1,0 +1,10 @@
+format=1
+package=test-1.0
+idcode=0362c093
+fpga.file=fake.bit
+fpga.size=88
+fpga.sha256=53ee5bc784105e3444f8810df9c0b13ea5542d8ce5e112bfafcdf0cd49088408
+image.file=fake.ue2
+image.size=28
+image.sha256=e3989004d19d6ccedafac4b3d6ed7531ed17a26eb4a389a2a5e8050777aa1162
+sig=MEYCIQChBtvvElzp3igVm2LubieSmF9+EWrgZwUTrmzm0Ohg6gIhAMGq9AKE4iOI3UlyhMxx1ephLcBuIZNTLhZfFM5xaBrp

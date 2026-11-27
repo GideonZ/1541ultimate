@@ -78,6 +78,10 @@ public:
     static int stream_body(void *context, uint8_t *buf, int len)
     {
         StreamRamFile *log = (StreamRamFile *)context;
+        if (len < 0) { // connection gone before the body was sent to the end
+            delete log;
+            return 0;
+        }
         int result = log->read((char *)(void *)buf, len);
         if (!result) {
             delete log;

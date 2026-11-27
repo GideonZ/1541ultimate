@@ -44,6 +44,10 @@ EXEMPT = {
         "counts transport failures as its result",
     os.path.join(TESTS, "soak", "network", "http_probe.py"):
         "drives HTTP itself to measure how the server behaves under stress",
+    # One sample is one fresh TCP connection plus one route response. Retrying
+    # would turn a failed sample into two connections and skew latency results.
+    os.path.join(TESTS, "perf", "rest_path_latency_perf_test.py"):
+        "measures one fresh connection and response per sample; no retries",
     # Keeps its own attempt loop so it can pace itself between attempts: it is
     # the suite that saturates the connection pool, and a fixed pause would add
     # churn to an already saturated one. It still takes the decision from

@@ -75,7 +75,7 @@ fix. Areas are in alphabetical order.
 | Area | Main paths | Contact |
 | --- | --- | --- |
 | Command interface (UCI), GitHub Actions workflows | `software/io/command_interface`, `.github/workflows` | @barryw |
-| Ethernet drivers, G64 and G71 track parsing | `software/io/network`, `software/drive` | @enver-haase |
+| G64 and G71 track parsing, 1581 disk controller (WD177x) | `software/drive/disk_image.cc`, `software/drive/mfmdisk.cc`, `software/drive/wd177x.cc` | @enver-haase |
 | Hyperspeed Kernal | `roms/c64rom/kernal` | @bvl1999 |
 | Machine code monitor, REST API, test suites, USB keyboard and mouse | `software/monitor`, `software/api`, `tests/`, `software/io/usb` | @chrisgleissner |
 | Modem emulation | `software/io/acia` | @xlar54 |
@@ -128,7 +128,10 @@ Beyond that:
 - **Work red/green.** Write the test first and run it against firmware
   without your change, where it should fail. Then run it with your change,
   where it should pass. For a new feature, the test shows the feature
-  working.
+  working. Red/green is a check you run, not something the code base keeps:
+  don't add switches, patches or "old behaviour" models to the tree so the
+  red run can be repeated. Run the new tests once against the unpatched
+  firmware, show that they fail, and say so in the pull request.
 - **Reuse what's there.** Hardware tests live under `tests/` and run through
   `./run-tests`. Build on the shared helpers in `tests/lib` rather than
   writing your own, and make sure your suite runs well alongside the others
@@ -151,6 +154,11 @@ Beyond that:
 - **Use GitHub's draft status** while the work isn't ready for review.
 - **Commit only source.** Builds leave firmware images and object files in the
   working tree, so add files by name rather than with `git add -A`.
+- **Preserve pull request history.** Avoid force-pushing or rewriting commits
+  once a pull request is under review, as this makes changes harder to follow.
+  Push new commits instead, and merge `master` into your branch when needed.
+  We squash commits when merging pull requests into `master`, so there is no
+  need to tidy the history yourself.
 - **Keep the description short.** It needs four things:
   - the problem, with a link to the issue (`Fixes #123`)
   - what you changed, and why you chose this approach
@@ -189,9 +197,9 @@ time. A few things keep discussions friendly and useful:
 
 ## After you open the pull request
 
-Pull requests are reviewed by hand. The maintainer may squash your commits or
-adjust the change while merging it. If an issue or pull request has gone quiet
-for a couple of weeks, a friendly reminder is welcome.
+Pull requests are reviewed by hand. The maintainer squash-merges your commits
+into `master` and may adjust the change while merging it. If an issue or pull
+request has gone quiet for a couple of weeks, a friendly reminder is welcome.
 
 ## Reporting bugs and asking for features
 

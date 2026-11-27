@@ -221,6 +221,13 @@ class DeviceDouble:
         # withhold_ftp_banner_while takes one: the processes that have to agree about it are a scripted
         # suite and this object, and they share no memory.
         self.menu_open_flag = ""
+        # Opt-in: PUT machine:menu_button toggles the menu and a key event closes it (as the
+        # UI exit, F8, does), so a suite that opens the menu itself and has to close it again
+        # is exercised. Off, the button does nothing and the menu is always open.
+        self.menu_button_toggles = False
+        self.menu_is_open = True
+        # Reported by GET /v1/info as ethernet_mac when set.
+        self.ethernet_mac = ""
         self.heap_free = 1_500_000
         self.heap_min_ever_free = 1_200_000
         self.heap_total = 2_000_000
@@ -343,6 +350,7 @@ class DeviceDouble:
             ("GET", "/v1/drives"): self._drives,
             ("GET", "/v1/machine:input"): self._ok_json,
             ("POST", "/v1/machine:input"): self._input,
+            ("PUT", "/v1/machine:menu_button"): self._menu_button,
             ("PUT", "/v1/machine:writemem"): self._ok_json,
             ("POST", "/v1/machine:writemem"): self._ok_json,
             ("POST", "/v1/runners:run_prg"): self._ok_json,
@@ -370,14 +378,19 @@ class DeviceDouble:
         return 200, self._json({"version": "0.1"}), "application/json"
 
     def _info(self, params):
-        return 200, self._json({
+        info = {
             "product": self.product,
             "firmware_version": self.firmware_version,
             "fpga_version": self.fpga_version,
-            "hostname": "double"}), "application/json"
+            "hostname": "double"}
+        if self.ethernet_mac:
+            info["ethernet_mac"] = self.ethernet_mac
+        return 200, self._json(info), "application/json"
 
     def _menu_screen(self, params):
-        if self.menu_open_flag:
+        if self.menu_button_toggles:
+            open_now = self.menu_is_open
+        elif self.menu_open_flag:
             open_now = os.path.exists(self.menu_open_flag)
         else:
             open_now = not self.faults.menu_screen_404
@@ -429,6 +442,11 @@ class DeviceDouble:
             body = bytes((tick + i) & 0xFF for i in range(length))
         return 200, body, "application/octet-stream"
 
+    def _menu_button(self, params):
+        if self.menu_button_toggles:
+            self.menu_is_open = not self.menu_is_open
+        return 200, self._json({}), "application/json"
+
     def _input(self, params):
         """A keystroke, which redraws one row of the menu.
 
@@ -440,6 +458,8 @@ class DeviceDouble:
         with self._lock:
             self._keys += 1
             keys = self._keys
+        if self.menu_button_toggles:
+            self.menu_is_open = False
         if self.move_selection_on_input:
             self.selected_row = (self.selected_row + 1) % SCREEN_ROWS
         else:

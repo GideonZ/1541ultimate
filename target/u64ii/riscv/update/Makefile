@@ -8,6 +8,29 @@ MABI  ?= ilp32
 PRODFAMILY = U64MK2
 #PRODNAME   = Ultimate\ 64-II
 
+# The runtime FPGA images this updater carries: "both" for the update package
+# users install, or "50t" or "100t" for the updater network recovery loads onto
+# a board whose FPGA it has already identified. Those carry one image, which
+# shortens the download, and set up the video output themselves, because they
+# are started straight from the bootloader. Each builds in its own directories.
+UPDATE_FPGA ?= both
+ifeq ($(UPDATE_FPGA),both)
+FPGA_IMAGES      = u64e2_50t u64e2_100t
+UPDATE_FPGA_TYPE = 0
+else ifeq ($(UPDATE_FPGA),50t)
+FPGA_IMAGES      = u64e2_50t
+UPDATE_FPGA_TYPE = 2 # what getFpgaType() reports for the XC7A50T
+OUTPUT           = output/50t
+RESULT           = result/50t
+else ifeq ($(UPDATE_FPGA),100t)
+FPGA_IMAGES      = u64e2_100t
+UPDATE_FPGA_TYPE = 3 # and for the XC7A100T
+OUTPUT           = output/100t
+RESULT           = result/100t
+else
+$(error UPDATE_FPGA must be both, 50t or 100t)
+endif
+
 include ../../../common/environment.mk
 
 FPGA_PATH ?= $(PATH_SW)/../external
@@ -120,6 +143,7 @@ SRCS_6502 =
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin u64ctrl.bin
 
 SRCS_HTML = index.html api.html
+SRCS_JS = special.js cbm_prg_studio.js
 SRCS_YAML = rest_api_openapi_u64.yaml
 
 SRCS_IEC = 
@@ -129,6 +153,7 @@ SRCS_NANO = nano_minimal.nan
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -march=$(MARCH) -mabi=$(MABI) -gdwarf-2 -ffunction-sections -DRISCV -Os -DOS -DUSB2513 -DRISC=1 -DSAFEMODE=1 -DIOBASE=0x10000000 -DU2P_IO_BASE=0x10100000
 OPTIONS += -DCLOCK_FREQ=100000000 -DU64=2 -Wno-write-strings -fdata-sections -nostartfiles -mno-fdiv -DRECOVERYAPP=1
+OPTIONS += -DUPDATE_FPGA_TYPE=$(UPDATE_FPGA_TYPE) -Wa,--defsym,UPDATE_FPGA_TYPE=$(UPDATE_FPGA_TYPE)
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = linker.x
@@ -160,13 +185,13 @@ ultimate.chk: ../ultimate/result/ultimate.app
 	@echo Calculating checksum of $< binary to $(@F)..
 	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
 
-update_binaries_u64ii.o: u64e2_50t.swp u64e2_100t.swp ../ultimate/result/ultimate.app
+update_binaries_u64ii.o: $(FPGA_IMAGES:%=%.swp) ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
-	make -C ../ultimate
+	+$(MAKE) -C ../ultimate
 
-update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64e2_50t.chk u64e2_100t.chk
+update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk $(FPGA_IMAGES:%=%.chk)
 	@echo "Compiling $(notdir $<)"
-	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(OUTPUT)/u64e2_50t.chk $(OUTPUT)/u64e2_100t.chk >$(OUTPUT)/checksums.h
+	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(addprefix $(OUTPUT)/,$(FPGA_IMAGES:%=%.chk)) >$(OUTPUT)/checksums.h
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 

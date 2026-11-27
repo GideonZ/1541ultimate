@@ -116,6 +116,7 @@ SRCS_6502 =
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin bridge.bin
 
 SRCS_HTML = index.html api.html
+SRCS_JS = special.js cbm_prg_studio.js
 SRCS_YAML = rest_api_openapi_u64.yaml
 
 SRCS_IEC = 
@@ -150,7 +151,7 @@ ultimate.chk: ../ultimate/result/ultimate.app
 update_binaries_u64.o: u64.swp ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
-	make -C ../ultimate
+	+$(MAKE) -C ../ultimate
 
 update_u64.o: update_u64.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64.chk
 	@echo "Compiling $(notdir $<)"

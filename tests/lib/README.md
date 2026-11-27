@@ -31,7 +31,7 @@ repository-root `run-tests` all use it.
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 | `../ruff.toml` | Which lint rules this tree is held to, and for each one that is off, either the reason or the finding that removes it |
 
-Nine registered suites live here as well, because each checks the test tree
+Ten registered suites live here as well, because each checks the test tree
 or the build rather than the device and so needs no hardware. They run first,
 where a failure lands as a clear message instead of as a confusing one later.
 The runner is handed no device for them, so it skips the health sweep and the
@@ -41,6 +41,7 @@ UI-state gate around each one:
 | --- | --- |
 | `check_transport_usage.py` | No suite has grown its own HTTP client again |
 | `esp_depends_test.py` | Every ESP32 project CI caches is covered by the cache key, so a stale binary cannot be handed back forever |
+| `u64ctrl_ca_test.py` | u64ctrl's network recovery trusts the committed Mozilla root list (ISRG X1/X2 in, the removed emSign roots out), and the ESP32 cache key hashes it |
 | `input_batching_test.py` | A `machine:input` request never exceeds either of the device's two limits, the event count and the body size |
 | `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
 | `openapi_contract_test.py` | The response validator agrees with the committed documents in `doc/api` |
@@ -53,6 +54,9 @@ UI-state gate around each one:
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
 no device and no network beyond loopback. `lint_test.py` is wired the same way,
 as `make lint_test` and as the `Test Lint of the Tests Tree` step.
+
+`u64ctrl_ca_test.py` also runs as the `Test u64ctrl Recovery CA List` step in the same workflow, in a stock
+Python image with no packages.
 
 ## Where the runner's code is
 

@@ -8,13 +8,14 @@ OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
 OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
 OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
+OBJS_JS = $(notdir $(SRCS_JS:%.js=%.o))
 OBJS_HTML = $(notdir $(SRCS_HTML:%.html=%.o))
 OBJS_YAML = $(notdir $(SRCS_YAML:%.yaml=%.o))
 OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
 OBJS_APP = $(notdir $(SRCS_APP:%.app=%.ao))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_6502) $(OBJS_BIN) $(OBJS_RBF) $(OBJS_APP) $(OBJS_HTML) $(OBJS_YAML)) 
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_6502) $(OBJS_BIN) $(OBJS_RBF) $(OBJS_APP) $(OBJS_HTML) $(OBJS_JS) $(OBJS_YAML)) 
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -23,7 +24,7 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 all: $(OUTPUT) gitinfo $(RESULT) $(FINAL)
 	@echo Making all requires $(OUTPUT), $(RESULT) and $(FINAL)	
 
-gitinfo::
+gitinfo:: | $(OUTPUT)
 	@echo '/* Generated file, do not edit. */' >$(OUTPUT)/gitinfo.h
 	@echo '#define APP_VERSION_TAG    "'`git describe --tags`'"' >>$(OUTPUT)/gitinfo.h
 	@echo '#define APP_VERSION_BRANCH "'`git describe --all`'"' >>$(OUTPUT)/gitinfo.h
@@ -97,6 +98,16 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 
 %.o: %.html
 	@echo Converting $(<F) html to $(@F)..
+	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
+	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
+	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--rename-section .data=.rodata,alloc,load,readonly,data,contents \
+	--redefine-sym $(was)_start=$(becomes)_start \
+	--redefine-sym $(was)_size=$(becomes)_size \
+	--redefine-sym $(was)_end=$(becomes)_end
+
+%.o: %.js
+	@echo Converting $(<F) JavaScript to $(@F)..
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
 	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
@@ -191,12 +202,12 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@echo Assembling $(<F)
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-%.o: %.c
+%.o: %.c | gitinfo
 	@echo Compiling $(<F)
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CC) $(COPTIONS) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-%.o: %.cc
+%.o: %.cc | gitinfo
 	@echo Compiling $(<F)
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CPP) $(CPPOPT) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

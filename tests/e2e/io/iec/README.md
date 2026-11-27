@@ -152,7 +152,8 @@ rare corrupted read.
 
 ## Directory renaming (#999)
 
-`directory_rename_test.py` runs the C64 OS sequence `MD:NEW DIRECTORY`,
+`directory_rename_test.py` runs as `iec-directory-rename` from the standard
+profile up. It replays the C64 OS sequence `MD:NEW DIRECTORY`,
 `R:.^RNAME^=NEW DIRECTORY`, `R:NEW NAME=.^RNAME^`, `CD:NEW NAME`,
 `R-H:NEW NAME`, `CD_` against a fresh host folder and a fresh DNP image.
 It also checks that a file survives the rename and that the final directory header

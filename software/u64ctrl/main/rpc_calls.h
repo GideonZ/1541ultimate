@@ -72,6 +72,10 @@ typedef struct {
     uint8_t auth_mode; // to be casted to wifi_auth_mode_t
     char ssid[32];
     char password[64];
+    // The AP picked from the scan list. Optional: a request that ends at the
+    // password, or has these all zero, means any AP with the SSID.
+    uint8_t bssid[6];
+    uint8_t channel;
 } rpc_wifi_connect_req;
 
 typedef struct {
@@ -107,6 +111,20 @@ typedef struct {
     int esp_err;
     uint8_t enabled; // WAKE_ON_WIFI_* from power_state.h
 } rpc_get_wake_on_wifi_resp;
+
+// The recovery server tried before the built-in ones; "" for none.
+#define RPC_RECOVERY_URL_LEN 128 // including the NUL
+
+typedef struct {
+    rpc_header_t hdr;
+    char url[RPC_RECOVERY_URL_LEN];
+} rpc_set_recovery_url_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int esp_err;
+    char url[RPC_RECOVERY_URL_LEN];
+} rpc_get_recovery_url_resp;
 
 /* 42 byte AP record */
 typedef struct {
@@ -182,6 +200,13 @@ typedef struct {
     uint8_t ssid[32];
 } event_pkt_connected;
 
+// EVENT_DISCONNECTED may carry the reason (wifi_event_sta_disconnected_t.reason)
+// after the header. 0 and a bare header both mean that it is not known.
+typedef struct {
+    rpc_header_t hdr;
+    uint8_t reason;
+} event_pkt_disconnected;
+
 #define CMD_ECHO              0x01
 #define CMD_IDENTIFY          0x02
 #define CMD_SET_BAUD          0x03
@@ -207,6 +232,8 @@ typedef struct {
 #define CMD_GET_POWER_MODE    0x17
 #define CMD_SET_WAKE_ON_WIFI  0x18
 #define CMD_GET_WAKE_ON_WIFI  0x19
+#define CMD_SET_RECOVERY_URL  0x1A
+#define CMD_GET_RECOVERY_URL  0x1B
 
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41

@@ -8,6 +8,9 @@
 #include "command_target.h"
 #include "pattern.h"
 #include "http_request.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 // Command Definitions
 #define HTTP_CMD_IDENTIFY         0x01
@@ -36,6 +39,10 @@
 
 #define MAX_HTTP_HANDLES 16
 
+// Exchanges that the worker may hold: the one the C64 waits for, and ones that were
+// aborted while they still wait on the network. A full queue answers 503 at once.
+#define HTTP_JOB_QUEUE_DEPTH 4
+
 #define HTTP_MAX_REPLY_BYTES  CMD_MAX_REPLY_BLOCK
 // The status-length register cannot represent 256.
 #define HTTP_MAX_STATUS_BYTES (CMD_MAX_STATUS_LEN - 1)
@@ -61,6 +68,8 @@ class HttpHeaderSlot
     uint16_t port;
     JSON_Object lines;
 public:
+    bool is_head() const { return verb == 6; } // HEAD, as the verbs[] lists below number it
+
     HttpHeaderSlot(uint8_t v, const char *u, int ulen) : verb(v), lines(true)
     {
         // Force null-termination
@@ -635,6 +644,27 @@ public:
     }
 };
 
+// One DO_EXCHANGE as the worker runs it. It holds copies of all it needs, so that a
+// FREE_ALL or a C64 reset can run while it works, and it owns its socket from start to
+// close: no other task touches the socket.
+struct HttpJob {
+    uint32_t ticket;
+    bool raw;
+    bool head;                // the request is HEAD: the reply has no body
+    mstring host;
+    uint16_t port;
+    StreamRamFile *request;
+    HttpHeaderSlot *header;   // becomes the reply's header slot (DO_EXCHANGE_OBJ)
+    HttpRequest *exch;
+    uint8_t raw_status[HTTP_MAX_STATUS_BYTES];
+    bool ok;
+    bool done;                // set by the worker; with cancel, under a critical section
+    volatile bool cancel;     // set by the UCI Server task
+
+    HttpJob(HttpHeaderSlot *hdr, bool r);
+    ~HttpJob();
+};
+
 class HttpTarget : public CommandTarget {
     Message data_message;
     Message status_message;
@@ -643,6 +673,16 @@ class HttpTarget : public CommandTarget {
     HttpBodySlot *bodies[MAX_HTTP_HANDLES];
     HttpRequest *exch;
     StreamRamFile *response_data;
+
+    // The exchange the C64 waits for. A job that the worker finishes belongs to the UCI
+    // Server task again; one that is cancelled before that, the worker frees.
+    HttpJob *job;
+    QueueHandle_t jobs;
+    TaskHandle_t worker;
+    bool start_worker(void);
+    void drop_job(void);
+    static void worker_task(void *a);
+    static void run_job(HttpJob *job);
 
     // Helper methods for command processing
     void cmd_header_create(Message *command, Message **reply, Message **status);
@@ -662,13 +702,16 @@ class HttpTarget : public CommandTarget {
 
     void express(JSON *j);
     void reset_responses();
+    void release_all();
 public:
     HttpTarget(int id);
     virtual ~HttpTarget();
 
     void parse_command(Message *command, Message **reply, Message **status) override;
+    void deferred_reply(Message **reply, Message **status) override;
     void get_more_data(Message **reply, Message **status) override;
     void abort(int) override;
+    void c64_reset(void) override;
 
     int create_body_from_json(char *body, int size, uint8_t *handle);
 };
