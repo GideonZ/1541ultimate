@@ -89,6 +89,8 @@ host_tests:
 	@$(MAKE) -C target/pc/linux/rasterwait test
 	@$(MAKE) -C target/pc/linux/socketdma test
 	@$(MAKE) -C target/pc/linux/syslog test
+	@$(MAKE) -C target/pc/linux/dhcp test
+	@$(MAKE) -C target/pc/linux/confighook test
 	@$(MAKE) -C target/pc/linux/ucitargets test
 	@$(MAKE) -C target/pc/linux/httpdbody test
 	@$(MAKE) -C software/io/acia/tests

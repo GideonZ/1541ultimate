@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "lwip/dhcp.h"
+#include "lwip/prot/dhcp.h"
 #include "lwip/dns.h"
 #include "lwip/sockets.h"
 #include "lwip/apps/mdns.h"
@@ -170,6 +171,8 @@ NetworkInterface :: ~NetworkInterface()
 	dhcp_stop(&my_net_if);
 	netif_set_down(&my_net_if);
 	netif_remove(&my_net_if);
+	// dhcp_stop() keeps the client attached and netif_remove() does not free it
+	dhcp_cleanup(&my_net_if);
 
 	// quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
@@ -190,6 +193,9 @@ int NetworkInterface :: dhcp_change(ConfigItem *it)
     it->store->find_item(CFG_NET_GATEWAY)->setEnabled(enable_static);
     it->store->find_item(CFG_NET_NETMASK)->setEnabled(enable_static);
     it->store->find_item(CFG_NET_DNS)->setEnabled(enable_static);
+    // A hooked item is not marked for effectuate by ConfigItem :: setChanged, and this hook
+    // only updates the menu. Without this a change of "Use DHCP" alone was never applied.
+    it->store->set_need_effectuate();
     return 1;
 }
 
@@ -433,7 +439,10 @@ void NetworkInterface :: effectuate_settings(void)
                 // change at all, including the request that asked for this:
                 // applying these settings over REST answered nothing, because
                 // the answer went out on a connection it had just aborted.
-                if (!netif_dhcp_data(&my_net_if)) {
+                // dhcp_stop() leaves the client attached, in state OFF, so a
+                // client that is stopped counts as not running.
+                struct dhcp *client = netif_dhcp_data(&my_net_if);
+                if (!client || client->state == DHCP_STATE_OFF) {
                     dhcp_start(&my_net_if);
                 }
             } else {
