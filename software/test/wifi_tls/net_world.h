@@ -120,6 +120,7 @@ struct Forced {
     uint8_t alert_in;
     int fail_err;
     bool pt_on_no_read;  // hand out plaintext on a NO_READ step (malformed)
+    bool unavailable_after; // the module application is gone once this step is answered
 };
 
 struct FakeSession {
@@ -146,6 +147,8 @@ struct RpcCall {
     std::string sni;
     bytes pin;
     bool cancel_given;
+    bool send_only;      // CLOSE sent without waiting for its answer
+    uint32_t timeout_ms; // the wait the host asked for (CLOSE)
 };
 
 struct FakeModule {
@@ -185,6 +188,11 @@ struct FakeModule {
     int close_result;    // forced; -1 for normal
     uint32_t close_delay_ms; // CLOSE is answered this long after it is sent; a cancel before that ends the call BUSY
     int close_alls;
+    int close_unsent_next; // the next this many CLOSEs, waiting or not, are UNSENT
+    bool close_dropped;    // a CLOSE that is sent without waiting is not acted on (the queue refused it)
+    bool close_late;       // ... is acted on only at the next call of any kind: it was queued behind a step
+    bool close_late_after_open; // ... and only after the next OPEN has run (a CLOSE out of order)
+    std::vector<std::pair<uint8_t, uint16_t> > pending_closes;
     // steps
     std::deque<Forced> forced;
     size_t in_cap;       // what the module holds of unread ciphertext before AGAIN

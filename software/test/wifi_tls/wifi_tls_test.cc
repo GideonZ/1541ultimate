@@ -689,6 +689,28 @@ static void test_calls(void)
     r = wifi_tls_stats(0, 1, &stats, &esp_err, 1000, NULL);
     check((r == WIFI_TLS_UNSENT) && (world_transmits == 0),
           "a failed transmit: UNSENT, not BUSY (%d): the module never saw the request", r);
+
+    // CLOSE with nobody waiting: the same request on the wire, no answer asked for, and 0 once it is sent
+    world_reset(22, tls_maker);
+    seq = sequence_nr;
+    r = wifi_tls_close_send(1, 0xBEEF);
+    expect_close[2] = (uint8_t)seq;
+    expect_close[3] = (uint8_t)(seq >> 8);
+    check((r == 0) && (sent() == "transmit 8:" + hex(expect_close, sizeof(expect_close))) && world_last.send_only &&
+              (world_last.command == CMD_TLS_CLOSE),
+          "CLOSE without waiting: slot, 0, tag as for CLOSE, flagged send only (%d)", r);
+    world_reset(23, tls_maker);
+    world_no_buffer = true;
+    r = wifi_tls_close_send(1, 0xBEEF);
+    check((r == WIFI_TLS_UNSENT) && (world_transmits == 0), "CLOSE without waiting, no buffer: UNSENT (%d)", r);
+    world_reset(24, tls_maker);
+    world_no_transmit = true;
+    r = wifi_tls_close_send(1, 0xBEEF);
+    check((r == WIFI_TLS_UNSENT) && (world_transmits == 0), "CLOSE without waiting, transmit failed: UNSENT (%d)", r);
+    world_reset(25, tls_maker);
+    world_ready = false;
+    r = wifi_tls_close_send(1, 0xBEEF);
+    check((r == WIFI_TLS_NO_MODULE) && world_trace.empty(), "CLOSE without waiting, no module application: NO_MODULE (%d)", r);
 }
 
 int main(void)

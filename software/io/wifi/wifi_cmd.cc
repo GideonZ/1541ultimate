@@ -182,6 +182,18 @@ int wifi_call(const wifi_call_t *call)
         printf("%s: not sent.\n", call->name);
         return WIFI_CALL_UNSENT;
     }
+    if (call->send_only) {
+        // The answer cannot have come yet; if it has, it is freed here, as the interrupt frees one that finds no slot
+        command_buf_t *answer = wifi_call_leave(tag);
+        if (answer) {
+            vTaskSuspendAll();
+            if (generation == esp32.uart->generation) {
+                esp32.uart->FreeBuffer(answer);
+            }
+            xTaskResumeAll();
+        }
+        return WIFI_CALL_SENT;
+    }
 
     int result = WIFI_CALL_BUSY;
     command_buf_t *reply = NULL;

@@ -495,6 +495,13 @@ static void answer_now(command_buf_t *tx)
     answer(*(rpc_header_t *)tx->data);
 }
 
+// The answer comes, and the module restarts (the pool is reset) in the same transmit
+static void answer_then_restart(command_buf_t *tx)
+{
+    answer(*(rpc_header_t *)tx->data);
+    uart.generation++;
+}
+
 // What every end of a call leaves: no slot, no notification, no waiter that a later wake could reach
 static void check_clean(void)
 {
@@ -866,6 +873,75 @@ static void test_call_late_tls_reply(void)
     }
 }
 
+// A request that nobody waits for: sent, and the call is over. Nothing was sent when it says UNSENT, and the
+// caller knows whether the module may act on it.
+static void test_call_send_only(void)
+{
+    wifi_call_t call = power_call(5000, true);
+    call.command = WIFI_TLS_CMD_FIRST + 2; // a TLS command: its late answer is dropped by the interrupt
+    call.send_only = true;
+
+    call_setup();
+    CHECK(wifi_call(&call) == WIFI_CALL_SENT);
+    CHECK(uart.transmitted == 1 && blocking_waits == 0 && takes == 0);
+    CHECK(now == 1000);
+    check_clean();
+
+    // The answer comes later and finds no one: dropped by the interrupt, once, nothing queued or notified
+    isr_result = -1;
+    answer(*(rpc_header_t *)txbuf.data);
+    CHECK(isr_result == pdFALSE);
+    CHECK(queued == 0 && !notify_pending);
+
+    // The call after it is a call like any other: nothing is left of the first
+    wifi_call_t next = power_call(5000, true);
+    uart.buffers_free = 1;
+    CHECK(wifi_call(&next) == WIFI_CALL_BUSY);
+    CHECK(uart.transmitted == 2 && blocking_waits == 1);
+    check_clean();
+
+    // The answer that comes before the call is over (the module is fast) is freed, not left in the notification
+    call_setup();
+    uart.on_transmit = answer_now;
+    CHECK(wifi_call(&call) == WIFI_CALL_SENT);
+    CHECK(takes == 0 && uart.buffers_free == 1 && blocking_waits == 0);
+    check_clean();
+
+    // Not sent: no buffer, no slot, the UART refused it
+    call_setup();
+    uart.buffers_free = 0;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && blocking_waits == 0);
+    check_clean();
+
+    call_setup();
+    rpc_header_t held[WIFI_REPLY_SLOTS];
+    for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+        CHECK(wifi_reply_register(&held[i]));
+    }
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && uart.buffers_free == 1);
+    for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+        answer(held[i]);
+    }
+    notify_pending = false;
+    check_clean();
+
+    call_setup();
+    uart.transmit_fails = true;
+    CHECK(wifi_call(&call) == WIFI_CALL_UNSENT);
+    CHECK(uart.transmitted == 0 && uart.buffers_free == 1);
+    check_clean();
+
+    // The module restarts while the request is sent, and an answer from before the restart has already arrived:
+    // the restart took that buffer back to the pool, so it is not freed again
+    call_setup();
+    uart.on_transmit = answer_then_restart;
+    CHECK(wifi_call(&call) == WIFI_CALL_SENT);
+    CHECK(takes == 0 && uart.buffers_free == 0 && blocking_waits == 0);
+    check_clean();
+}
+
 // A restart of the module during the wait ends it at once, with a result of its own: no answer will come
 static void restart_in_wait(int n)
 {
@@ -943,6 +1019,7 @@ int main(void)
     test_call_module_restart();
     test_call_reset_while_making_request();
     test_call_late_tls_reply();
+    test_call_send_only();
     printf(failures ? "wifi_cmd: %d FAILED\n" : "wifi_cmd: all passed\n", failures);
     return failures ? 1 : 0;
 }

@@ -155,6 +155,11 @@ int wifi_tls_step(uint8_t slot, uint16_t tag, wifi_tls_step_t *step, uint32_t ti
 // ct_out receives the close_notify record, at most room bytes; *ct_out_len is 0 without one.
 int wifi_tls_close(uint8_t slot, uint16_t tag, uint8_t *ct_out, uint16_t room, uint16_t *ct_out_len, int *esp_err,
                    uint32_t timeout_ms, const wifi_tls_cancel_t *cancel);
+// CLOSE for a session nobody will use again: sent, and not waited for. 0 means it was sent (the module serves its
+// commands in order, and its answer is dropped when it comes), UNSENT that nothing went out, and NO_MODULE that
+// there is nothing to send to. The close_notify the module makes is lost, so this is for the cleanup after an
+// abort or a failure only.
+int wifi_tls_close_send(uint8_t slot, uint16_t tag);
 int wifi_tls_stats(uint8_t slot, uint16_t tag, wifi_tls_stats_t *stats, int *esp_err, uint32_t timeout_ms,
                    const wifi_tls_cancel_t *cancel);
 int wifi_tls_close_all(int *esp_err, uint32_t timeout_ms);

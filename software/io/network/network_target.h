@@ -160,6 +160,7 @@ class NetworkTarget : public CommandTarget {
 #if NET_TLS
     TlsSocket tls[NET_MAX_TLS];
     uint16_t tls_last_tag;
+    bool tls_unconfirmed[NET_MAX_TLS]; // a CLOSE was sent into the slot, and no answer said the module freed it
     bool tls_generation_known;
     volatile bool tls_quick_seen;       // a command ran or was skipped apart from the worker; see tls_before_command
     uint32_t tls_generation;

@@ -15,7 +15,7 @@ typedef unsigned long TickType_t;
 struct tskTaskControlBlock;
 typedef struct tskTaskControlBlock *TaskHandle_t;
 typedef void *QueueHandle_t;
-// The dedicated reply channel of wifi_cmd.cc (U64 >= 1) is not under test here
+// The queues of the UART driver (dma_uart.h, cmd_buffer.c) are not under test here
 static inline QueueHandle_t xQueueCreate(int length, int item_size) { return NULL; }
 static inline BaseType_t xQueueSendFromISR(QueueHandle_t q, const void *item, BaseType_t *w) { return 0; }
 #define pdFALSE 0

@@ -509,6 +509,14 @@ int wifi_tls_close(uint8_t slot, uint16_t tag, uint8_t *ct_out, uint16_t room, u
     return tls_call(&call);
 }
 
+int wifi_tls_close_send(uint8_t slot, uint16_t tag)
+{
+    session_call_t args = { slot, tag, NULL, NULL, 0, NULL, NULL };
+    wifi_call_t call = { "TLS Close", CMD_TLS_CLOSE, 0, fill_session, take_close, &args, NULL, NULL, false, 0, true };
+    int result = tls_call(&call);
+    return (result == WIFI_CALL_SENT) ? 0 : result;
+}
+
 static int take_stats(const uint8_t *reply, int size, uint16_t sequence, void *context)
 {
     session_call_t *c = (session_call_t *)context;

@@ -23,6 +23,7 @@
 #define WIFI_CALL_UNSENT     6  // no buffer, no reply slot, another call waiting, the pool was reset or the UART refused it: nothing was sent
 #define WIFI_CALL_CANCELLED  9  // sent, and ended by cancel
 #define WIFI_CALL_RESTARTED  10 // sent, and the module restarted: no answer will come
+#define WIFI_CALL_SENT       11 // send_only only: sent, nobody waits for the answer
 
 typedef struct {
     const char *name;    // for the log
@@ -41,6 +42,10 @@ typedef struct {
     // Optional: the wait ends when the tick counter reaches deadline, if that is before the timeout
     bool use_deadline;
     uint32_t deadline;
+    // The request is sent and the call is over: WIFI_CALL_SENT, or WIFI_CALL_UNSENT when nothing went out. Nobody
+    // waits for the answer, so timeout_ms, take and cancel are not used. The answer of a TLS command comes to
+    // no slot, and wifi_rx_isr drops it; the reply slot is released before this returns.
+    bool send_only;
 } wifi_call_t;
 
 int wifi_call(const wifi_call_t *call);

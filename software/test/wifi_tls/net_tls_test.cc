@@ -369,7 +369,7 @@ static void test_open(void)
     check(world_dns_calls == 1 && world_dns_unlocked_calls == 0, "open: dns_gethostbyname under the core lock");
     if (h >= 0 && h < 16) {
         check(sock(h).nodelay, "open: TCP_NODELAY on the TLS socket");
-        check(sock(h).sndtimeo_ms == 500, "open: SO_SNDTIMEO 500 ms caps lwIP's close (%d)", sock(h).sndtimeo_ms);
+        check(sock(h).sndtimeo_ms == 500, "open: SO_SNDTIMEO 500 ms, the limit of lwIP's close retries (%d)", sock(h).sndtimeo_ms);
         check(sock(h).nonblocking, "open: the TLS socket is non-blocking (SEND_MS)");
         check(sock(h).srv.hellos == 1, "open: the server saw one ClientHello");
     }
@@ -715,7 +715,7 @@ static void test_dns_connect(void)
     check(r.status == "11,ERROR ON CONNECT: " + num(ETIMEDOUT) && spent >= 10000 && spent <= 11300,
           "connect: no answer -> 11 ETIMEDOUT after CONNECT_MS (%u ms)", spent);
 
-    // The whole OPEN is bounded (OPEN_TOTAL_MS + CLOSE_RPC_MS + a slice).
+    // The whole OPEN is bounded (OPEN_TOTAL_MS + a slice).
     fresh();
     world_module.open_delay_ms = 4900;
     world_dns.push_back({ "slow.example", DNS_ASYNC_OK, 0x03030303, 9900 });
@@ -812,16 +812,17 @@ static void test_cancel_wakes_the_wait(void)
     check(late <= 10, "reset: the OPEN RPC wait ends at the reset, not at the end of a slice (%u ms late)", late);
     world_reset_at = 0xFFFFFFFF;
 
-    // The CLOSE that cleans up after an aborted OPEN stops for a reset only. A reset that comes while it
-    // waits finds no job to cancel, and wakes the worker all the same.
+    // The CLOSE that cleans up after an aborted OPEN is sent and not waited for, so a reset that comes while the
+    // module would still be answering it finds the worker free: the OPEN ended at the abort, with one CLOSE sent.
     fresh();
     world_module.open_delay_ms = 3000;
     world_module.close_delay_ms = 900;
     world_abort_at = world_tick + 104;
-    world_reset_at = world_tick + 144; // 200 ms after the abort, in the CLOSE
+    world_reset_at = world_tick + 144; // 200 ms after the abort, when the answer would still be awaited
     r = run(open_cmd(0, 0, "example.com"));
-    late = (world_tick - world_reset_at) * 5;
-    check(late <= 10, "a reset during the cleanup CLOSE of an aborted OPEN ends the wait at once (%u ms late)", late);
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 10 && (world_tick < world_reset_at), "the cleanup CLOSE of an aborted OPEN holds the worker for nothing: back at the abort (%u ms late)", late);
+    check(world_count(0x32) == 1 && call_no(1).send_only, "the cleanup CLOSE of an aborted OPEN is sent without waiting");
     world_abort_at = 0xFFFFFFFF;
     world_reset_at = 0xFFFFFFFF;
 
@@ -1368,6 +1369,326 @@ static void test_close(void)
     h = open_ok();
     r = close_cmd(h);
     check(r.status == "00,OK" && !sock(h).open, "close: 00,OK even when the module does not answer");
+}
+
+// --- the CLOSE that cleans up is sent, not waited for ------------------------------------------
+
+// An aborted handshake: the OPEN was answered, the server stalls, and the abort comes 600 ticks in.
+static Res abort_in_handshake(uint32_t *late)
+{
+    sock(0).srv.on_hello = SRV_STALL;
+    world_abort_at = world_tick + 600;
+    Res r = run(open_cmd(0, 0, "example.com"));
+    *late = (world_tick - world_abort_at) * 5;
+    world_abort_at = 0xFFFFFFFF;
+    sock(0).srv.on_hello = 0; // the next connection to this handle's server answers
+    return r;
+}
+
+// The module serves its commands in order. A cleanup CLOSE names (slot, tag): the OPEN that follows into the
+// same slot takes a new tag, and frees whatever the slot still holds, so no answer is needed.
+static void test_cleanup_close_sent_not_waited(void)
+{
+    printf("Cleanup CLOSE: sent without waiting for the answer\n");
+
+    // (a) a module that never answers: the worker is free at the abort, not 1 s later
+    fresh();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    uint32_t late;
+    Res r = abort_in_handshake(&late);
+    check(late <= 110, "cleanup: the aborted OPEN returns within a slice of the abort, with a silent module (%u ms late)", late);
+    check(world_count(0x32) == 1 && last_call().cmd == 0x32 && last_call().send_only && world_open_sockets() == 0,
+          "cleanup: one CLOSE sent, the socket closed");
+    check(info_byte(2) == 0, "cleanup: the entry is free");
+
+    // (b) the CLOSE never reaches the session (the module's queue refused it): the next OPEN into the slot works
+    // and frees the orphan
+    fresh();
+    world_module.close_dropped = true;
+    r = abort_in_handshake(&late);
+    uint16_t old_tag = world_module.sess[0].tag;
+    check(world_module.sess[0].live && late <= 110, "cleanup: a refused CLOSE leaves the session on the module");
+    world_module.close_dropped = false;
+    int h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && world_module.sess[0].tag != old_tag && info_byte(2) == 1,
+          "cleanup: the next OPEN into the slot works, under a new tag");
+    check(close_cmd(h).status == "00,OK" && !world_module.sess[0].live && info_byte(2) == 0,
+          "cleanup: and that session closes as usual");
+
+    // (b2) a CLOSE queued behind a step runs before the OPEN that follows it
+    fresh();
+    world_module.close_late = true;
+    r = abort_in_handshake(&late);
+    check(world_module.sess[0].live, "cleanup: a queued CLOSE has not run yet");
+    h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && world_module.sess[0].tag != 0 && info_byte(2) == 1,
+          "cleanup: the queued CLOSE runs before the next OPEN, which then holds the slot");
+
+    // (b3) even a CLOSE that comes after the new OPEN closes the old tag only, never the new session
+    fresh();
+    world_module.close_late_after_open = true;
+    r = abort_in_handshake(&late);
+    old_tag = world_module.sess[0].tag;
+    h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && world_module.sess[0].tag != old_tag && world_module.pending_closes.empty(),
+          "cleanup: a late CLOSE of the old tag leaves the new session in the slot alone");
+    world_module.close_late_after_open = false;
+
+    // (c) a CLOSE that could not be sent (UNSENT) leaves the session marked for later
+    fresh();
+    world_module.close_unsent_next = 1;
+    r = abort_in_handshake(&late);
+    check(world_count(0x32) == 0 && world_module.sess[0].live && late <= 110,
+          "cleanup: an UNSENT CLOSE is not retried, and not waited for (%u ms late)", late);
+    h = open_ok();
+    check(h >= 0 && world_module.sess[0].live && info_byte(2) == 1,
+          "cleanup: the next OPEN into the slot frees the session that was never closed");
+
+    fresh();
+    h = open_ok();
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    world_module.close_unsent_next = 1;
+    server_push(h, EV_DATA, record('D', 10, 1));
+    r = read_cmd(h, 100);
+    check(r.status == "17,TLS MODULE NOT RESPONDING" && world_module.sess[0].live,
+          "cleanup: a READ that fails with 17 and cannot send its CLOSE leaves the session on the module");
+    world_module.calls.clear();
+    r = close_cmd(h);
+    check(r.status == "00,OK" && world_count(0x32) == 1 && !world_module.sess[0].live,
+          "cleanup: CLOSE_SOCKET then sends the CLOSE the cleanup could not");
+    check(world_module.calls.empty() || !call_no(0).send_only, "cleanup: that CLOSE is the ordinary one, which waits");
+
+    // (d) the answer of a CLOSE nobody waits for comes later and finds no one: the real wifi_call drops it
+    // (test/wifi_reply, test_call_send_only_late_reply), and take checks the sequence number (wifi_tls_test.cc)
+
+    // (e) the ordinary CLOSE still waits for the module, and still sends the close_notify to the peer
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 900;
+    world_module.calls.clear();
+    uint32_t t0 = world_ms();
+    r = close_cmd(h);
+    uint32_t spent = world_ms() - t0;
+    check(r.status == "00,OK" && spent >= 900 && spent < 1100 && !call_no(0).send_only && call_no(0).timeout_ms == 5000,
+          "close: the CLOSE the C64 asked for waits for the answer, up to the step timeout (%u ms, %u)", spent,
+          (unsigned)call_no(0).timeout_ms);
+    check(sock(h).srv.saw_notify && !world_module.sess[0].live, "close: the close_notify goes to the peer");
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_module.calls.clear();
+    t0 = world_ms();
+    r = close_cmd(h);
+    spent = world_ms() - t0;
+    check(r.status == "00,OK" && spent >= 5000 && spent < 5300 && !sock(h).open,
+          "close: a module that never answers holds CLOSE_SOCKET for the step timeout, no longer (%u ms)", spent);
+}
+
+// --- the CLOSE the C64 asked for ends on an abort or a reset, and a session whose CLOSE was not answered ---------
+
+// The slot the last OPEN RPC named.
+static int last_open_slot(void)
+{
+    for (size_t i = world_module.calls.size(); i-- > 0;) {
+        if (world_module.calls[i].cmd == 0x30) {
+            return world_module.calls[i].slot;
+        }
+    }
+    return -1;
+}
+
+// Two sessions, slot 0 and slot 1, both claimed by a READ.
+static void two_sessions(int *a, int *b)
+{
+    fresh();
+    *a = open_ok();
+    *b = open_ok();
+    read_cmd(*a, 10);
+    read_cmd(*b, 10);
+}
+
+static void test_close_ends_on_abort_or_reset(void)
+{
+    printf("CLOSE the C64 asked for: an abort or a reset ends the wait for the answer\n");
+
+    // CLOSE_SOCKET, silent module, the abort already there: no time passes
+    fresh();
+    int h = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_module.calls.clear();
+    world_abort_at = world_tick;
+    uint32_t t0 = world_tick;
+    Res r = close_cmd(h);
+    check(world_tick == t0 && r.status == "00,OK" && world_count(0x32) == 1 && !call_no(0).send_only &&
+          !sock(h).open && !sock(h).srv.saw_notify && info_byte(2) == 0,
+          "abort: CLOSE_SOCKET returns at once, the CLOSE sent, the socket closed, no close_notify (%u ticks)",
+          (unsigned)(world_tick - t0));
+    world_abort_at = 0xFFFFFFFF;
+
+    // ... and the abort that comes while it waits
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_abort_at = world_tick + 100;
+    r = close_cmd(h);
+    uint32_t late = (world_tick - world_abort_at) * 5;
+    check(late <= 10 && !sock(h).open, "abort: CLOSE_SOCKET ends at the abort, not at the step timeout (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+    check(run(B({ 0x03, 0x23, 0xFF })).status == "00,OK", "abort: the next command runs");
+
+    // a reset
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_reset_at = world_tick + 100;
+    // A reset that reaches the worker with no job to abort: only the count of resets and the wake
+    world_reset_hook = [] { net.resets++; world_wakes++; };
+    r = close_cmd(h);
+    world_reset_hook = [] { net.c64_reset(); };
+    late = (world_tick - world_reset_at) * 5;
+    check(late <= 10 && !sock(h).open, "reset: CLOSE_SOCKET ends at the reset, not at the step timeout (%u ms late)", late);
+    world_reset_at = 0xFFFFFFFF;
+
+    // the READ that ends the stream
+    fresh();
+    h = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    server_push(h, EV_FIN, bytes());
+    world_abort_at = world_tick + 100;
+    r = read_cmd(h, 100);
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 10 && !sock(h).open && world_count(0x32) == 1,
+          "abort: the READ that ends the stream returns at the abort (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+
+    // $25 (it closes the one unclaimed entry the last OPEN made)
+    fresh();
+    int a = open_ok();
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_abort_at = world_tick + 100;
+    r = release();
+    late = (world_tick - world_abort_at) * 5;
+    check(late <= 10 && r.data == B({ 1 }) && !sock(a).open && world_count(0x32) == 1,
+          "abort: $25 returns at the abort (%u ms late)", late);
+    world_abort_at = 0xFFFFFFFF;
+
+    // The CLOSE that ended without an answer: the slot is marked, and the next OPEN takes it
+    int c, d;
+    two_sessions(&c, &d);
+    check(close_cmd(c).status == "00,OK", "orphan: slot 0 closed, answered");
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_abort_at = world_tick + 100;
+    close_cmd(d);
+    world_abort_at = 0xFFFFFFFF;
+    world_module.close_delay_ms = 0;
+    check(world_module.sess[1].live, "orphan: the module still holds slot 1");
+    uint16_t old_tag = world_module.sess[1].tag;
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 1 && world_module.sess[1].tag != old_tag,
+          "orphan: with slot 1 unconfirmed and slot 0 free, the next OPEN takes slot 1 (slot %d)", last_open_slot());
+    // the answered OPEN cleared the mark: the module ends that session itself (FAILED), no CLOSE is sent or answered
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().fail = true;
+    world_module.forced.back().alert_in = 21;
+    world_module.forced.back().fail_err = -0x7780;
+    check(write_cmd(h, S("hello")).status == "14,TLS ALERT RECEIVED: 21", "orphan: the session in slot 1 fails on the module");
+    world_module.calls.clear();
+    check(close_cmd(h).status == "00,OK" && world_count(0x32) == 0, "orphan: its CLOSE_SOCKET sends no CLOSE");
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 0, "orphan: the answered OPEN cleared the mark: the lowest slot again (slot %d)",
+          last_open_slot());
+
+    // none unconfirmed: the lowest free slot, as before
+    two_sessions(&c, &d);
+    close_cmd(d);
+    close_cmd(c);
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 0, "orphan: with every CLOSE answered, the lowest free slot (slot %d)", last_open_slot());
+
+    // a CLOSE that timed out
+    two_sessions(&c, &d);
+    close_cmd(c);
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    close_cmd(d);
+    world_module.close_delay_ms = 0;
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 1, "orphan: a CLOSE without an answer marks the slot too (slot %d)", last_open_slot());
+
+    // a CLOSE that could not be sent
+    two_sessions(&c, &d);
+    close_cmd(c);
+    world_module.close_unsent_next = 1;
+    close_cmd(d);
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 1, "orphan: a CLOSE that was not sent marks the slot (slot %d)", last_open_slot());
+
+    // CLOSE_ALL (a C64 reset) clears the marks
+    two_sessions(&c, &d);
+    close_cmd(c);
+    world_module.close_delay_ms = 0xFFFFFFFF;
+    world_abort_at = world_tick + 100;
+    close_cmd(d);
+    world_abort_at = 0xFFFFFFFF;
+    world_module.close_delay_ms = 0;
+    world_module.close_alls = 0;
+    reset_c64();
+    check(world_module.close_alls == 1, "orphan: a reset runs CLOSE_ALL");
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 0, "orphan: CLOSE_ALL cleared the mark (slot %d)", last_open_slot());
+
+    // a send-only CLOSE that the module refused (queue full) marks the slot as well
+    two_sessions(&c, &d);
+    close_cmd(c);
+    world_module.close_dropped = true;
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    server_push(d, EV_DATA, record('D', 10, 1));
+    Res fail = read_cmd(d, 100);
+    world_module.close_dropped = false;
+    check(fail.status == "17,TLS MODULE NOT RESPONDING" && world_module.sess[1].live,
+          "orphan: a refused cleanup CLOSE leaves the session on the module");
+    close_cmd(d);
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 1, "orphan: a send-only CLOSE marks the slot (slot %d)", last_open_slot());
+}
+
+// No module application when the cleanup runs: nothing was sent, and the session is not booked as freed; the
+// module may come back without a restart, still holding it.
+static void test_cleanup_without_module(void)
+{
+    printf("Cleanup CLOSE with no module application\n");
+    fresh();
+    int h = open_ok();
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    world_module.forced.back().unavailable_after = true;
+    server_push(h, EV_DATA, record('D', 10, 1));
+    Res r = read_cmd(h, 100);
+    check(r.status == "17,TLS MODULE NOT RESPONDING" && world_count(0x32) == 0 && world_module.sess[0].live,
+          "no module: the cleanup CLOSE is not sent (%s)", r.status.c_str());
+    world_module.available = true;
+    world_module.calls.clear();
+    r = close_cmd(h);
+    check(r.status == "00,OK" && world_count(0x32) == 1 && !call_no(0).send_only && !world_module.sess[0].live,
+          "no module: when it is back, CLOSE_SOCKET still sends the CLOSE");
+
+    // the slot stays marked when the CLOSE_SOCKET finds no module either
+    int a, b;
+    fresh();
+    a = open_ok();
+    b = open_ok();
+    read_cmd(a, 10);
+    close_cmd(a);
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().result = WIFI_TLS_BUSY;
+    world_module.forced.back().unavailable_after = true;
+    server_push(b, EV_DATA, record('D', 10, 1));
+    read_cmd(b, 100);
+    close_cmd(b);
+    world_module.available = true;
+    h = open_ok();
+    check(h >= 0 && last_open_slot() == 1, "no module: the slot is marked, the next OPEN takes it (slot %d)", last_open_slot());
 }
 
 // --- latch-and-drain after a receive error -------------------------------
@@ -2012,6 +2333,9 @@ int main(int argc, char **argv)
     test_abort_during_read_step();
     test_write();
     test_close();
+    test_cleanup_close_sent_not_waited();
+    test_close_ends_on_abort_or_reset();
+    test_cleanup_without_module();
     test_latch();
     test_claims();
     test_ca();
