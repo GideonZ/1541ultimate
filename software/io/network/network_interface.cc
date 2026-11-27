@@ -193,6 +193,9 @@ int NetworkInterface :: dhcp_change(ConfigItem *it)
     it->store->find_item(CFG_NET_GATEWAY)->setEnabled(enable_static);
     it->store->find_item(CFG_NET_NETMASK)->setEnabled(enable_static);
     it->store->find_item(CFG_NET_DNS)->setEnabled(enable_static);
+    // A hooked item is not marked for effectuate by ConfigItem :: setChanged, and this hook
+    // only updates the menu. Without this a change of "Use DHCP" alone was never applied.
+    it->store->set_need_effectuate();
     return 1;
 }
 
