@@ -146,15 +146,14 @@ void TapeRecorder :: stop(int error)
     	// FIXME: freeze
     }
 	if(file) {	
+        // end_capture() writes out what is left, as far as that makes sense after this error, and
+        // closes the file. It is the only place that does.
         printf("Flush TAP..\n");
-        flush();
-		printf("Closing tape file..\n");
-		fm->fclose((File *)file);
+        end_capture((error == REC_ERR_OK) || (error == REC_ERR_OVERFLOW));
 	} else {
 	    printf("Stopping. File = NULL. ERR = %d\n", error);
     }
 	RECORD_CONTROL = REC_CLEAR_ERROR | REC_FLUSH_FIFO;
-	file = NULL;
 }
 	
 void TapeRecorder :: start()
@@ -213,25 +212,48 @@ int TapeRecorder :: write_block()
         return REC_ERR_NO_FILE;
     }
 	
-	uint32_t bytes_written;
+	uint32_t bytes_written = 0;
 
-    uint32_t *block = cache_blocks[block_out];
+    int out = block_out; // the block that is written is the one that is counted as written
+    uint32_t *block = cache_blocks[out];
 	FRESULT res = file->write((void *)block, 512, &bytes_written);
-    total_length += 512;
-	if(res != FR_OK) {
+    total_length += bytes_written;
+	if((res != FR_OK) || (bytes_written != 512)) { // a full volume gives FR_OK and fewer bytes
 		return REC_ERR_WRITE_ERROR;
 	}
 	printf("$");
-    block_out++;
-    if(block_out == REC_NUM_CACHE_BLOCKS) {
-        block_out = 0;
+    out++;
+    if(out == REC_NUM_CACHE_BLOCKS) {
+        out = 0;
     }        
+    block_out = out;
     blocks_written++;
 
     return REC_ERR_OK;
 }
 
+// Ends the capture at the user's request. The interrupt is turned off first, so that it cannot
+// cache a block while the rest of the FIFO is read: that block would take the bytes that come
+// next in the file, and the cache it fills is the one the rest of the FIFO is read through. The
+// block stays enabled, with the mode that start() gave it: disabling it makes the encoder write
+// one more entry for the pulse in progress (c2n_record.vhd:104-106), and the register write at
+// the end of end_capture() disables it and empties the FIFO in one go, which drops that entry.
 void TapeRecorder :: flush()
+{
+    if (file) {
+        if (select)
+            RECORD_CONTROL = REC_ENABLE | REC_MODE_RISING | REC_SELECT_WRITE;
+        else
+            RECORD_CONTROL = REC_ENABLE | REC_MODE_FALLING | REC_SELECT_READ;
+    }
+    end_capture(true);
+}
+
+// Ends the capture: what has been captured is written out (unless write_out is false), the
+// length is put in the header, the file is closed, and the block is disabled and its FIFO
+// emptied. A write that fails ends the writing out, and the error is left in error_code for
+// the task to show.
+void TapeRecorder :: end_capture(bool write_out)
 {
 	if(!file) {
 	    error_code = REC_ERR_NO_FILE;
@@ -241,28 +263,41 @@ void TapeRecorder :: flush()
         return;
     }
 
-    while (blocks_cached > blocks_written) {
-        error_code = write_block();
-    }
-
+    int err = REC_ERR_OK;
     uint32_t bytes_written;
 
-    while (RECORD_STATUS & REC_STAT_BYTE_AV) {
-		uint8_t *block = (uint8_t *)cache_blocks[block_in];
-		int i;
-		for(i=0;i<512;i++) {
-			if (RECORD_STATUS & REC_STAT_BYTE_AV)
-				*(block++) = RECORD_DATA;
-			else
-				break;
-		}
-		printf("Writing out remaining %d bytes.\n", i);
-		FRESULT res = file->write((void *)cache_blocks[block_in], i, &bytes_written);
-		total_length += bytes_written;
+    if (write_out) {
+        while ((err == REC_ERR_OK) && (blocks_cached > blocks_written)) {
+            err = write_block();
+        }
+
+        while ((err == REC_ERR_OK) && (RECORD_STATUS & REC_STAT_BYTE_AV)) {
+            uint8_t *block = (uint8_t *)cache_blocks[block_in];
+            int i;
+            for(i=0;i<512;i++) {
+                if (RECORD_STATUS & REC_STAT_BYTE_AV)
+                    *(block++) = RECORD_DATA;
+                else
+                    break;
+            }
+            printf("Writing out remaining %d bytes.\n", i);
+            bytes_written = 0;
+            FRESULT res = file->write((void *)cache_blocks[block_in], i, &bytes_written);
+            total_length += bytes_written;
+            if ((res != FR_OK) || (bytes_written != (uint32_t)i)) {
+                err = REC_ERR_WRITE_ERROR;
+            }
+        }
     }
-    file->seek(16);
-    uint32_t le_size = cpu_to_32le(total_length);
-    file->write(&le_size, 4, &bytes_written);
+    if (err != REC_ERR_OK) {
+        error_code = err;
+    }
+
+    if (file->isValid()) { // a file whose medium is gone only has to be closed
+        file->seek(16);
+        uint32_t le_size = cpu_to_32le(total_length);
+        file->write(&le_size, 4, &bytes_written);
+    }
 
 	fm->fclose(file);
 	file = NULL;
@@ -300,20 +335,32 @@ void TapeRecorder :: poll()
 			}
 		}   */
 
-		if (file) { // check for invalidation
-			if(!file->isValid()) {
-				printf("TapeRecorder: Our file got killed...\n");
-				file = NULL;
-				stop(REC_ERR_NO_FILE);
+		// The commands that start and finish a capture run on other tasks with this subsystem's
+		// mutex held (SubsysCommand::execute), so the capture is only ever finished between two
+		// steps of this task, never while a block is being written. The task does not wait for
+		// the mutex: it has the highest priority, and what the other tasks do while they hold
+		// it (a name box, a popup) can take as long as the user does. The interrupt keeps
+		// caching meanwhile, and the cache holds 128 blocks.
+		if (trylock()) {
+			if (file) { // check for invalidation
+				if(!file->isValid()) {
+					printf("TapeRecorder: Our file got killed...\n");
+					stop(REC_ERR_NO_FILE); // closes the handle too; FileManager::fclose accepts an invalidated file
+				}
 			}
-		}
-		if (recording > 0) {
-			if(blocks_cached >= (blocks_written+REC_NUM_CACHE_BLOCKS)) {
-				stop(REC_ERR_OVERFLOW);
+			if ((recording > 0) && file) {
+				if(blocks_cached >= (blocks_written+REC_NUM_CACHE_BLOCKS)) {
+					stop(REC_ERR_OVERFLOW);
+				}
+				while (blocks_cached > blocks_written) {
+					int err = write_block();
+					if (err != REC_ERR_OK) { // the capture is over; it does not try again
+						stop(err);
+						break;
+					}
+				}
 			}
-			while (blocks_cached > blocks_written) {
-				error_code = write_block();
-			}
+			unlock();
 		}
 		vTaskDelay(10);
 	}
@@ -329,7 +376,7 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
         return false;
     }
         
-    uint32_t dummy;
+    uint32_t dummy = 0;
     const char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
 
 	int res = cmd->user_interface->string_box("Give name for tap file..", buffer, 22);
@@ -340,7 +387,9 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
         FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
         if(fres == FR_OK) {
             FRESULT res = file->write(signature, 20, &dummy);
-            if(res != FR_OK) {
+            if((res != FR_OK) || (dummy != 20)) {
+                fm->fclose(file); // no capture will use it; the next attempt must find the member empty
+                file = NULL;
                 cmd->user_interface->popup("Error writing signature", BUTTON_OK);
                 return false;
             }
