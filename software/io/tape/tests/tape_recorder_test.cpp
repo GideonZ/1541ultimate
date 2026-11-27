@@ -1,0 +1,91 @@
+// Captures through the real TapeRecorder. The healthy ones show that the register model, the
+// fake file system and the scripted task follow what the firmware expects, so that the tests
+// of the defects fail for the defect and not for the harness.
+#include "tape_recorder_util.h"
+
+using namespace tapetest;
+
+TEST(TapeRecorder, CaptureOfSeveralBlocksIsWrittenAndClosedOnce)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    ASSERT_EQ(fs.opens, 1);
+    EXPECT_TRUE(fs.flags_seen[0] & FA_WRITE);
+    EXPECT_TRUE(recorder.enabled);                  // start() enabled the block
+    EXPECT_EQ(recorder.mode, 0);                    // rising edge, as the write menu item asks
+    EXPECT_EQ(recorder.sel, 1);
+    EXPECT_TRUE(recorder.irq_en);
+
+    c.block_arrives();
+    c.block_arrives();
+    c.block_arrives();
+    c.tail_arrives(100);
+    c.run_task_steps(3);                            // the task drains the cache to the file
+
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    EXPECT_TRUE(has_popup(c.ui, "Tape capture stopped."));
+
+    const std::string &data = fs.file("cap.tap").content;
+    ASSERT_EQ((int)data.size(), 20 + 3 * 512 + 100);
+    EXPECT_TRUE(data.compare(0, 12, "C64-TAPE-RAW") == 0);
+    EXPECT_EQ((int)(uint8_t)data[16] | ((int)(uint8_t)data[17] << 8), 3 * 512 + 100);   // length field
+    for (int b = 0; b < 3; b++) EXPECT_TRUE(data.compare(20 + b * 512, 512, expected_block(b)) == 0);
+    for (int i = 0; i < 100; i++) EXPECT_EQ((int)(uint8_t)data[20 + 3 * 512 + i], (int)(uint8_t)(0xA0 + i));
+
+    EXPECT_EQ(fs.opens, 1);
+    EXPECT_EQ(fs.closes, 1);
+    EXPECT_EQ(fs.null_closes, 0);
+    EXPECT_FALSE(recorder.enabled);
+    EXPECT_EQ((int)recorder.fifo.size(), 0);
+}
+
+TEST(TapeRecorder, SampleTapeUnfreezesTheC64AndStartsReading)
+{
+    Capture c;
+    ASSERT_EQ((int)c.menu(MENU_REC_SAMPLE_TAPE, "tape1"), (int)SSRET_OK);
+    EXPECT_TRUE(has_popup(c.ui, "Start tape when back in C64 screen"));
+    ASSERT_EQ((int)executed_functions.size(), 1);
+    EXPECT_EQ(executed_functions[0], (int)C64_UNFREEZE);
+    EXPECT_TRUE(recorder.enabled);
+    EXPECT_EQ(recorder.sel, 0);
+    EXPECT_EQ(recorder.mode, 1);                    // falling edge
+    c.block_arrives();
+    c.run_task_steps(2);
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    EXPECT_EQ((int)fs.file("tape1.tap").content.size(), 20 + 512);
+    EXPECT_EQ(fs.opens, fs.closes);
+}
+
+TEST(TapeRecorder, EmptyCaptureIsAValidHeaderOnly)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    const std::string &data = fs.file("cap.tap").content;
+    EXPECT_EQ((int)data.size(), 20);
+    EXPECT_EQ((int)(uint8_t)data[16], 0);
+    EXPECT_EQ(fs.opens, 1);
+    EXPECT_EQ(fs.closes, 1);
+}
+
+TEST(TapeRecorder, ModelSetsErrorWhenTheFifoOverflows)
+{
+    // c2n_record.vhd:74-75: a byte for a full FIFO while enabled latches the error flag.
+    reset_env();
+    recorder.write_control(0x01);
+    std::vector<uint8_t> v(2048 + 10, 0x55);
+    recorder.capture(&v[0], (int)v.size());
+    EXPECT_EQ((int)recorder.fifo.size(), 2048);
+    EXPECT_TRUE(recorder.read_status() & 0x02);
+    EXPECT_TRUE(recorder.read_status() & 0x04);
+    recorder.write_control(0x01 | 0x02);            // clear error
+    EXPECT_FALSE(recorder.read_status() & 0x02);
+}
+
+TEST(TapeRecorder, FinishWithoutACaptureReportsNoFile)
+{
+    Capture c;
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);      // flush() with no file: the error code is set, nothing is closed
+    EXPECT_EQ(fs.opens, 0);
+    EXPECT_EQ(fs.closes, 0);
+}
