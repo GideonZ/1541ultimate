@@ -71,15 +71,23 @@ static void dial(const char *host)
     xQueueSend(m->connectQueue, &cmd, portMAX_DELAY);
 }
 
-// Dials `n` times, one after the other, and waits for each result code.
+// How long to wait for the modem task, in ms: for a result code, and for the socket to be given back.
+static const int kWaitMs = 5000;
+
+// Dials `n` times, one after the other, and waits for each result code. The result code is sent
+// before the socket is closed, so after the last dial it also waits until every socket that was
+// opened has been closed (or kWaitMs has passed, which check() then reports as a leak).
 static void dial_n(int n, const char *host)
 {
     for (int i = 0; i < n; i++) {
         int target = responses + (connect_ok ? 2 : 1);
         dial(host);
-        for (int spins = 0; responses < target && spins < 5000; spins++) {
+        for (int spins = 0; responses < target && spins < kWaitMs; spins++) {
             usleep(1000);
         }
+    }
+    for (int spins = 0; opened != closed && spins < kWaitMs; spins++) {
+        usleep(1000);
     }
 }
 
