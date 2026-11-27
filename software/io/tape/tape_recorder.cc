@@ -146,9 +146,10 @@ void TapeRecorder :: stop(int error)
     	// FIXME: freeze
     }
 	if(file) {	
-        // flush() writes out what is left and closes the file, and it is the only place that does.
+        // end_capture() writes out what is left, as far as that makes sense after this error, and
+        // closes the file. It is the only place that does.
         printf("Flush TAP..\n");
-        flush();
+        end_capture((error == REC_ERR_OK) || (error == REC_ERR_OVERFLOW));
 	} else {
 	    printf("Stopping. File = NULL. ERR = %d\n", error);
     }
@@ -211,12 +212,12 @@ int TapeRecorder :: write_block()
         return REC_ERR_NO_FILE;
     }
 	
-	uint32_t bytes_written;
+	uint32_t bytes_written = 0;
 
     uint32_t *block = cache_blocks[block_out];
 	FRESULT res = file->write((void *)block, 512, &bytes_written);
-    total_length += 512;
-	if(res != FR_OK) {
+    total_length += bytes_written;
+	if((res != FR_OK) || (bytes_written != 512)) { // a full volume gives FR_OK and fewer bytes
 		return REC_ERR_WRITE_ERROR;
 	}
 	printf("$");
@@ -231,6 +232,14 @@ int TapeRecorder :: write_block()
 
 void TapeRecorder :: flush()
 {
+    end_capture(true);
+}
+
+// Ends the capture: the interrupt is disabled, what has been captured is written out (unless
+// write_out is false), the length is put in the header and the file is closed. A write that
+// fails ends the writing out, and the error is left in error_code for the task to show.
+void TapeRecorder :: end_capture(bool write_out)
+{
 	if(!file) {
 	    error_code = REC_ERR_NO_FILE;
     	recording = 0;
@@ -239,25 +248,36 @@ void TapeRecorder :: flush()
         return;
     }
 
-    while (blocks_cached > blocks_written) {
-        error_code = write_block();
-    }
-
+    int err = REC_ERR_OK;
     uint32_t bytes_written;
 
-    while (RECORD_STATUS & REC_STAT_BYTE_AV) {
-		uint8_t *block = (uint8_t *)cache_blocks[block_in];
-		int i;
-		for(i=0;i<512;i++) {
-			if (RECORD_STATUS & REC_STAT_BYTE_AV)
-				*(block++) = RECORD_DATA;
-			else
-				break;
-		}
-		printf("Writing out remaining %d bytes.\n", i);
-		FRESULT res = file->write((void *)cache_blocks[block_in], i, &bytes_written);
-		total_length += bytes_written;
+    if (write_out) {
+        while ((err == REC_ERR_OK) && (blocks_cached > blocks_written)) {
+            err = write_block();
+        }
+
+        while ((err == REC_ERR_OK) && (RECORD_STATUS & REC_STAT_BYTE_AV)) {
+            uint8_t *block = (uint8_t *)cache_blocks[block_in];
+            int i;
+            for(i=0;i<512;i++) {
+                if (RECORD_STATUS & REC_STAT_BYTE_AV)
+                    *(block++) = RECORD_DATA;
+                else
+                    break;
+            }
+            printf("Writing out remaining %d bytes.\n", i);
+            bytes_written = 0;
+            FRESULT res = file->write((void *)cache_blocks[block_in], i, &bytes_written);
+            total_length += bytes_written;
+            if ((res != FR_OK) || (bytes_written != (uint32_t)i)) {
+                err = REC_ERR_WRITE_ERROR;
+            }
+        }
     }
+    if (err != REC_ERR_OK) {
+        error_code = err;
+    }
+
     file->seek(16);
     uint32_t le_size = cpu_to_32le(total_length);
     file->write(&le_size, 4, &bytes_written);
@@ -310,7 +330,11 @@ void TapeRecorder :: poll()
 				stop(REC_ERR_OVERFLOW);
 			}
 			while (blocks_cached > blocks_written) {
-				error_code = write_block();
+				int err = write_block();
+				if (err != REC_ERR_OK) { // the capture is over; it does not try again
+					stop(err);
+					break;
+				}
 			}
 		}
 		vTaskDelay(10);

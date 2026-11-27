@@ -61,6 +61,7 @@ class TapeRecorder : public SubSystem, ObjectWithMenu
     int   total_length;
 	int   write_block();
     void  cache_block();
+    void  end_capture(bool write_out);
     uint8_t *cache;
     uint32_t *cache_blocks[REC_NUM_CACHE_BLOCKS];
     static void poll_tape_rec(void *a);

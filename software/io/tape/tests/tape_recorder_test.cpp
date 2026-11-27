@@ -116,3 +116,136 @@ TEST(TapeRecorder, T1_DestroyingTheRecorderMidCaptureClosesTheFileOnce)
     EXPECT_EQ(fs.null_closes, 0);
     EXPECT_EQ(fs.opens, fs.closes);
 }
+
+// T2: the card reports a write error while the capture runs. The task must not spin.
+TEST(TapeRecorder, T2_WriteErrorInTheTaskDoesNotLoopForever)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    fs.file("cap.tap").fail_from_write = 2;                 // the signature (write 1) went through
+    fs.file("cap.tap").fail_kind = WF_ERROR;
+    c.block_arrives();
+    c.block_arrives();
+    bool ran = guarded("task step after a write error", [&]() { c.run_task_steps(3); });
+    EXPECT_TRUE(ran);
+    // the writes that were attempted are bounded: it gives up or retries a few times, but does not spin
+    EXPECT_TRUE(fs.writes_total < 100);
+    fs.max_writes = 100000;
+    fs.file("cap.tap").fail_from_write = 0;                  // so that the cleanup below can finish
+}
+
+// T2, at the end of a capture: "Finish Rec. to TAP" while the card refuses writes.
+TEST(TapeRecorder, T2_FinishWithFailingWritesReturns)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    fs.file("cap.tap").fail_from_write = 2;
+    bool ran = guarded("Finish with a failing card", [&]() { c.finish(); });
+    EXPECT_TRUE(ran);
+    fs.file("cap.tap").fail_from_write = 0;
+    fs.max_writes = 100000;
+}
+
+// T2, full volume: FatFs answers FR_OK with fewer bytes than asked. The recorder must notice.
+TEST(TapeRecorder, T2_ShortWriteOnAFullDiskIsReported)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    fs.file("cap.tap").fail_from_write = 2;
+    fs.file("cap.tap").fail_kind = WF_SHORT;
+    c.block_arrives();
+    c.run_task_steps(3);
+    EXPECT_TRUE(has_popup(c.ui, "Error during tape capture.") || !recorder.enabled);
+    fs.file("cap.tap").fail_from_write = 0;
+}
+
+// ---- a write that fails ends the capture, once, and the user is told
+
+TEST(TapeRecorder, WriteErrorEndsTheCaptureAndNothingIsTriedAgain)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    fs.file("cap.tap").fail_from_write = 2;                 // the signature (write 1) went through; every write after fails
+    c.block_arrives();
+    c.block_arrives();
+    c.run_task_steps(3);
+    EXPECT_FALSE(recorder.enabled);                          // the hardware is stopped
+    EXPECT_EQ(fs.opens, 1);
+    EXPECT_EQ(fs.closes, 1);                                 // the file is closed, once
+    EXPECT_EQ(fs.null_closes, 0);
+    EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
+    // signature, the one block that failed, and the attempt to put the length in the header
+    EXPECT_EQ(fs.writes_total, 3);
+    c.block_arrives();                                       // a late interrupt does nothing
+    c.run_task_steps(3);
+    EXPECT_EQ(fs.writes_total, 3);
+    EXPECT_EQ(fs.closes, 1);
+}
+
+TEST(TapeRecorder, AShortWriteOfTheBytesLeftInTheFifoIsAnErrorToo)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.tail_arrives(50);                                      // not a whole block: Finish reads it from the FIFO
+    fs.file("cap.tap").fail_from_write = 2;
+    fs.file("cap.tap").fail_kind = WF_SHORT;
+    fs.file("cap.tap").fail_count = 1;
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    const std::string &data = fs.file("cap.tap").content;
+    ASSERT_EQ((int)data.size(), 20 + 25);
+    EXPECT_EQ((int)length_field(data), 25);
+    EXPECT_EQ(fs.opens, fs.closes);
+    c.run_task_steps(1);
+    EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
+}
+
+TEST(TapeRecorder, AfterAWriteErrorTheHeaderCountsWhatReachedTheFile)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    fs.file("cap.tap").fail_from_write = 3;                  // block 0 is written, block 1 fails
+    fs.file("cap.tap").fail_count = 1;                       // the header write after it works
+    c.block_arrives();
+    c.block_arrives();
+    c.run_task_steps(3);
+    const std::string &data = fs.file("cap.tap").content;
+    ASSERT_EQ((int)data.size(), 20 + 512);
+    EXPECT_EQ((int)length_field(data), 512);
+    EXPECT_TRUE(data.compare(20, 512, expected_block(0)) == 0);
+    EXPECT_EQ(fs.opens, fs.closes);
+}
+
+TEST(TapeRecorder, AShortWriteEndsTheCaptureAndTheHeaderCountsTheBytesWritten)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    fs.file("cap.tap").fail_from_write = 2;
+    fs.file("cap.tap").fail_kind = WF_SHORT;                 // FR_OK, half the bytes
+    fs.file("cap.tap").fail_count = 1;
+    c.block_arrives();
+    c.block_arrives();
+    c.run_task_steps(3);
+    const std::string &data = fs.file("cap.tap").content;
+    ASSERT_EQ((int)data.size(), 20 + 256);
+    EXPECT_EQ((int)length_field(data), 256);
+    EXPECT_FALSE(recorder.enabled);
+    EXPECT_EQ(fs.opens, fs.closes);
+    EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
+}
+
+TEST(TapeRecorder, FinishWithFailingWritesEndsTheCaptureAndTheUserIsTold)
+{
+    Capture c;
+    ASSERT_EQ((int)c.start_capture(), (int)SSRET_OK);
+    c.block_arrives();
+    c.tail_arrives(50);
+    fs.file("cap.tap").fail_from_write = 2;
+    ASSERT_EQ((int)c.finish(), (int)SSRET_OK);
+    EXPECT_EQ(fs.opens, 1);
+    EXPECT_EQ(fs.closes, 1);
+    EXPECT_FALSE(recorder.enabled);
+    EXPECT_EQ(fs.writes_total, 3);                           // signature, the block that failed, the header
+    c.run_task_steps(1);                                     // the task shows the error
+    EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
+}
