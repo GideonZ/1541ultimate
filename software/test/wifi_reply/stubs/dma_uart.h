@@ -10,7 +10,7 @@ class DmaUART
 public:
     int buffers_free = 0;
     int transmitted = 0;
-    volatile uint32_t generation = 0; // U64 >= 1 builds of wifi_cmd.cc tag dedicated replies with it
+    volatile uint32_t generation = 0; // changes when the module restarts: a call that spans it sees it (wifi_cmd.cc)
     BaseType_t GetBuffer(command_buf_t **b, TickType_t t);
     void FreeBuffer(command_buf_t *b);
     void SetBaudRate(int b) {}

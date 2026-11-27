@@ -109,6 +109,8 @@ Handle `$FF`, the capability record, 16 bytes, `00,OK`. It makes one module STAT
 | 14 | entries not yet claimed (0 or 1; what `$25` would close) |
 | 15 | 0 |
 
+Bytes 2 and 14 are the Ultimate's own bookkeeping of its entries, not counts the module reported. A session whose CLOSE was sent and not answered (the cleanup after an abort, a CLOSE whose wait ended on an abort or a reset or timed out) is booked as freed, and the module may hold it until the next OPEN, which takes that slot first, or until a C64 reset.
+
 Bytes 3 and 5 do not say whether a device has TLS: test bit 0 of byte 4. A device where it never sets has none.
 
 A TLS handle, 48 bytes, `00,OK`. A handle that failed after its handshake still reports the handshake's values:
@@ -223,7 +225,7 @@ A pending chunk of `$16` is dropped by any other command, as for plain sockets.
 | 14 | TLS ALERT RECEIVED: n | OPEN, READ, WRITE | fatal alert n from the server; 70 is protocol_version |
 | 15 | TLS HANDSHAKE TIMEOUT | OPEN | no established session in 15 s, or the 40 s open budget ran out in the handshake |
 | 16 | TLS SESSION FAILED: -0xNNNN | READ, WRITE | bad record MAC, decode error, too many empty records, KeyUpdate |
-| 17 | TLS MODULE NOT RESPONDING | any | module timeout, full queue, malformed reply, restart or WRITE stall |
+| 17 | TLS MODULE NOT RESPONDING | any | module timeout, the module's TLS command queue full, malformed reply, restart or WRITE stall |
 | 18 | TLS VERSION REFUSED: 0xNNNN | OPEN | the ServerHello chose a version not offered (TLS 1.2 under REQUIRE_TLS13, or below 1.2), or a TLS 1.2 ServerHello carried version 0x0304 (TLS 1.3 claimed through the 1.2 path) |
 | 19 | TLS DOWNGRADE DETECTED | OPEN | a TLS 1.2 ServerHello carrying the RFC 8446 4.1.3 downgrade sentinel |
 | 81 | INVALID PARAMS | all | layout, lengths, tail grammar, name rule, not a TLS handle for `$23`, bad handle for `$24`, `$22` sequence error, no-reply bit on `$21`/`$24` |

@@ -258,7 +258,6 @@ static NetworkTarget *tls_owner;
 typedef struct {
     bool use_deadline;
     uint32_t deadline;
-    bool cleanup;
 } tls_cancel_context_t;
 
 static bool reset_only(void)
@@ -274,7 +273,7 @@ static bool reset_now(void)
 static bool tls_cancelled(void *context)
 {
     tls_cancel_context_t *c = (tls_cancel_context_t *)context;
-    if (c->cleanup ? reset_only() : reset_now()) {
+    if (reset_now()) {
         return true;
     }
     return c->use_deadline && reached(c->deadline);
@@ -297,9 +296,16 @@ TlsSocket *NetworkTarget :: tls_find(int socketnr)
     return NULL;
 }
 
-// A free entry, not yet in use; the slot on the module is its index.
+// A free entry, not yet in use; the slot on the module is its index. A slot whose CLOSE was sent without an answer
+// goes first: the OPEN into it frees whatever the module still holds there (tls_open, tls_engine.c), where a session
+// in a slot that is never chosen again would stay.
 TlsSocket *NetworkTarget :: tls_reserve(void)
 {
+    for (int i = 0; i < NET_MAX_TLS; i++) {
+        if (!tls[i].used && tls_unconfirmed[i]) {
+            return &tls[i];
+        }
+    }
     for (int i = 0; i < NET_MAX_TLS; i++) {
         if (!tls[i].used) {
             return &tls[i];
@@ -413,7 +419,9 @@ void NetworkTarget :: tls_fail_step(TlsSocket *e, int esp_err, uint8_t alert_in)
 //  - the answer, when it comes, finds no reply slot and is dropped (wifi_call, wifi_rx_isr).
 // Sent: module_live is false, the session is the module's to free. Not sent (UNSENT, no module): module_live stays,
 // so the CLOSE_SOCKET that follows, an OPEN into the slot or CLOSE_ALL cleans it up. It is not sent again here: that
-// would be a wait.
+// would be a wait. With no module nothing was sent, and the session is not booked as freed: the module may come
+// back without a restart, still holding it. Either way the slot is marked: no answer said the module freed it, and
+// tls_reserve gives the next OPEN that slot, which frees what is left.
 void NetworkTarget :: tls_cleanup_close(TlsSocket *e)
 {
     if (!e->module_live || reset_only()) {
@@ -422,6 +430,7 @@ void NetworkTarget :: tls_cleanup_close(TlsSocket *e)
     if (wifi_tls_close_send(e->slot, e->tag) == 0) {
         e->module_live = false;
     }
+    tls_unconfirmed[e->slot] = true;
 }
 
 // CLOSE_SOCKET, $25, and the end of a stream: the session on the module, its
@@ -429,17 +438,23 @@ void NetworkTarget :: tls_cleanup_close(TlsSocket *e)
 void NetworkTarget :: tls_close_entry(TlsSocket *e, bool send_notify)
 {
     if (e->module_live && !reset_only()) {
-        tls_cancel_context_t context = { false, 0, true };
+        tls_cancel_context_t context = { false, 0 };
         wifi_tls_cancel_t cancel = tls_cancel_of(&context);
         uint16_t notify_len = 0;
         int esp_err;
         // The CLOSE the C64 asked for waits for its answer, which holds the close_notify for the peer. It may sit on
-        // the module behind a step, which is given TLS_STEP_RPC_MS, so that is how long this waits.
+        // the module behind a step, which is given TLS_STEP_RPC_MS, so that is how long this waits at most: a job abort
+        // or a C64 reset ends the wait at once, since the C64 does not wait for the module. The CLOSE has been sent
+        // by then, so the module acts on it (and the session is the module's to free); only the close_notify that was
+        // not received is not sent to the peer, and the socket is closed as on the abort path. What the C64 sees: the
+        // CLOSE_SOCKET, the READ that ends the stream and $25 return at once, with the handle gone.
         int result = wifi_tls_close(e->slot, e->tag, tls_ct_out, sizeof(tls_ct_out), &notify_len, &esp_err,
                                     TLS_STEP_RPC_MS, &cancel);
         if ((result == 0) && send_notify && notify_len) {
             tls_send_all(e->socketnr, tls_ct_out, notify_len, tick_after(TLS_NOTIFY_SEND_MS));
         }
+        // An answer, even a refusal (no such session), says the slot holds nothing; no answer says nothing
+        tls_unconfirmed[e->slot] = (result != 0) && (result != WIFI_TLS_REFUSED);
     }
     untrack_socket(e->socketnr);
     lwip_close(e->socketnr);
@@ -668,6 +683,9 @@ Message *NetworkTarget :: tls_prepare(TlsSocket *e, uint8_t trust, uint8_t flags
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(TLS_UNSENT_DELAY_MS));
+    }
+    if ((result == 0) || (result == WIFI_TLS_REFUSED)) {
+        tls_unconfirmed[e->slot] = false; // the OPEN into the slot freed what it held, whatever it answered
     }
     if (result == 0) {
         e->module_live = true;
@@ -1236,6 +1254,9 @@ void NetworkTarget :: tls_info(Message *command, Message **reply, Message **stat
             m[11] = 0xFF;
         }
         m[4] = ready;
+        // The Ultimate's own bookkeeping of the entries it holds, not a count the module reported: a session whose
+        // CLOSE was sent and not answered is booked as freed, and may still be held by the module until the next
+        // OPEN into its slot (tls_reserve prefers such a slot) or CLOSE_ALL.
         m[14] = (uint8_t)tls_in_use(true);
         data_message.length = 16;
         data_message.last_part = true;
@@ -1600,6 +1621,7 @@ void NetworkTarget :: tls_write(TlsSocket *e, const uint8_t *data, int length, M
 void NetworkTarget :: tls_init(void)
 {
     memset(tls, 0, sizeof(tls));
+    memset(tls_unconfirmed, 0, sizeof(tls_unconfirmed));
     tls_last_tag = 0;
     tls_owner = this;
     tls_generation_known = false;
@@ -1653,7 +1675,9 @@ void NetworkTarget :: tls_reset(void)
     tls_new_ca_tag();
     if (wifi_tls_module_available()) {
         int esp_err;
-        wifi_tls_close_all(&esp_err, TLS_CLOSE_ALL_RPC_MS);
+        if (wifi_tls_close_all(&esp_err, TLS_CLOSE_ALL_RPC_MS) == 0) {
+            memset(tls_unconfirmed, 0, sizeof(tls_unconfirmed));
+        }
     }
 }
 

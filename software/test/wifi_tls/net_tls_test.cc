@@ -1559,16 +1559,15 @@ static void test_close_ends_on_abort_or_reset(void)
           "abort: the READ that ends the stream returns at the abort (%u ms late)", late);
     world_abort_at = 0xFFFFFFFF;
 
-    // $25, one CLOSE after the other: the first ends at the abort, the second is sent and ends at once
+    // $25 (it closes the one unclaimed entry the last OPEN made)
     fresh();
     int a = open_ok();
-    int b = open_ok();
     world_module.close_delay_ms = 0xFFFFFFFF;
     world_abort_at = world_tick + 100;
     r = release();
     late = (world_tick - world_abort_at) * 5;
-    check(late <= 10 && r.data == B({ 2 }) && !sock(a).open && !sock(b).open && world_count(0x32) == 2,
-          "abort: $25 closes both and returns at the abort (%u ms late)", late);
+    check(late <= 10 && r.data == B({ 1 }) && !sock(a).open && world_count(0x32) == 1,
+          "abort: $25 returns at the abort (%u ms late)", late);
     world_abort_at = 0xFFFFFFFF;
 
     // The CLOSE that ended without an answer: the slot is marked, and the next OPEN takes it
