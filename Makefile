@@ -72,6 +72,7 @@ openapi_validate:
 # these need a host g++.
 host_tests:
 	@$(MAKE) -C software/filemanager/tests
+	@$(MAKE) -C software/filetypes/tests
 	@$(MAKE) -C software/io/usb/tests
 	@$(MAKE) -C target/pc/linux/configiotest test
 	@$(MAKE) -C target/pc/linux/powerstate test

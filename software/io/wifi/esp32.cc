@@ -16,6 +16,7 @@
  */
 
 #include "esp32.h"
+#include "esp_md5.h"
 #include "u64.h"
 #include "dump_hex.h"
 #include <stdarg.h>
@@ -185,7 +186,7 @@ void Esp32::PackParams(uint8_t *buffer, int numparams, ...)
 }
 
 bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
-        uint8_t *receiveBuffer, int timeout)
+        uint8_t *receiveBuffer, int timeout, int *replySize)
 {
     command_buf_t *buf;
     if (uart->GetBuffer(&buf, 100) != pdTRUE) {
@@ -210,7 +211,11 @@ bool Esp32::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
                     uint8_t size = receiveBuffer[2];
                     uint8_t success = receiveBuffer[8];
                     uint8_t error = receiveBuffer[9];
-                    if (((size == 2) || (size == 4)) && (success == 0)) {
+                    if (replySize) {
+                        // The caller reads the status out of the reply itself
+                        *replySize = bsize;
+                        return true;
+                    } else if (((size == 2) || (size == 4)) && (success == 0)) {
                         return true;
                     } else {
                         printf("Command: %b. Error = %b.\n", opcode, error);
@@ -409,6 +414,36 @@ int Esp32 :: Flash(const uint8_t *binary, uint32_t address, uint32_t length, Esp
 */
     printf("Programming ESP32 was a success!\n");
     return 0;
+}
+
+// Asks the loader for the MD5 of the flash at address..address+length and compares it with
+// that of the image. 0 when they are equal, -7 when the loader does not answer, -8 when they
+// differ. The reply is read by esp_md5_parse_reply (the ROM loader: 32 hex digits, two status
+// bytes, two reserved bytes).
+int Esp32 :: VerifyFlash(const uint8_t *binary, uint32_t address, uint32_t length)
+{
+    uint8_t parambuf[16];
+    int replySize = 0;
+
+    EspMd5 md5;
+    uint8_t digest[16];
+    md5.update(binary, length);
+    md5.final(digest);
+
+    // The loader reads the whole range back. The timeout is in ticks (200 per second): 5 s
+    // and about 8.7 s per MB, esptool allows 8 s per MB
+    PackParams(parambuf, 4, address, length, 0, 0);
+    if (!Command(ESP_SPI_FLASH_MD5, 16, 0, parambuf, receiveBuffer, 1000 + (int)(length / 600), &replySize)) {
+        printf("Command Error ESP_SPI_FLASH_MD5\n");
+        return ESP_VERIFY_NO_ANSWER;
+    }
+    int result = esp_md5_parse_reply(receiveBuffer, replySize, digest);
+    if (result == ESP_VERIFY_NO_ANSWER) {
+        printf("ESP_SPI_FLASH_MD5: not a valid answer (reply of %d bytes)\n", replySize);
+    } else if (result == ESP_VERIFY_MISMATCH) {
+        printf("The flash does not hold the image (MD5 differs)\n");
+    }
+    return result;
 }
 
 #define PRINT_BOOT_MSG 0
