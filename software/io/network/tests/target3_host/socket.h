@@ -17,6 +17,8 @@
 #define lwip_recv recv              // the target before #806 receives with it
 #define lwip_getsockopt getsockopt
 #define PP_HTONS htons
+#define PP_HTONL htonl
+#define PP_NTOHS ntohs
 #define sin_len sin_zero[0]           // the host's sockaddr_in has no length field
 #define socket(d, t, p) ::socket(d, t, p)   // open_socket names a local `socket`
 #endif
