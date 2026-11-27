@@ -298,9 +298,11 @@ def receive(sockets: Sequence[socket.socket], addresses: set[str],
     """
     deadline = time.monotonic() + timeout
     while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return
+        # The deadline is wall-clock, so a caller that was descheduled while
+        # packets queued finds it already past. One last pass with no wait
+        # still reads what is queued, because a packet already in a socket
+        # arrived inside the window however late this got to it.
+        remaining = max(deadline - time.monotonic(), 0.0)
         ready, _, _ = select.select(list(sockets), (), (), remaining)
         for sock in ready:
             try:
@@ -308,6 +310,8 @@ def receive(sockets: Sequence[socket.socket], addresses: set[str],
             except OSError:
                 continue
             yield sock, data, sender[0] in addresses
+        if remaining == 0.0:
+            return
 
 
 # -------------------------------------------------------------------------
