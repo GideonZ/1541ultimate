@@ -4,7 +4,7 @@ KEYBOARD_TEST_FLAGS := $(CXXFLAGS) -I../../c64 -DNO_FILE_ACCESS
 
 VT100_TEST_FLAGS := $(CXXFLAGS) -I../../c64
 
-all: mouse keyboard keyboard-queue keyboard-c64 selection vt100-escape
+all: mouse keyboard keyboard-queue keyboard-c64 selection vt100-escape scsi-max-lun
 
 mouse:
 	$(CXX) $(CXXFLAGS) usb_hid_mouse_test.cpp host_test_main.cpp -lpthread -o usbHidMouseTest && ./usbHidMouseTest
@@ -23,3 +23,6 @@ selection:
 
 vt100-escape:
 	$(CXX) $(VT100_TEST_FLAGS) vt100_escape_test.cpp ../../stream/keyboard_vt100.cc host_test_main.cpp -lpthread -o vt100EscapeTest && ./vt100EscapeTest
+
+scsi-max-lun:
+	$(CXX) $(CXXFLAGS) usb_scsi_max_lun_test.cpp host_test_main.cpp -lpthread -o usbScsiMaxLunTest && ./usbScsiMaxLunTest
