@@ -21,7 +21,7 @@ asan:
 # Media swaps on a FAT file device: the real FileDevice, Disk, Partition, FileSystemFAT and FatFs on a RAM block device.
 FAT_MEDIA_SWAP_TEST := $(OUTPUT_DIR)/fatMediaSwapTest
 FAT_INC := -I../../chan_fat/pc -I../../chan_fat/ff14/source -I../../filesystem -I../../system
-FAT_SRCS := fat_media_swap_test.cpp ../../io/usb/tests/host_test_main.cpp ../file_device.cc ../file_partition.cc ../path.cc \
+FAT_SRCS := fat_media_swap_test.cpp ../../io/usb/tests/host_test_main.cpp ../file_device.cc ../file_partition.cc ../path.cc ../filemanager.cc ../../filesystem/filesystem_root.cc \
 	../../filesystem/disk.cc ../../filesystem/partition.cc ../../filesystem/blockdev.cc ../../filesystem/blockdev_ram.cc \
 	../../filesystem/diskio.cc ../../filesystem/file_system.cc ../../filesystem/filesystem_fat.cc ../../filesystem/directory.cc \
 	../../components/pattern.cc ../../components/mystring.cc ../../components/size_str.cc

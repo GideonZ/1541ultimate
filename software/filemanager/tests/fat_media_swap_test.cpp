@@ -1,7 +1,12 @@
 // Media swaps on a FileDevice backed by FAT, with the real FileDevice, Disk,
 // Partition and FileSystemFAT code and FatFs on a RAM block device.
 #include "../../io/usb/tests/host_test/host_test.h"
+#include <stdio.h>
+#include <string.h>
+#include <vector>
 #include "../file_device.h"
+#include "../filemanager.h"
+#include "../../filesystem/embedded_fs.h"
 #include "../../filesystem/blockdev_ram.h"
 #include "../../filesystem/chanfat_manager.h"
 #include "../../filesystem/filesystem_fat.h"
@@ -317,4 +322,66 @@ TEST(FatMediaSwap, FormatWithNoFreeVolumeFailsAndLeavesVolume0Alone)
         ChanFATManager::getManager()->removeDrive(i);
     }
     delete first;
+}
+
+// A disk image entered on the medium is held open by the file manager's mount cache.
+// SD removal used to detach the disk before invalidating, so the open image kept the file
+// system and its volume slot for good. Both orders run on the real file device, FAT code and
+// file manager; the order the callers must use releases the slot.
+static void swap_with_mounted_image(bool invalidate_first, int cycles, int *mounted_out)
+{
+    Medium m;
+    FileDevice *dev = new_device(m);
+    FileManager *fm = FileManager::getFileManager();
+    fm->add_root_entry(dev); // as the SD card and USB devices are
+    int mounted = 0;
+    for (int i = 0; i < cycles; i++) {
+        dev->attach_disk(SECTOR);
+        if (dev->probe() != 1) {
+            break;
+        }
+        mounted++;
+        File *img = NULL;
+        mstring dev_path;
+        dev->get_full_path(dev_path);
+        if (dev->get_file_info()->fs->file_open("/img.d64", FA_CREATE_ALWAYS | FA_WRITE | FA_READ, &img) != FR_OK) {
+            break;
+        }
+        img->get_path_reference() = dev_path;
+        img->get_path_reference() += "img.d64";
+        PathInfo pi(NULL);
+        pi.workPath.cd(img->get_path());
+        pi.index = pi.workPath.getDepth();
+        SubPath &sp = *pi.getSubPath();
+        fm->add_mount_point(&sp, img, new FileSystemInFile());
+        if (invalidate_first) {
+            fm->invalidate(dev);
+            dev->detach_disk();
+        } else {
+            dev->detach_disk();
+            fm->invalidate(dev);
+        }
+    }
+    *mounted_out = mounted;
+    fm->remove_root_entry(dev);
+    delete dev;
+}
+
+TEST(FatMediaSwap, InvalidateBeforeDetachReleasesTheSlotOfAnEnteredImage)
+{
+    int mounted = 0;
+    const int cycles = 2 * FF_VOLUMES;
+    swap_with_mounted_image(true, cycles, &mounted);
+    EXPECT_EQ(mounted, cycles);
+    EXPECT_EQ(used_slots(), 0);
+}
+
+// The order SdCardManager used to have: documents why it had to change.
+TEST(FatMediaSwap, DetachBeforeInvalidateKeepsTheSlotOfAnEnteredImage)
+{
+    int mounted = 0;
+    const int cycles = 2 * FF_VOLUMES;
+    swap_with_mounted_image(false, cycles, &mounted);
+    EXPECT_TRUE(mounted < cycles);
+    reset_slots();
 }
