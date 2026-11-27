@@ -49,7 +49,13 @@ protected:
         }
     }
     virtual bool begin_stopped_session(void) { return machine->begin_stopped_session(); }
-    virtual void end_stopped_session(bool stopped_it) { machine->end_stopped_session(stopped_it); }
+    virtual void end_stopped_session(bool stopped_it)
+    {
+        machine->end_stopped_session(stopped_it);
+        if (stopped_it) {
+            machine->wait_for_release();
+        }
+    }
     virtual uint8_t peek_cpu(uint16_t address, uint8_t)
     {
         return machine->peek(address);
@@ -74,12 +80,7 @@ protected:
     {
         if (machine && machine->is_accessible()) {
             machine->unfreeze();
-            // The cartridge releases the CPU on the next bad line and reads as
-            // stopped until then. A launch written in that window takes the CPU
-            // for held, and the CPU starts running in the middle of it.
-            for (int i = 0; i < 2500 && machine->is_stopped(); i++) {
-                wait_10us(1);
-            }
+            machine->wait_for_release();
         }
     }
     virtual bool machine_is_frozen(void) const

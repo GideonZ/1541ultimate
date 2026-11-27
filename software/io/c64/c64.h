@@ -517,6 +517,8 @@ public:
     // 6510 (plain resume() clears C64_MODE before un-stopping, losing it). Used
     // by the U2 debug launch; no-op when stopped_it is false.
     virtual void end_stopped_session_nmi(bool stopped_it);
+    // Waits, at most 25 ms, until a resumed C64 no longer reads as stopped.
+    void wait_for_release(void);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;

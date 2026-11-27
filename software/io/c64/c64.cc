@@ -697,6 +697,16 @@ void C64::resume(void)
     }
 }
 
+// A cartridge releases the CPU on the next bad line after resume() and reads as
+// stopped until then. A debugger that goes on in that window takes the CPU for
+// held and writes memory the CPU starts running in the middle of.
+void C64::wait_for_release(void)
+{
+    for (int i = 0; i < 2500 && is_stopped(); i++) { // 25 ms, over one frame
+        wait_10us(1);
+    }
+}
+
 void C64::end_stopped_session_nmi(bool stopped_it)
 {
     if (!stopped_it) {
@@ -709,6 +719,7 @@ void C64::end_stopped_session_nmi(bool stopped_it)
     nmi_on_resume = true;
     resume();
     nmi_on_resume = false;
+    wait_for_release();
     wait_10us(1);
     C64_MODE = MODE_NORMAL;
 }
