@@ -1542,7 +1542,10 @@ static void test_close_ends_on_abort_or_reset(void)
     h = open_ok();
     world_module.close_delay_ms = 0xFFFFFFFF;
     world_reset_at = world_tick + 100;
+    // A reset that reaches the worker with no job to abort: only the count of resets and the wake
+    world_reset_hook = [] { net.resets++; world_wakes++; };
     r = close_cmd(h);
+    world_reset_hook = [] { net.c64_reset(); };
     late = (world_tick - world_reset_at) * 5;
     check(late <= 10 && !sock(h).open, "reset: CLOSE_SOCKET ends at the reset, not at the step timeout (%u ms late)", late);
     world_reset_at = 0xFFFFFFFF;
@@ -1584,7 +1587,14 @@ static void test_close_ends_on_abort_or_reset(void)
     h = open_ok();
     check(h >= 0 && last_open_slot() == 1 && world_module.sess[1].tag != old_tag,
           "orphan: with slot 1 unconfirmed and slot 0 free, the next OPEN takes slot 1 (slot %d)", last_open_slot());
-    check(close_cmd(h).status == "00,OK", "orphan: that session closes");
+    // the answered OPEN cleared the mark: the module ends that session itself (FAILED), no CLOSE is sent or answered
+    world_module.forced.push_back(Forced());
+    world_module.forced.back().fail = true;
+    world_module.forced.back().alert_in = 21;
+    world_module.forced.back().fail_err = -0x7780;
+    check(write_cmd(h, S("hello")).status == "14,TLS ALERT RECEIVED: 21", "orphan: the session in slot 1 fails on the module");
+    world_module.calls.clear();
+    check(close_cmd(h).status == "00,OK" && world_count(0x32) == 0, "orphan: its CLOSE_SOCKET sends no CLOSE");
     h = open_ok();
     check(h >= 0 && last_open_slot() == 0, "orphan: the answered OPEN cleared the mark: the lowest slot again (slot %d)",
           last_open_slot());
