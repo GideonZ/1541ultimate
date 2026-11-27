@@ -352,7 +352,7 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
         return false;
     }
         
-    uint32_t dummy;
+    uint32_t dummy = 0;
     const char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
 
 	int res = cmd->user_interface->string_box("Give name for tap file..", buffer, 22);
@@ -363,7 +363,9 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
         FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
         if(fres == FR_OK) {
             FRESULT res = file->write(signature, 20, &dummy);
-            if(res != FR_OK) {
+            if((res != FR_OK) || (dummy != 20)) {
+                fm->fclose(file); // no capture will use it; the next attempt must find the member empty
+                file = NULL;
                 cmd->user_interface->popup("Error writing signature", BUTTON_OK);
                 return false;
             }

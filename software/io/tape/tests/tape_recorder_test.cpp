@@ -276,3 +276,41 @@ TEST(TapeRecorder, AFileThatVanishedEndsTheCaptureWithoutWritingAndTheUserIsTold
     EXPECT_FALSE(recorder.enabled);
     EXPECT_TRUE(has_popup(c.ui, "Error during tape capture."));
 }
+
+// T4: the signature cannot be written when a capture starts. The file was opened; it has to be
+// closed, and the next attempt has to be able to start.
+TEST(TapeRecorder, T4_SignatureWriteFailureClosesTheFile)
+{
+    Capture c;
+    fs.file("cap.tap").fail_from_write = 1;
+    fs.file("cap.tap").fail_count = 1;
+    guarded("start capture", [&]() { c.start_capture("cap"); });
+    EXPECT_TRUE(has_popup(c.ui, "Error writing signature"));
+    EXPECT_EQ(fs.opens, 1);
+    EXPECT_EQ(fs.closes, 1);
+    EXPECT_FALSE(recorder.enabled);
+}
+
+TEST(TapeRecorder, T4_AfterASignatureFailureTheNextCaptureCanStart)
+{
+    Capture c;
+    fs.file("cap.tap").fail_from_write = 1;
+    fs.file("cap.tap").fail_count = 1;
+    guarded("first attempt", [&]() { c.start_capture("cap"); });
+    guarded("second attempt", [&]() { c.start_capture("again"); });
+    EXPECT_EQ(fs.opens, 2);
+    EXPECT_TRUE(recorder.enabled);
+    guarded("finish", [&]() { c.finish(); });
+}
+
+TEST(TapeRecorder, AShortSignatureWriteIsAnErrorToo)
+{
+    Capture c;
+    fs.file("cap.tap").fail_from_write = 1;
+    fs.file("cap.tap").fail_count = 1;
+    fs.file("cap.tap").fail_kind = WF_SHORT;
+    c.start_capture("cap");
+    EXPECT_TRUE(has_popup(c.ui, "Error writing signature"));
+    EXPECT_EQ(fs.opens, fs.closes);
+    EXPECT_FALSE(recorder.enabled);
+}
