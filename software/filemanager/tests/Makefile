@@ -3,9 +3,9 @@ CXXFLAGS := -std=c++14 -g -I. -I.. -I../../components -I../../filesystem -I../..
 OUTPUT_DIR := output
 TEMP_AUTO_CLEANUP_TEST := $(OUTPUT_DIR)/tempAutoCleanupTest
 
-.PHONY: all temp-auto-cleanup asan fat-media-swap fat-media-swap-asan
+.PHONY: all temp-auto-cleanup asan fat-media-swap fat-media-swap-asan sd-poll sd-poll-asan
 
-all: temp-auto-cleanup fat-media-swap
+all: temp-auto-cleanup fat-media-swap sd-poll
 
 temp-auto-cleanup:
 	mkdir -p $(OUTPUT_DIR)
@@ -37,3 +37,20 @@ fat-media-swap-asan:
 	mkdir -p $(OUTPUT_DIR)/asan
 	$(CC) -g -w -fsanitize=address $(FAT_INC) -c $(FAT_C_SRCS) && mv ff.o ffunicode.o ffsystem.o $(OUTPUT_DIR)/asan/
 	$(CXX) $(CXXFLAGS) $(FAT_INC) -fsanitize=address -fno-omit-frame-pointer $(FAT_SRCS) $(OUTPUT_DIR)/asan/ff.o $(OUTPUT_DIR)/asan/ffunicode.o $(OUTPUT_DIR)/asan/ffsystem.o -o $(OUTPUT_DIR)/fatMediaSwapTestAsan && env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=0 $(OUTPUT_DIR)/fatMediaSwapTestAsan
+
+# SD card removal with a disk image entered, through the real SdCardManager::poll(): only the SdCard
+# methods are replaced, by a RAM medium. stub/ holds the RTOS task calls that file needs.
+SD_POLL_TEST := $(OUTPUT_DIR)/sdPollTest
+SD_POLL_CXXFLAGS := -std=c++14 -g -Istub -I. -I.. -I../../components -I../../filesystem -I../../infra -I../../system -I../../userinterface -I../../io/usb/tests -I../../io/sd_card
+SD_POLL_SRCS := sd_poll_test.cpp ../../io/usb/tests/host_test_main.cpp ../../io/sd_card/sdcard_manager.cc \
+	$(filter-out fat_media_swap_test.cpp ../../io/usb/tests/host_test_main.cpp,$(FAT_SRCS))
+
+sd-poll:
+	mkdir -p $(OUTPUT_DIR)
+	$(CC) -g -w $(FAT_INC) -c $(FAT_C_SRCS) && mv ff.o ffunicode.o ffsystem.o $(OUTPUT_DIR)/
+	$(CXX) $(SD_POLL_CXXFLAGS) $(FAT_INC) $(SD_POLL_SRCS) $(OUTPUT_DIR)/ff.o $(OUTPUT_DIR)/ffunicode.o $(OUTPUT_DIR)/ffsystem.o -o $(SD_POLL_TEST) && $(SD_POLL_TEST)
+
+sd-poll-asan:
+	mkdir -p $(OUTPUT_DIR)/asan
+	$(CC) -g -w -fsanitize=address $(FAT_INC) -c $(FAT_C_SRCS) && mv ff.o ffunicode.o ffsystem.o $(OUTPUT_DIR)/asan/
+	$(CXX) $(SD_POLL_CXXFLAGS) $(FAT_INC) -fsanitize=address -fno-omit-frame-pointer $(SD_POLL_SRCS) $(OUTPUT_DIR)/asan/ff.o $(OUTPUT_DIR)/asan/ffunicode.o $(OUTPUT_DIR)/asan/ffsystem.o -o $(OUTPUT_DIR)/sdPollTestAsan && env -u LD_PRELOAD ASAN_OPTIONS=detect_leaks=0 $(OUTPUT_DIR)/sdPollTestAsan

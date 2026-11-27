@@ -326,9 +326,8 @@ TEST(FatMediaSwap, FormatWithNoFreeVolumeFailsAndLeavesVolume0Alone)
 
 // A disk image entered on the medium is held open by the file manager's mount cache.
 // SD removal used to detach the disk before invalidating, so the open image kept the file
-// system and its volume slot for good. Both orders run on the real file device, FAT code and
-// file manager; the order the callers must use releases the slot.
-static void swap_with_mounted_image(bool invalidate_first, int cycles, int *mounted_out)
+// system and its volume slot for good. This is the order the callers must use.
+static void swap_with_mounted_image(int cycles, int *mounted_out)
 {
     Medium m;
     FileDevice *dev = new_device(m);
@@ -354,13 +353,8 @@ static void swap_with_mounted_image(bool invalidate_first, int cycles, int *moun
         pi.index = pi.workPath.getDepth();
         SubPath &sp = *pi.getSubPath();
         fm->add_mount_point(&sp, img, new FileSystemInFile());
-        if (invalidate_first) {
-            fm->invalidate(dev);
-            dev->detach_disk();
-        } else {
-            dev->detach_disk();
-            fm->invalidate(dev);
-        }
+        fm->invalidate(dev); // closes the mounted image, so the detach can free the file system
+        dev->detach_disk();
     }
     *mounted_out = mounted;
     fm->remove_root_entry(dev);
@@ -371,17 +365,7 @@ TEST(FatMediaSwap, InvalidateBeforeDetachReleasesTheSlotOfAnEnteredImage)
 {
     int mounted = 0;
     const int cycles = 2 * FF_VOLUMES;
-    swap_with_mounted_image(true, cycles, &mounted);
+    swap_with_mounted_image(cycles, &mounted);
     EXPECT_EQ(mounted, cycles);
     EXPECT_EQ(used_slots(), 0);
-}
-
-// The order SdCardManager used to have: documents why it had to change.
-TEST(FatMediaSwap, DetachBeforeInvalidateKeepsTheSlotOfAnEnteredImage)
-{
-    int mounted = 0;
-    const int cycles = 2 * FF_VOLUMES;
-    swap_with_mounted_image(false, cycles, &mounted);
-    EXPECT_TRUE(mounted < cycles);
-    reset_slots();
 }
