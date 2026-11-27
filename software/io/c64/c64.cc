@@ -618,9 +618,24 @@ void C64::stop(bool do_raster)
             // resume() writes the compare back whether or not the raster interrupt is enabled
             // ($D019 latches the match either way), so find it either way. $D011 reads the
             // raster, not the compare, in bit 7.
-            determine_d012();
-            printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
+        {
+            bool detect_compare = true;
+#if U64
+            // A monitor Debug session stops the C64 around every step. With the compare
+            // searched for on those stops while the raster interrupt is off, a Continue
+            // from ROM left the jiffy clock stopped on an Ultimate 64.
+            detect_compare = (vic_irq_en & 0x01) ||
+                !(machine_monitor_global_reset_sees_debug_session &&
+                  machine_monitor_global_reset_sees_debug_session());
+#endif
+            if (detect_compare) {
+                determine_d012();
+                printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
+            } else {
+                vic_d011 = VIC_REG(17); // for all other bits
+            }
             break;
+        }
         case 2:
             printf("Frozen on R/Wn sequence.\n");
             break;
