@@ -324,6 +324,10 @@ e2e:
   keystroke-read-back               x      x      x      x      x
   lint                              x      x      x      x      x
   machine-code-monitor              .      .      .      x      x
+  machine-code-monitor-debug        .      .      .      x      x
+  machine-code-monitor-harness      .      .      x      x      x
+  machine-code-monitor-matrix       .      .      .      x      x
+  machine-code-monitor-regression      .      .      .      x      x
   memory-views                      .      .      x      x      x
   menu-freeze-dma                   .      .      x      x      x
   menu-reset-race                   .      .      x      x      x
@@ -373,6 +377,7 @@ e2e:
   wake-on-wifi                      .      .      .      x      x
   web-index                         .      .      .      x      x
   web-theme                         .      .      .      x      x
+  web-tokenizer                     .      .      .      x      x
 
 perf:
   rest-latency                      .      .      x      x      x
@@ -396,8 +401,8 @@ soak:
   usb-keyboard-repeat               .      .      .      x      x
 
                                ------ ------ ------ ------ ------
-  suites                           16     38     91    107    107
-  suite runs                       16     38     91    214    321
+  suites                           16     38     93    113    113
+  suite runs                       16     38     93    226    339
 
 Scenario and check counts, and durations, are not shown here:
 the registry does not know them. They depend on the machine and are
