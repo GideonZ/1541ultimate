@@ -171,6 +171,8 @@ NetworkInterface :: ~NetworkInterface()
 	dhcp_stop(&my_net_if);
 	netif_set_down(&my_net_if);
 	netif_remove(&my_net_if);
+	// dhcp_stop() keeps the client attached and netif_remove() does not free it
+	dhcp_cleanup(&my_net_if);
 
 	// quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
