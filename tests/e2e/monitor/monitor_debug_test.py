@@ -1163,7 +1163,7 @@ def prove_monitor_exit_basic_liveness_and_reentry(
     if reenter:
         _reopen_monitor(session)
         mt.find_status_line(session.capture())  # monitor UI must be intact
-        mt.write_rest_memory(rest_host, 0xC7A0, bytes([0xEA, 0xEA]))
+        mt.write_rest_memory(rest_host, 0xC7A0, bytes.fromhex("EAEA4CA2C7"))
         session.goto("C7A0")
         session.send_char("A")
         if "Dbg" not in _header_line(session):
@@ -1284,7 +1284,8 @@ def run_debug_tests(rest_host: str, session: mt.MonitorSession) -> None:
         # 4 NOPs: safe to both step over (Debug) and copy byte-for-byte (Range),
         # so the same fixture proves both without conflating code and data.
         program = bytes([0xEA, 0xEA, 0xEA, 0xEA])
-        mt.write_rest_memory(rest_host, 0xC080, program)
+        # The JMP to itself keeps the CPU here when Debug is left.
+        mt.write_rest_memory(rest_host, 0xC080, program + bytes([0x4C, 0x84, 0xC0]))
         mt.write_rest_memory(rest_host, 0xC090, bytes([0x00, 0x00, 0x00, 0x00]))
         session.goto("C080")
         session.send_char("A")
@@ -1501,7 +1502,7 @@ def run_debug_tests(rest_host: str, session: mt.MonitorSession) -> None:
 
     with mt.check("Debug: returning to ASM after stepping elsewhere follows the current debug PC"):
         _reopen_monitor(session)
-        mt.write_rest_memory(rest_host, 0xC060, bytes([0xA9, 0x22, 0xEA, 0xEA]))
+        mt.write_rest_memory(rest_host, 0xC060, bytes.fromhex("A922EAEA4C64C0"))
         session.goto("C060")
         session.send_char("A")
         session.send_char("D")
@@ -1523,7 +1524,7 @@ def run_debug_tests(rest_host: str, session: mt.MonitorSession) -> None:
 
     with mt.check("Debug: C=+R resets the machine and keeps Debug open with blank context"):
         _reopen_monitor(session)
-        mt.write_rest_memory(rest_host, 0xC070, bytes([0xA9, 0x11, 0xEA]))
+        mt.write_rest_memory(rest_host, 0xC070, bytes.fromhex("A911EA4C73C0"))
         session.goto("C070")
         session.send_char("A")
         session.send_char("D")
@@ -4240,7 +4241,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
             reenter=False)
         _restore_safe_banking_display_hygiene(rest_host, session, "exit-liveness banked cleanup")
         # Re-entry proof in the restored (KERNAL-mapped) banking.
-        mt.write_rest_memory(rest_host, 0xC7A0, bytes([0xEA, 0xEA]))
+        mt.write_rest_memory(rest_host, 0xC7A0, bytes.fromhex("EAEA4CA2C7"))
         session.goto("C7A0")
         session.send_char("A")
         if "Dbg" not in _header_line(session):
