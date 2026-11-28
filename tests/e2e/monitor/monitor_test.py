@@ -4414,6 +4414,10 @@ def run_freeze_debug_chrome_test(session: MonitorSession, rest_host: str) -> Non
         freeze_frame_has_chrome(rest_host, "after a Step Into")
     finally:
         session.send_key("CTRL_D")
+    # Leaving Debug resumes the program at $C001 when the menu next closes, and
+    # later checks load data containing JAM opcodes over $C000 before that.
+    reset_rest_machine(rest_host, None)
+    session.enter_monitor()
 
 
 def await_row_text(session: MonitorSession, address: int, needle: str,
