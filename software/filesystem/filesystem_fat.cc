@@ -11,8 +11,10 @@
 #include <stdio.h>
 #include <string.h>
 
-FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p)
+FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p), openFiles(4, NULL), openDirs(2, NULL)
 {
+    driveIndex = 0xFF; // no volume yet
+    prefix[0] = 0;
     uint8_t drv = ChanFATManager :: getManager() -> addDrive(p);
     memset(&fatfs, 0, sizeof(FATFS));
 
@@ -22,14 +24,39 @@ FileSystemFAT :: FileSystemFAT(Partition *p) : FileSystem(p)
     }
 }
 
+bool FileSystemFAT :: detach_handles(void)
+{
+    // Whatever is still open cannot be used any more, and must not touch this object again.
+    bool none = (openFiles.get_elements() == 0) && (openDirs.get_elements() == 0);
+    while (openFiles.get_elements() > 0) {
+        FileFAT *f = openFiles[0];
+        f->owner = NULL;
+        f->invalidate();
+        openFiles.remove(f);
+    }
+    while (openDirs.get_elements() > 0) {
+        DirectoryFAT *d = openDirs[0];
+        d->owner = NULL;
+        d->fs = NULL;
+        openDirs.remove(d);
+    }
+    return none;
+}
+
 FileSystemFAT :: ~FileSystemFAT()
 {
-    f_unmount(prefix);
-    ChanFATManager :: getManager() -> removeDrive(driveIndex);
+    detach_handles();
+    if (driveIndex != 0xFF) { // without a volume there is nothing to unmount, and no slot to give back
+        f_unmount(prefix);
+        ChanFATManager :: getManager() -> removeDrive(driveIndex);
+    }
 }
 
 bool    FileSystemFAT :: init(void)
 {
+    if (driveIndex == 0xFF) {
+        return false; // all volumes are taken; an empty prefix would mount volume 0
+    }
     FRESULT fres = f_mount(&fatfs, prefix, 1);
     return (fres == FR_OK);
 }
@@ -119,6 +146,9 @@ FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 FRESULT FileSystemFAT :: format(const char *name)
 {
 #if FF_USE_MKFS
+    if (driveIndex == 0xFF) {
+        return FR_NOT_ENABLED; // no volume; an empty prefix would format volume 0
+    }
     MKFS_PARM param;
     param.fmt = FM_SFD | FM_ANY;
     param.n_fat = 1;
@@ -187,6 +217,33 @@ FRESULT FileSystemFAT :: file_attrib(const TCHAR *path, uint8_t attrib, uint8_t 
 #endif
 }
 
+FileFAT :: FileFAT(FileSystemFAT *fs) : File(fs), owner(fs)
+{
+    fs->openFiles.append(this);
+}
+
+FileFAT :: ~FileFAT()
+{
+    if (owner) {
+        owner->openFiles.remove(this);
+    }
+}
+
+DirectoryFAT :: DirectoryFAT(FileSystemFAT *fs) : fs(fs), owner(fs)
+{
+    fatdir = new DIR;
+    fs->openDirs.append(this);
+}
+
+DirectoryFAT :: ~DirectoryFAT()
+{
+    if (owner) {
+        f_closedir(fatdir);
+        owner->openDirs.remove(this);
+    }
+    delete fatdir;
+}
+
 FRESULT FileFAT :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
     if (!get_file_system()) {
@@ -233,7 +290,10 @@ FRESULT FileFAT :: sync(void)
 
 FRESULT FileFAT :: close(void)
 {
-    FRESULT res = f_close(getFIL());
+    FRESULT res = FR_NO_FILESYSTEM; // the file system is gone, and with it the file
+    if (owner) {
+        res = f_close(getFIL());
+    }
     delete this;
     return res;
 }

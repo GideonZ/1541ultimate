@@ -82,18 +82,18 @@ void SdCardManager :: poll()
 		case e_device_ready:
 			if(!(sense & SD_CARD_DETECT)) { // removal
 				fm->sendEventToObservers(eNodeMediaRemoved, "/", sd_dev->get_name());
+				fm->invalidate(sd_dev); // closes the mounted images first, so detach can free the file system
 				sd_dev->detach_disk();
 				sd_card->set_state(e_device_no_media);
-				fm->invalidate(sd_dev);
 			}
 			break;
 
 		case e_device_error:
 			if(!(sense & SD_CARD_DETECT)) { // removal
 				fm->sendEventToObservers(eNodeMediaRemoved, "/", sd_dev->get_name());
+				fm->invalidate(sd_dev); // closes the mounted images first, so detach can free the file system
 				sd_dev->detach_disk();
 				sd_card->set_state(e_device_no_media);
-				fm->invalidate(sd_dev);
 			}
 			break;
 			

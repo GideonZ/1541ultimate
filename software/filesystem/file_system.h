@@ -41,6 +41,10 @@ public:
 	virtual PathStatus_t walk_path(PathInfo& pathInfo);
 
 	virtual bool    init();              // Initialize file system
+	// The medium is going away: whatever is still open in this file system is cut loose
+	// and fails from now on. Returns true when nothing was open, i.e. when nobody can
+	// still be using the object and it is safe to delete.
+	virtual bool    detach_handles() { return true; }
     virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
 	virtual bool    supports_direct_sector_access(void) { return false; }
