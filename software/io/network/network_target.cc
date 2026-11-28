@@ -52,6 +52,8 @@ NetworkTarget::NetworkTarget(int id)
     quick_message.message = quick_bytes;
     socket_count = 0;
     discard_read_reply();
+    discard_write_chunk();
+    write_chunk_stale = false;
     memset(jobs, 0, sizeof(jobs));
     job = NULL;
     queue = NULL;
@@ -186,6 +188,8 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
     *reply = &c_message_empty;
     *status = &c_status_internal_error;
     if (is_quick(command)) {
+        // Any other command ends a chunked write; this one never reaches the worker that holds it.
+        write_chunk_stale = true;
         answer_quick(command, reply, status);
         return;
     }
@@ -341,6 +345,18 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
     // client bytes left over from an earlier read.
     discard_read_reply();
 
+    // Any other command ends a chunked write that is still accumulating. That
+    // is what keeps the accumulation out of the way of `buffer`'s other users,
+    // open_socket's name resolution and a read reply being handed out. So does
+    // an abort or a C64 reset, which leave the flag for this task to act on.
+    portENTER_CRITICAL();
+    bool drop_chunk = write_chunk_stale; // set by the UCI Server task, which can run between a read and a clear
+    write_chunk_stale = false;
+    portEXIT_CRITICAL();
+    if (drop_chunk || (command->message[1] != NET_CMD_WRITE_SOCKET_CHUNK)) {
+        discard_write_chunk();
+    }
+
     switch(command->message[1]) {
         case NET_CMD_SET_IPADDR:
             *reply = &c_message_empty;
@@ -397,6 +413,15 @@ void NetworkTarget :: execute(Message *command, Message **reply, Message **statu
         case NET_CMD_WRITE_SOCKET:
         	write_socket(command, reply, status);
         	break;
+        case NET_CMD_WRITE_SOCKET_CHUNK:
+            if (command->length < 7) { // 2 + 5
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                discard_write_chunk();
+                break;
+            }
+            write_socket_chunk(command, reply, status);
+            break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command;
@@ -586,12 +611,11 @@ void NetworkTarget :: discard_read_reply(void)
 }
 
 #include "dump_hex.h"
-void NetworkTarget :: write_socket(Message *command, Message **reply, Message **status)
+// Both write commands report a send from here, so they cannot drift apart in
+// what they tell the client. The retry on ENOMEM below repeats a send that sent
+// nothing: a datagram leaves whole or not at all, so it never sends part of a payload twice.
+void NetworkTarget :: send_to_socket(int socketnr, uint8_t *src, int length, Message **reply, Message **status)
 {
-    uint8_t socketnr = command->message[2];
-    uint8_t *src = &command->message[3];
-
-    int length = command->length - 3;
     int ret;
     if (owns_socket(socketnr)) {
         SliceWait wait(cancel, 0); // no limit, as before, unless the command is aborted
@@ -642,6 +666,75 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 	} else {
 	    *status = &c_status_ok;
 	}
+}
+
+void NetworkTarget :: write_socket(Message *command, Message **reply, Message **status)
+{
+    uint8_t socketnr = command->message[2];
+    uint8_t *src = &command->message[3];
+
+    int length = command->length - 3;
+    send_to_socket(socketnr, src, length, reply, status);
+}
+
+void NetworkTarget :: write_socket_chunk(Message *command, Message **reply, Message **status)
+{
+    uint8_t socketnr = command->message[2];
+    int offset = ((int)command->message[3]) | (((int)command->message[4]) << 8);
+    int total = ((int)command->message[5]) | (((int)command->message[6]) << 8);
+    int length = command->length - 7;
+
+    *reply = &c_message_empty;
+
+    if (offset == 0) {
+        // An opening chunk announces the payload and replaces whatever was
+        // accumulating, so a client that restarts a payload gets a clean one.
+        discard_write_chunk();
+        if (total > NET_MAX_SOCKET_WRITE) {
+            *status = &c_status_param_out_of_range;
+            return;
+        }
+        write_handle = socketnr;
+        write_total = total;
+    } else if ((offset != write_offset) || (socketnr != write_handle) || (total != write_total)) {
+        // A chunk carries where it belongs, so one that does not continue the
+        // payload in progress, or that arrives when none is, is refused here
+        // rather than spliced into a datagram the client never asked for.
+        discard_write_chunk();
+        *status = &c_status_invalid_params;
+        return;
+    }
+
+    if ((write_offset + length) > write_total) {
+        discard_write_chunk();
+        *status = &c_status_invalid_params;
+        return;
+    }
+
+    memcpy(&buffer[write_offset], &command->message[7], length);
+    write_offset += length;
+
+    if (write_offset < write_total) {
+        // The payload is short of its total, so nothing goes out yet. The empty
+        // reply and this status say the chunk was taken and no more.
+        *status = &c_status_ok;
+        return;
+    }
+
+    // Complete, so it leaves as the single datagram the client asked for. The
+    // accumulation ends here, before the send, so a send that fails cannot
+    // leave a payload behind for the next chunk to continue.
+    int handle = write_handle;
+    int payload = write_total;
+    discard_write_chunk();
+    send_to_socket(handle, buffer, payload, reply, status);
+}
+
+void NetworkTarget :: discard_write_chunk(void)
+{
+    write_handle = 0;
+    write_total = 0;
+    write_offset = 0;
 }
 
 void NetworkTarget :: close_socket(Message *command, Message **reply, Message **status)
@@ -725,6 +818,9 @@ void NetworkTarget :: c64_reset(void)
     cancel_job();
     resets++;
     wake_worker();
+    // The worker drops a payload half collected when the machine went down: lwip hands out
+    // the low descriptors again, so a stale handle could name a live socket of the next program.
+    write_chunk_stale = true;
 }
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)
@@ -762,4 +858,7 @@ void NetworkTarget :: abort(int a)
     // transaction, which is what a datagram read means anyway. The worker drops it
     // as the next command starts; an aborted command that still runs is cancelled.
     cancel_job();
+    // A chunked write goes the same way, so an abandoned payload is never completed by
+    // whatever the client sends next; the worker drops it as the next command starts.
+    write_chunk_stale = true;
 }
