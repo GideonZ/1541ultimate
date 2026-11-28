@@ -5709,7 +5709,7 @@ static int test_over_rts_refuses_non_jsr_stack_target()
     return 0;
 }
 
-static int test_traced_rts_uses_recorded_return_target_when_stack_is_unreliable()
+static int test_traced_rts_follows_a_rewritten_return_address()
 {
     FakeFreezeMachine m(true);
 
@@ -5731,11 +5731,12 @@ static int test_traced_rts_uses_recorded_return_target_when_stack_is_unreliable(
 
     traced.pc = 0x3005;
     traced.sp = 0xF8;
-    m.ram[0x01F9] = 0x44;
+    m.ram[0x01F9] = 0x44; // the routine rewrote its return address: $4445
     m.ram[0x01FA] = 0x44;
-    m.ram[0x4442] = 0xEA; // stack-derived caller is deliberately not JSR
+    m.ram[0x4442] = 0xEA; // and no JSR sits in front of it
+    m.ram[0x4445] = 0xEA;
     m.ram[FAKE_SENTINEL_ADDR] = 0x00;
-    m.arm_capture_context(0x2003, 0xFA, 0, 0, 0, 0x24);
+    m.arm_capture_context(0x4445, 0xFA, 0, 0, 0, 0x24);
 
     uint8_t rts[3] = { 0x60, 0x00, 0x00 };
     debug_predict(0x3005, rts, false, &pred);
@@ -5743,11 +5744,11 @@ static int test_traced_rts_uses_recorded_return_target_when_stack_is_unreliable(
     DebugContext ctx;
     DebugSession::Result r = m.trace(traced, pred, &ctx);
     if (expect(r == DebugSession::DBG_OK,
-               "RTS after Trace Into must use the recorded return target")) return 1;
-    if (expect(ctx.valid && ctx.pc == 0x2003,
-               "RTS must stop at the recorded JSR fall-through")) return 1;
-    if (expect(m.last_brk_patch_addr == 0x2003,
-               "RTS must patch the recorded return target, not stale stack data")) return 1;
+               "RTS after Trace Into must follow a rewritten return address")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0x4445,
+               "RTS must stop where the live stack returns to")) return 1;
+    if (expect(m.last_brk_patch_addr == 0x4445,
+               "RTS must patch the live stack target, not the recorded one")) return 1;
     if (expect(m.frozen, "Freeze-mode RTS step must refreeze before returning")) return 1;
     return 0;
 }
@@ -10220,7 +10221,7 @@ int main()
     RUN(test_remote_visible_rom_linear_step_keeps_brk_out_of_rom_image);
     RUN(test_visible_rom_basic_loop_interprets_index_register_and_flags);
     RUN(test_over_rts_refuses_non_jsr_stack_target);
-    RUN(test_traced_rts_uses_recorded_return_target_when_stack_is_unreliable);
+    RUN(test_traced_rts_follows_a_rewritten_return_address);
     RUN(test_traced_kernal_to_basic_step_out_patches_kernal_return);
     RUN(test_freeze_go_breakpoint_refreezes);
     RUN(test_contextless_breakpoint_go_uses_backend_launch);

@@ -2360,20 +2360,21 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
         }
         case DBG_PREDICT_RTS: {
             uint16_t traced_target;
-            if (peek_return_target(&traced_target)) {
+            bool traced = peek_return_target(&traced_target);
+            if (!from || !from->valid) {
+                if (!traced) return DBG_REFUSED;
                 addrs[n++] = traced_target;
                 break;
             }
-            if (!from || !from->valid) return DBG_REFUSED;
             uint16_t sp1 = (uint16_t)(0x0100 + ((from->sp + 1) & 0xFF));
             uint16_t sp2 = (uint16_t)(0x0100 + ((from->sp + 2) & 0xFF));
             uint16_t ret = (uint16_t)(peek_cpu(sp1, cpu_port) |
                                       (peek_cpu(sp2, cpu_port) << 8));
-            // RTS is only meaningful for an active subroutine frame. Reject
-            // stale/forged stack targets early so Over/Trace report a clear
-            // "not in subroutine" outcome instead of a generic patch failure.
+            // RTS goes where the live stack says. Without a traced frame,
+            // reject stale/forged stack targets early so Over/Trace report a
+            // clear "not in subroutine" outcome instead of a patch failure.
             uint16_t caller = (uint16_t)(ret - 2);
-            if (read_patch_byte(caller, cpu_port) != 0x20) {
+            if (!traced && read_patch_byte(caller, cpu_port) != 0x20) {
                 return DBG_NOT_IN_SUBROUTINE;
             }
             addrs[n++] = (uint16_t)(ret + 1);
