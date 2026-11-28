@@ -4748,6 +4748,10 @@ def run_program_vic_bank_test(context: MonitorContext) -> None:
         write_rest_memory_confirmed(context.rest_host, address, program)
         session.goto_run(f"{address:04X}")
         time.sleep(0.3)
+        # On a running machine G leaves the monitor up. A cartridge reads
+        # $DD00 when the monitor opens, not while it is up.
+        if not context.frozen:
+            leave_monitor_fully(session)
         session.enter_monitor()
         expect_bank(2, "monitor opened over a program in VIC bank 2")
         session.send_char("O")
