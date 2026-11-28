@@ -662,6 +662,25 @@ def av_capture_leaves_a_recorder_owned_stream_running() -> str:
     return "one stream left to the recorder, one armed and given back"
 
 
+@case(2, "OBS-8.3", "OBS-8.4")
+def a_packet_queued_before_the_window_closed_is_still_read() -> str:
+    """A capture that was descheduled past its window still sees what arrived.
+
+    The window is wall-clock. A packet already sitting in the socket arrived
+    inside it, so reading it after the deadline must not read as a stream that
+    was not arriving, or a stalled capture arms a stream the recorder owns.
+    """
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        with UdpSender("127.0.0.1", sock.getsockname()[1]) as sender:
+            sender.send(audio_packets(0, 1))
+            got = list(streams.receive([sock], {"127.0.0.1"}, 0.0))
+    expect("the queued packet is read with no time left", [m for *_, m in got],
+           [True])
+    return "a packet queued before the deadline is read after it"
+
+
 @case(2, "OBS-8.4", "OBS-8.5", "OBS-8.26", "OBS-14.3")
 def a_second_sender_is_counted_and_never_stopped() -> str:
     """Another machine on the same group is filtered out, not silenced.
