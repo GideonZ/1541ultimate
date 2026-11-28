@@ -203,6 +203,9 @@ class Keyboard;
 class Window;
 class MonitorBookmarks;
 
+// File name buffer: INFO_SIZE, the longest name a directory listing reports.
+#define MONITOR_FILE_NAME_MAX 128
+
 class MachineMonitor : public UIObject
 {
     MemoryBackend *backend;
@@ -214,7 +217,7 @@ class MachineMonitor : public UIObject
     uint32_t last_load_length;
     uint16_t last_save_start;
     uint16_t last_save_end;
-    char last_save_name[40];
+    char last_save_name[MONITOR_FILE_NAME_MAX];
     bool last_go_valid;
     uint16_t last_go_addr;
     bool go_pending;

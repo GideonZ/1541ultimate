@@ -113,7 +113,7 @@ static uint32_t monitor_last_load_length = 0;
 
 static uint16_t monitor_last_save_start = 0x0800;
 static uint16_t monitor_last_save_end = 0x9FFF;
-static char     monitor_last_save_name[40] = "";
+static char     monitor_last_save_name[MONITOR_FILE_NAME_MAX] = "";
 
 static bool     monitor_last_go_valid = false;
 static uint16_t monitor_last_go_addr = 0;
@@ -6937,7 +6937,7 @@ int MachineMonitor :: poll(int)
 void MachineMonitor::handle_load_command()
 {
     char path_buf[256] = "";
-    char name_buf[64] = "";
+    char name_buf[MONITOR_FILE_NAME_MAX] = "";
     if (!monitor_io::pick_file(get_ui(), "MONITOR LOAD: Select File", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), false)) {
         redraw_full();
@@ -7030,7 +7030,7 @@ void MachineMonitor::handle_save_command()
     last_save_end = end;
 
     char path_buf[256] = "";
-    char name_buf[36] = "";
+    char name_buf[MONITOR_FILE_NAME_MAX] = "";
     if (!monitor_io::pick_file(get_ui(), "MONITOR SAVE: Pick File/Dir", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), true)) {
         redraw_full();

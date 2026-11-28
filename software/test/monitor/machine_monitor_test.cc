@@ -67,12 +67,12 @@ namespace monitor_io {
 struct FakeMonitorIOState {
     bool pick_file_result;
     char pick_path[256];
-    char pick_name[64];
+    char pick_name[256];
     int pick_file_calls;
     bool last_pick_save_mode;
     bool load_called;
     char load_path[256];
-    char load_name[64];
+    char load_name[256];
     uint16_t load_start_addr;
     bool load_use_prg;
     uint32_t load_offset;
@@ -84,7 +84,7 @@ struct FakeMonitorIOState {
 
     bool save_called;
     char save_path[256];
-    char save_name[64];
+    char save_name[256];
     uint16_t save_start;
     uint16_t save_end;
     const char *save_error;
@@ -6929,6 +6929,44 @@ static int test_load_save_and_goto_command_flow(void)
         if (expect(strstr(ui.last_popup, "\n$0801-$0801 (1 bytes)") != NULL,
                    "Long confirmation filename test must keep the effective range on the second line.")) return 1;
         if (expect(mon.poll(0) == 1, "Long confirmation filename test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        // A name of 127 characters, the longest a directory listing reports,
+        // reaches Save and Load whole and is the next "Save as" default.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char long_name[128];
+        const int keys[] = { 'S', 'S', KEY_RETURN, 'L', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        memset(long_name, 'N', sizeof(long_name) - 1);
+        strcpy(long_name + sizeof(long_name) - 5, ".PRG");
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.push_prompt("0801-0801", 1);
+        ui.push_prompt("0801-0801", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_name, long_name);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Long name SAVE failed.")) return 1;
+        if (expect(strcmp(monitor_io::g_monitor_io.save_name, long_name) == 0,
+                   "SAVE over a picked file must keep the whole file name.")) return 1;
+        monitor_io::g_monitor_io.pick_name[0] = 0;
+        monitor_io::g_monitor_io.save_name[0] = 0;
+        if (expect(mon.poll(0) == 0, "Long default name SAVE failed.")) return 1;
+        if (expect(ui.last_prompt_maxlen == 127 &&
+                   strcmp(monitor_io::g_monitor_io.save_name, long_name) == 0,
+                   "\"Save as\" must offer and accept the whole file name.")) return 1;
+        strcpy(monitor_io::g_monitor_io.pick_name, long_name);
+        if (expect(mon.poll(0) == 0, "Long name LOAD failed.")) return 1;
+        if (expect(strcmp(monitor_io::g_monitor_io.load_name, long_name) == 0,
+                   "LOAD must keep the whole file name.")) return 1;
         mon.deinit();
     }
 
