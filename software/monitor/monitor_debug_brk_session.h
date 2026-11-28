@@ -66,6 +66,9 @@ protected:
     // as the run's result.
     static void clear_run_result_markers(uint8_t *page, uint16_t base,
                                          uint16_t length);
+    // Records that the debugger is about to write `byte` over `current` in the
+    // $0340-$035C work area, so leaving from a stop can put the program's byte back.
+    void claim_work_area_byte(uint16_t address, uint8_t current, uint8_t byte);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
     // The byte a patch records so it can put it back, which is not always the
     // byte read_patch_byte answers with. A backend whose patch store and live
@@ -186,6 +189,13 @@ private:
     bool screen_was_clobbered;
     volatile bool reset_cancel_requested;
     uint8_t saved_handler_bytes[128];
+    // $03F0-$03FB, then $03ED: the register stores, saved with the handler.
+    uint8_t saved_store_bytes[13];
+    // Work-area bytes the debugger wrote: the program's byte and the debugger's.
+    enum { WORK_AREA_LEN = 29 };
+    bool work_area_claimed[WORK_AREA_LEN];
+    uint8_t work_area_saved[WORK_AREA_LEN];
+    uint8_t work_area_written[WORK_AREA_LEN];
     uint8_t saved_nmi_trampoline_bytes[24];
     bool nmi_trampoline_installed;
     uint8_t saved_nmi_vector[2];

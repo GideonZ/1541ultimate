@@ -51,6 +51,7 @@ static const uint8_t HARD_VECTOR_ROM_CPU_PORT = 0x07;
 static const uint8_t HARD_VECTOR_DEFAULT_LO = 0x48;
 static const uint8_t HARD_VECTOR_DEFAULT_HI = 0xFF;
 static const uint16_t DEBUG_AREA_END  = 0x03FB;
+static const int STORE_BLOCK_LEN = DEBUG_AREA_END - STORE_Y + 1;
 
 // Max extra attempts to re-issue a patched launch that ran no program code
 // (relaunch_on_breakpoint_runaway). A miss is rare per launch, so keep it bounded.
@@ -214,6 +215,10 @@ BrkDebugSession :: BrkDebugSession()
     memset(patches, 0, sizeof(patches));
     memset(return_targets, 0, sizeof(return_targets));
     memset(saved_handler_bytes, 0, sizeof(saved_handler_bytes));
+    memset(saved_store_bytes, 0, sizeof(saved_store_bytes));
+    memset(work_area_claimed, 0, sizeof(work_area_claimed));
+    memset(work_area_saved, 0, sizeof(work_area_saved));
+    memset(work_area_written, 0, sizeof(work_area_written));
     memset(saved_nmi_trampoline_bytes, 0, sizeof(saved_nmi_trampoline_bytes));
     memset(saved_nmi_vector, 0, sizeof(saved_nmi_vector));
     memset(saved_brk_vector, 0, sizeof(saved_brk_vector));
@@ -328,6 +333,7 @@ void BrkDebugSession :: forget_installed_state(void)
     hard_vector_installed = false;
     hard_rom_vector_installed = false;
     hard_nmi_vector_installed = false;
+    memset(work_area_claimed, 0, sizeof(work_area_claimed));
     clear_return_targets();
 }
 
@@ -462,6 +468,10 @@ void BrkDebugSession :: save_and_install_handler(void)
 
     saved_brk_vector[0] = peek_visible(BRK_VECTOR_LO);
     saved_brk_vector[1] = peek_visible(BRK_VECTOR_HI);
+    for (int i = 0; i < STORE_BLOCK_LEN; i++) {
+        saved_store_bytes[i] = peek_visible((uint16_t)(STORE_Y + i));
+    }
+    saved_store_bytes[STORE_BLOCK_LEN] = peek_visible(STORE_HARD_CPU_PORT);
 
     for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
         poke_visible((uint16_t)(HANDLER_ADDR + i), HANDLER_BYTES[i]);
@@ -1291,15 +1301,39 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
         poke_visible((uint16_t)(HANDLER_ADDR + i),
                                                bytes[i]);
     }
+    // From here the CPU runs only the stub above and the spin JMP, so the rest
+    // of the area goes back before the spin is redirected and the program runs.
+    if (handler_installed) {
+        for (int i = (int)sizeof(bytes); i < SPIN_JMP - HANDLER_ADDR; i++) {
+            poke_visible((uint16_t)(HANDLER_ADDR + i), saved_handler_bytes[i]);
+        }
+        for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
+            poke_visible((uint16_t)(TRAMPOLINE_ADDR + i),
+                         saved_handler_bytes[HANDLER_BYTES_LEN + i]);
+        }
+        for (int i = 0; i < STORE_BLOCK_LEN; i++) {
+            poke_visible((uint16_t)(STORE_Y + i), saved_store_bytes[i]);
+        }
+        poke_visible(STORE_HARD_CPU_PORT, saved_store_bytes[STORE_BLOCK_LEN]);
+    }
+    // A work-area byte that no longer holds what the debugger wrote was
+    // changed by the program, and stays.
+    for (int i = 0; i < WORK_AREA_LEN; i++) {
+        uint16_t address = (uint16_t)(INSN_TRAMPOLINE_ADDR + i);
+        if (work_area_claimed[i] && peek_visible(address) == work_area_written[i]) {
+            poke_visible(address, work_area_saved[i]);
+        }
+        work_area_claimed[i] = false;
+    }
     poke_visible(SPIN_JMP, 0x4C);
     poke_visible(SPIN_OPERAND_LO,
                                            (uint8_t)(HANDLER_ADDR & 0xFF));
     poke_visible(SPIN_OPERAND_HI,
                                            (uint8_t)(HANDLER_ADDR >> 8));
     // Restore the interrupted program's soft vectors inside this same stopped
-    // session so a live CPU sees them before leaving the spin loop. The
-    // cassette-buffer scratch stays in place (the CPU is about to run its
-    // restore stub); clearing handler_installed makes uninstall_handler() a no-op.
+    // session so a live CPU sees them before leaving the spin loop. The stub
+    // and the spin JMP stay in place (the CPU is about to run them); clearing
+    // handler_installed makes uninstall_handler() a no-op.
     if (handler_installed) {
         poke_visible(BRK_VECTOR_LO,
                                                saved_brk_vector[0]);
@@ -1418,6 +1452,21 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
 uint16_t BrkDebugSession :: hard_brk_stub_address(void)
 {
     return HARD_BRK_STUB_ADDR;
+}
+
+void BrkDebugSession :: claim_work_area_byte(uint16_t address, uint8_t current,
+                                             uint8_t byte)
+{
+    int i = address - INSN_TRAMPOLINE_ADDR;
+    if (i < 0 || i >= WORK_AREA_LEN) {
+        return;
+    }
+    // A byte that no longer holds the debugger's last write is the program's again.
+    if (!work_area_claimed[i] || current != work_area_written[i]) {
+        work_area_saved[i] = current;
+    }
+    work_area_written[i] = byte;
+    work_area_claimed[i] = true;
 }
 
 void BrkDebugSession :: clear_run_result_markers(uint8_t *page, uint16_t base,
@@ -1573,8 +1622,10 @@ DebugSession::Result BrkDebugSession :: step_linear_via_trampoline(
     }
     bool stopped = begin_stopped_session();
     for (uint8_t i = 0; i < pred.length; i++) {
-        poke_cpu((uint16_t)(INSN_TRAMPOLINE_ADDR + i),
-                 instruction_bytes[i], cpu_port);
+        uint16_t address = (uint16_t)(INSN_TRAMPOLINE_ADDR + i);
+        claim_work_area_byte(address, peek_cpu(address, cpu_port),
+                             instruction_bytes[i]);
+        poke_cpu(address, instruction_bytes[i], cpu_port);
     }
     end_stopped_session(stopped);
 

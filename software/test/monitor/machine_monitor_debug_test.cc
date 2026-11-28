@@ -7567,6 +7567,10 @@ static int test_run_to_lagging_visible_rom_uses_step_bytes_for_trampoline()
     m.kernal_rom[0x0007] = 0xEA;
     m.force_raw_peek_brk = true;
     m.force_raw_peek_brk_addr = 0xE005;
+    // Program bytes in the debugger's area, to check what leaving puts back.
+    for (int a = 0x0340; a <= 0x03FB; a++) {
+        m.ram[a] = 0x5A;
+    }
 
     DebugContext from;
     debug_context_reset(&from);
@@ -7587,6 +7591,28 @@ static int test_run_to_lagging_visible_rom_uses_step_bytes_for_trampoline()
                "Lagging visible-ROM run-to must report the real fall-through")) return 1;
     if (expect(m.ram[0x0340] == 0xA5 && m.ram[0x0341] == 0x61,
                "Run-to trampoline must copy coherent step bytes, not stale peek_cpu BRK")) return 1;
+
+    // Leaving from this stop: the CPU runs only the resume stub and the spin
+    // JMP, so every other byte the debugger wrote goes back, except one the
+    // program changed after the debugger wrote it.
+    m.ram[0x0341] = 0x99;
+    m.cleanup();
+    if (expect(m.ram[FAKE_SPIN_LO] == (uint8_t)(FAKE_RESUME_TRAMP & 0xFF) &&
+               m.ram[FAKE_SPIN_HI] == (uint8_t)(FAKE_RESUME_TRAMP >> 8) &&
+               m.ram[FAKE_RESUME_TRAMP + 26] == 0x40,
+               "Leaving must keep the resume stub and the spin redirect")) return 1;
+    if (expect(m.ram[0x0341] == 0x99,
+               "Leaving must keep a work-area byte the program changed")) return 1;
+    for (int a = 0x0340; a <= 0x03FB; a++) {
+        if (a == 0x0341 || (a >= FAKE_RESUME_TRAMP && a < FAKE_RESUME_TRAMP + 27) ||
+                (a >= FAKE_SPIN_JMP && a <= FAKE_SPIN_HI)) {
+            continue;
+        }
+        char msg[96];
+        snprintf(msg, sizeof(msg), "Leaving from a stop must restore $%04X, got $%02X",
+                 a, m.ram[a]);
+        if (expect(m.ram[a] == 0x5A, msg)) return 1;
+    }
     return 0;
 }
 
