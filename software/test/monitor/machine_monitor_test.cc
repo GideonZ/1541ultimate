@@ -9370,6 +9370,55 @@ static int test_assembly_data_range_is_byte_addressable(void)
         mon.deinit();
     }
 
+    // In edit mode the cursor is on one byte of the row, and copy, Number and
+    // Range take that byte.
+    {
+        const int copy[] = { 'J', 'A', 'E', KEY_RIGHT, KEY_CTRL_C, KEY_BREAK, 'J', KEY_CTRL_V };
+        const int number[] = { 'J', 'A', 'E', KEY_RIGHT, 'N' };
+        const int range[] = { 'J', 'A', 'E', KEY_RIGHT, 'R', KEY_RIGHT, KEY_CTRL_C, KEY_BREAK,
+                              'J', KEY_CTRL_V };
+        struct EditCase {
+            const int *keys;
+            int count;
+        } cases[] = { { copy, 8 }, { number, 5 }, { range, 10 } };
+
+        for (int c = 0; c < 3; c++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeBankedMemoryBackend backend;
+            FakeKeyboard kb(cases[c].keys, cases[c].count);
+            char line[32];
+
+            for (uint16_t i = 0; i < 8; i++) {
+                backend.io[i] = (uint8_t)(0xA0 + i);
+            }
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            ui.set_prompt("D000", 1);
+            ui.push_prompt("C100", 1);
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int i = 0; i < cases[c].count; i++) {
+                if (expect(mon.poll(0) == 0, "DATA edit shortcut: command failed.")) return 1;
+            }
+            if (c == 0) {
+                if (expect(backend.read(0xC100) == 0xA1,
+                           "C=+C in DATA edit must copy the byte under the cursor.")) return 1;
+            } else if (c == 1) {
+                get_popup_line(screen, 0, line, sizeof(line));
+                if (expect(strstr(line, "MONITOR NUM $D001 BYTE") == line,
+                           "N in DATA edit must target the byte under the cursor.")) return 1;
+            } else {
+                if (expect(backend.read(0xC100) == 0xA1 && backend.read(0xC101) == 0xA2 &&
+                           backend.read(0xC102) == 0x00,
+                           "A range in DATA edit must run between the bytes under the cursor.")) return 1;
+            }
+            mon.deinit();
+        }
+    }
+
     // A range that starts in code and ends in data covers both, with the code
     // end still taken as a whole instruction.
     {

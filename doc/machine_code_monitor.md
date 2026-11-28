@@ -199,7 +199,7 @@ On the U2+ cartridge the monitor reads through the CPU-visible aperture, so it c
 
 A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `Left` / `Right` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row. `[I/O]` is writable. A write to a `[CHR]` row goes to the RAM underneath, so the displayed ROM byte does not change. The same bytes can also be edited in Memory view with `M`. `DEL` clears a `DATA` row's bytes to `$00`, where on a decoded instruction it writes `NOP`.
 
-The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
+The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes. In edit mode, `C=+C`, `N` and `R` on a `DATA` row take the byte under the cursor; `N` and `R` are available there from the second byte of a row.
 
 Assembly view also allows you to assemble instructions inline (in `E`dit mode) and to debug code (in `D`ebug mode).
 

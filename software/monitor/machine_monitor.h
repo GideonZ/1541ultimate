@@ -408,6 +408,7 @@ class MachineMonitor : public UIObject
     void move_binary_bits(int delta);
     void page_move(int lines);
     Cursor active_cursor(void) const;
+    uint16_t cursor_byte_addr(void) const;
     bool range_contains(uint16_t address) const;
     bool clipboard_copy_bytes(const uint8_t *data, size_t length);
     bool clipboard_copy_current(void);

@@ -2572,18 +2572,31 @@ uint8_t MachineMonitor :: range_span(uint16_t address) const
     return disasm_length(address);
 }
 
+// Editing a data row, each byte is an edit part, so the cursor can be on a
+// later byte than current_addr.
+uint16_t MachineMonitor :: cursor_byte_addr(void) const
+{
+    // A part beyond a short row is drawn on its first byte, so it counts as that.
+    if (edit_mode && state.view == MONITOR_VIEW_ASM && address_is_data(state.current_addr) &&
+        asm_edit_part < data_group_length(state.current_addr)) {
+        return (uint16_t)(state.current_addr + asm_edit_part);
+    }
+    return state.current_addr;
+}
+
 bool MachineMonitor :: range_contains(uint16_t address) const
 {
     if (!range_mode) {
         return false;
     }
     uint16_t start = range_anchor;
-    uint16_t end = state.current_addr;
+    uint16_t cursor = cursor_byte_addr();
+    uint16_t end = cursor;
     if (state.view == MONITOR_VIEW_ASM) {
         uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
-        if (state.current_addr < range_anchor) {
-            start = state.current_addr;
+        uint16_t current_end = (uint16_t)(cursor + range_span(cursor) - 1);
+        if (cursor < range_anchor) {
+            start = cursor;
             end = anchor_end;
         } else {
             start = range_anchor;
@@ -2625,18 +2638,19 @@ bool MachineMonitor :: clipboard_copy_byte(uint8_t value)
 
 bool MachineMonitor :: clipboard_copy_current(void)
 {
-    return clipboard_copy_byte(canonical_read(state.current_addr));
+    return clipboard_copy_byte(canonical_read(cursor_byte_addr()));
 }
 
 bool MachineMonitor :: clipboard_copy_range(void)
 {
     uint16_t start = range_anchor;
-    uint16_t end = state.current_addr;
+    uint16_t cursor = cursor_byte_addr();
+    uint16_t end = cursor;
     if (state.view == MONITOR_VIEW_ASM) {
         uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
-        if (state.current_addr < range_anchor) {
-            start = state.current_addr;
+        uint16_t current_end = (uint16_t)(cursor + range_span(cursor) - 1);
+        if (cursor < range_anchor) {
+            start = cursor;
             end = anchor_end;
         } else {
             start = range_anchor;
@@ -2710,7 +2724,7 @@ bool MachineMonitor :: clipboard_paste(void)
 void MachineMonitor :: toggle_range_mode(void)
 {
     if (!range_mode) {
-        range_anchor = state.current_addr;
+        range_anchor = cursor_byte_addr();
         range_mode = true;
         return;
     }
@@ -2738,7 +2752,7 @@ void MachineMonitor :: open_number_picker(void)
 
 void MachineMonitor :: number_picker_resolve_target(void)
 {
-    number_target_addr = state.current_addr;
+    number_target_addr = cursor_byte_addr();
     number_target_bytes = 1;
     number_target_locked = false;
 
