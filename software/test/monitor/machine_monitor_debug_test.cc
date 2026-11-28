@@ -2351,24 +2351,36 @@ static int test_ctrl_d_leaves_debug_only()
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
-    const int keys[] = { 'A', 'D', KEY_CTRL_D, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 4);
+    const int keys[] = { 'A', 'D', KEY_CTRL_D, 'D', KEY_CTRL_P,
+                         monitor_key_arrow_left, monitor_key_arrow_left, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 4; i++) {
-        int r = monitor.poll(0);
-        if (i < 3) {
-            if (expect(r == 0, "C=+D should leave Debug but stay in monitor")) return 1;
-        } else {
-            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
-        }
-    }
     char header[40];
+    for (int i = 0; i < 3; i++) {
+        if (expect(monitor.poll(0) == 0, "C=+D should leave Debug but stay in monitor")) return 1;
+    }
     screen.get_slice(1, 3, 38, header);
     if (expect(strstr(header, "Dbg") == NULL, "C=+D must clear the Dbg flag")) return 1;
+    for (int i = 0; i < 3; i++) {
+        if (expect(monitor.poll(0) == 0, "Left-arrow on the breakpoint list stays in the monitor")) return 1;
+    }
+    char row[42];
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(0, y, 40, row);
+        if (expect(strstr(row, "BREAKPOINTS") == NULL,
+                   "Left-arrow must close the breakpoint list")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") != NULL,
+               "Closing the breakpoint list must keep Debug active")) return 1;
+    if (expect(monitor.poll(0) == 0, "Left-arrow in Debug must stay in the monitor")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") == NULL, "Left-arrow must leave Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Final RUN/STOP exits")) return 1;
     monitor.deinit();
     return 0;
 }

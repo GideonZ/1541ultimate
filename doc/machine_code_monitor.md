@@ -43,7 +43,7 @@ To close the monitor:
 - Press `C=+O` again.
 - Press `RUN/STOP`, `ESC`, or the C64's top-left `←` key when no edit mode, Debug mode, or popup is active.
 
-`RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode - and closes the monitor only once nothing is left. In Debug mode, `RUN/STOP` and `ESC` leave Debug and stay in the monitor; in Edit mode they leave Edit first. The breakpoint list closes with `RUN/STOP`, `ESC` or `C=+P`, and a message box with an `Ok` button closes with `RETURN`. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
+`RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode - and closes the monitor only once nothing is left. In Debug mode it leaves Debug and stays in the monitor; in Edit mode it leaves Edit first. The breakpoint list also closes with `C=+P`, and a message box with an `Ok` button closes with `RETURN`. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
 
 Two shortcuts act on the machine rather than the view, and both work from a memory view and from edit mode:
 
@@ -806,7 +806,7 @@ Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and
 | Key                 | Effect                                                                   |
 | ------------------- | ------------------------------------------------------------------------ |
 | `C=+D`              | Leave Debug.                                                             |
-| `RUN/STOP` or `ESC` | Leave Debug. In Edit mode, the first press leaves Edit.                  |
+| `←`, `RUN/STOP`, `ESC` | Leave Debug. In Edit mode, the first press leaves Edit.               |
 | `C=+O`              | Leave Debug and close the monitor.                                       |
 | `C=+R`              | Reset the C64. Debug stays on, with blank registers.                     |
 
@@ -923,7 +923,7 @@ An Ultimate II+ or II+L cartridge cannot change the C64's ROM. While a breakpoin
 | `L`                           | Give the breakpoint a label of up to 4 characters (`Lbl`)  |
 | `E`                           | Enable or disable the breakpoint (`Enbl`)                  |
 | `DEL`                         | Clear the breakpoint (`Res`)                               |
-| `RUN/STOP`, `ESC` or `C=+P`   | Close the list                                             |
+| `←`, `RUN/STOP`, `ESC`, `C=+P` | Close the list                                            |
 | `C=+O`                        | Close the monitor                                          |
 
 Showing a breakpoint moves the view and selects its memory bank. The program stays stopped where it was.

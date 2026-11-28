@@ -1117,7 +1117,8 @@ void MachineMonitor :: edit_breakpoint_label(uint8_t slot)
 
 int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_P) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left ||
+            key == KEY_CTRL_P) {
         debug_close_breakpoint_popup();
         redraw_full();
         return 0;
@@ -1299,9 +1300,10 @@ int MachineMonitor :: debug_handle_key(int key)
     if (breakpoint_popup_active) {
         return debug_breakpoint_popup_handle_key(key);
     }
-    // Exit Debug shortcuts. ESC / RUN/STOP drop Debug only once Edit has
+    // Exit Debug shortcuts. The Back keys drop Debug only once Edit has
     // already been left by the outer edit-mode handler.
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_D) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left ||
+            key == KEY_CTRL_D) {
         debug_leave();
         draw();
         return 0;
