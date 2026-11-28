@@ -12,6 +12,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "driver/uart.h"
+#include "esp_random.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
 #include "my_uart.h"
@@ -168,7 +169,7 @@ extern esp_netif_t *my_sta_netif;
 void cmd_send_eth_packet(command_buf_t *buf)
 {
     rpc_send_eth_req *param = (rpc_send_eth_req *)buf->data;
-    err_t _err = esp_netif_transmit(my_sta_netif, &param->data, param->length);
+    esp_netif_transmit(my_sta_netif, &param->data, param->length);
     my_uart_free_buffer(UART_CHAN, buf);
 }
 
@@ -248,6 +249,15 @@ void cmd_clear_aps(command_buf_t *buf)
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
     buf->size = sizeof(rpc_espcmd_resp);
     resp->esp_err = wifi_clear_aps();
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+_Static_assert(RPC_ERR_ENTROPY_BUSY == ESP_ERR_TIMEOUT, "RPC_ERR_ENTROPY_BUSY is an esp_err_t");
+
+void cmd_get_random(command_buf_t *buf)
+{
+    buf->size = radio_entropy_serve_get_random(buf->data, buf->size, (void (*)(void *, size_t))esp_fill_random);
+    // The gate is released: the answer is sent without it
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
@@ -344,6 +354,9 @@ void dispatch(void *ct)
         case CMD_CLEAR_APS:
             cmd_clear_aps(pbuffer);
             break;
+        case CMD_GET_RANDOM:
+            cmd_get_random(pbuffer);
+            break;
         default:
             cmd_not_implemented(pbuffer);
             break;
@@ -353,7 +366,8 @@ void dispatch(void *ct)
 
 void start_dispatch(QueueHandle_t queue)
 {
-    xTaskCreate( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, tskIDLE_PRIORITY + 1, NULL );
+    // Core 1, above the system tasks: the UART ISR that feeds this queue runs on core 1 too
+    xTaskCreatePinnedToCore( dispatch, "Dispatch Task", DISPATCHER_STACK, queue, 19, NULL, 1 );
 }
 
 #if MULTITHREADED

@@ -169,6 +169,8 @@ SRCS_CC	 =  u2p_init.cc \
 			esp32.cc \
 			wifi.cc \
 			wifi_cmd.cc \
+			wifi_random.cc \
+			wifi_get_random.cc \
 			acia.cc \
 			modem.cc \
 			listener_socket.cc \
@@ -234,6 +236,7 @@ VPATH +=	$(BSP)/HAL/inc
 VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/wifi/raw_u64/main
+VPATH +=	$(PATH_SW)/wifi/common
 
 #            sock_echo.c \
 #			sys_calls.cc \

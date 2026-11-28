@@ -128,6 +128,7 @@ VPATH +=    $(PATH_SW)/application/update_u2p
 VPATH +=    $(PATH_SW)/../html
 VPATH +=    $(PATH_SW)/../doc/api
 VPATH +=	$(PATH_SW)/u64ctrl/main
+VPATH +=	$(PATH_SW)/wifi/common
 VPATH +=	$(PATH_SW)/u64ctrl/build/bootloader
 VPATH +=	$(PATH_SW)/u64ctrl/build/partition_table
 VPATH +=	$(PATH_SW)/u64ctrl/build

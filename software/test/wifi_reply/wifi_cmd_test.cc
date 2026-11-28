@@ -5,7 +5,9 @@
  * request ends whose reply comes in time, as the wait times out, late, or never.
  */
 #include <stdio.h>
+#include <string.h>
 #include "wifi_cmd.h"
+#include "wifi_random.h"
 
 Esp32 :: Esp32() : uart(NULL) {}
 Esp32 esp32;
@@ -20,11 +22,20 @@ static int waits;
 enum reply_time { NEVER, ON_TIME, AT_TIMEOUT, AFTER_RELEASE };
 static reply_time reply_at;
 static bool timed_out;
+static bool module_ready;
+static TickType_t buffer_wait;      // the ticks the last GetBuffer was given
+// What the module answers: a GET_RANDOM answer, or one of the power mode (the default)
+static bool random_answer;
+static int random_err;
+static uint8_t random_source = 1;
+static uint16_t random_length;
+static int random_command = -1;    // when not -1, the command the answer carries instead
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); failures++; } } while (0)
 
 BaseType_t DmaUART::GetBuffer(command_buf_t **b, TickType_t t)
 {
+    buffer_wait = t;
     if (!buffers_free) {
         return pdFALSE;
     }
@@ -45,6 +56,23 @@ BaseType_t wifi_rx_isr(command_buf_context_t *context, command_buf_t *buf, BaseT
 // The module answers the request with this header
 static void answer(rpc_header_t hdr)
 {
+    if (random_answer) {
+        rpc_get_random_resp *rnd = (rpc_get_random_resp *)rxbuf.data;
+        rnd->hdr = hdr;
+        if (random_command >= 0) {
+            rnd->hdr.command = (uint8_t)random_command;
+        }
+        rnd->esp_err = random_err;
+        rnd->source = random_source;
+        rnd->length = random_length;
+        for (int i = 0; i < random_length; i++) {
+            rnd->data[i] = (uint8_t)(0xA0 + i);
+        }
+        rxbuf.size = offsetof(rpc_get_random_resp, data) + random_length;
+        BaseType_t w;
+        wifi_rx_isr(NULL, &rxbuf, &w);
+        return;
+    }
     rpc_get_power_mode_resp *resp = (rpc_get_power_mode_resp *)rxbuf.data;
     resp->hdr = hdr;
     resp->esp_err = 0;
@@ -85,6 +113,11 @@ BaseType_t xTaskNotifyWait(uint32_t a, uint32_t b, uint32_t *v, TickType_t t)
     }
     notify_pending = false;
     return pdTRUE;
+}
+
+bool wifi_module_ready(void)
+{
+    return module_ready;
 }
 
 extern "C" void enter_safe_section(void)
@@ -188,6 +221,121 @@ static void test_reply_after_release(void)
     CHECK(all_slots_free());
 }
 
+// wifi_get_random: the request, and each way it ends
+static void random_setup(uint16_t len)
+{
+    random_answer = true;
+    random_err = 0;
+    random_source = 1;
+    random_length = len;
+    module_ready = true;
+    uart.buffers_free = 1;
+    uart.transmitted = 0;
+    queued = 0;
+    waits = 0;
+    buffer_wait = 0;
+    reply_at = NEVER;
+    memset(txbuf.data, 0, 16);
+}
+
+static void test_random(void)
+{
+    uint8_t out[16];
+
+    // No module application: nothing is sent and nothing waits
+    random_setup(8);
+    module_ready = false;
+    CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_NO_MODULE);
+    CHECK(uart.transmitted == 0 && waits == 0);
+
+    // No TX buffer within 20 ms: busy, and no slot is used up
+    for (int i = 0; i < WIFI_REPLY_SLOTS + 1; i++) {
+        random_setup(8);
+        uart.buffers_free = 0;
+        CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_BUSY);
+        CHECK(buffer_wait == 4 && uart.transmitted == 0);
+    }
+    CHECK(all_slots_free());
+    random_answer = false; // all_slots_free answers in the module's other format
+
+    // No answer: the request went out, was waited for 200 ms, and its slot is free again
+    for (int i = 0; i < 2 * WIFI_REPLY_SLOTS; i++) {
+        random_setup(8);
+        memset(out, 0, sizeof(out));
+        CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_BUSY);
+        CHECK(uart.transmitted == 1);
+        CHECK(first_wait == pdMS_TO_TICKS(200));
+        CHECK(out[0] == 0);
+    }
+    CHECK(all_slots_free());
+
+    // An answer in time, or as the wait times out: the bytes, once, and the buffer freed
+    reply_time when[2] = { ON_TIME, AT_TIMEOUT };
+    for (int i = 0; i < 2; i++) {
+        random_setup(8);
+        reply_at = when[i];
+        memset(out, 0, sizeof(out));
+        CHECK(wifi_get_random(out, 8) == 0);
+        CHECK(out[0] == 0xA0 && out[7] == 0xA7 && out[8] == 0);
+        rpc_get_random_req *req = (rpc_get_random_req *)txbuf.data;
+        CHECK(req->hdr.command == CMD_GET_RANDOM && req->length == 8);
+        CHECK(uart.transmitted == 1 && uart.buffers_free == 1 && queued == 0 && !notify_pending);
+        random_answer = false;
+        CHECK(all_slots_free());
+    }
+
+    // The module refuses, is busy, answers short or without a source: no byte is handed out
+    int errs[4] = { 0x105, RPC_ERR_ENTROPY_BUSY, 0, 0 };
+    int want[4] = { WIFI_RANDOM_REFUSED, WIFI_RANDOM_BUSY, WIFI_RANDOM_INVALID, WIFI_RANDOM_REFUSED };
+    for (int i = 0; i < 4; i++) {
+        random_setup(8);
+        reply_at = ON_TIME;
+        random_err = errs[i];
+        random_length = (i == 2) ? 4 : 8; // asked for 8
+        random_source = (i == 3) ? ENTROPY_NONE : 1;
+        memset(out, 0, sizeof(out));
+        CHECK(wifi_get_random(out, 8) == want[i]);
+        CHECK(out[0] == 0);
+        CHECK(uart.buffers_free == 1);
+    }
+
+    // An answer to another command, with this request's sequence: not ours, no byte is handed out
+    random_setup(8);
+    reply_at = ON_TIME;
+    random_command = CMD_WIFI_GETMAC;
+    memset(out, 0, sizeof(out));
+    CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_FOREIGN);
+    CHECK(out[0] == 0 && uart.buffers_free == 1);
+    random_command = -1;
+
+    // Every reply slot taken: busy, nothing is sent, and the TX buffer is given back
+    {
+        rpc_header_t held[WIFI_REPLY_SLOTS];
+        random_setup(8);
+        for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+            CHECK(wifi_reply_register(&held[i]));
+        }
+        memset(out, 0, sizeof(out));
+        CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_BUSY);
+        CHECK(uart.transmitted == 0 && uart.buffers_free == 1 && out[0] == 0);
+        random_answer = false;
+        for (int i = 0; i < WIFI_REPLY_SLOTS; i++) {
+            answer(held[i]);
+        }
+        notify_pending = false;
+        CHECK(all_slots_free());
+    }
+
+    // An answer after the slot was released is not the caller's any more
+    random_setup(8);
+    reply_at = AFTER_RELEASE;
+    memset(out, 0, sizeof(out));
+    CHECK(wifi_get_random(out, 8) == WIFI_RANDOM_BUSY);
+    CHECK(out[0] == 0 && queued == 1 && !notify_pending);
+    random_answer = false;
+    CHECK(all_slots_free());
+}
+
 int main(void)
 {
     esp32.uart = &uart;
@@ -197,6 +345,7 @@ int main(void)
     test_reply(ON_TIME);
     test_reply(AT_TIMEOUT);
     test_reply_after_release();
+    test_random();
     printf(failures ? "wifi_cmd: %d FAILED\n" : "wifi_cmd: all passed\n", failures);
     return failures ? 1 : 0;
 }
