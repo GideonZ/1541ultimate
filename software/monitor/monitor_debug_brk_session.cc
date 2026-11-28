@@ -1988,6 +1988,7 @@ DebugSession::Result BrkDebugSession :: interpret_simple_linear(
 
 done:
     next.pc = pred.fall_through;
+    fill_vectors(&next, cpu_port);
     *out = next;
     last_context = next;
     has_last_context = true;
@@ -2173,6 +2174,7 @@ DebugSession::Result BrkDebugSession :: emulate_control_flow_step(
     if (pop_traced_return) {
         pop_return_target(next.pc);
     }
+    fill_vectors(&next, cpu_port);
     *out = next;
     last_context = next;
     has_last_context = true;

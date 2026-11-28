@@ -9389,6 +9389,59 @@ static int test_parked_jmp_indirect_emulation_wraps_vector_page()
     return 0;
 }
 
+static int test_firmware_completed_steps_refresh_the_vector_fields()
+{
+    FakeVisibleRomMachine m(false);
+    m.allow_visible_rom_patching = true;
+    m.fetch_lags = true;
+    m.cpu_port = 0x05;
+    if (park_session_via_ram_step(m)) return 1;
+
+    m.ram[0xE000] = 0x8D; // STA $0314 in RAM under ROM
+    m.ram[0xE001] = 0x14;
+    m.ram[0xE002] = 0x03;
+    m.ram[0xE003] = 0x4C; // JMP $E010
+    m.ram[0xE004] = 0x10;
+    m.ram[0xE005] = 0xE0;
+    m.ram[0x0314] = 0x31;
+    m.ram[0x0315] = 0xEA;
+    m.ram[0x0318] = 0x47;
+    m.ram[0x0319] = 0xFE;
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xE000;
+    from.sp = 0xF8;
+    from.a = 0x99;
+    from.live_cpu_port_valid = true;
+    from.live_cpu_port = 0x05;
+    from.irq_valid = true;
+    from.irq_vec = 0xEA31;
+    from.nmi_valid = true;
+    from.nmi_vec = 0xFE47;
+
+    uint8_t sta[3] = { 0x8D, 0x14, 0x03 };
+    DebugPredictResult pred;
+    debug_predict(0xE000, sta, false, &pred);
+    DebugContext stored;
+    if (expect(m.trace(from, pred, &stored) == DebugSession::DBG_OK,
+               "interpreted store must complete")) return 1;
+    if (expect(stored.irq_vec == 0xEA99,
+               "an interpreted store must refresh the IRQ field")) return 1;
+
+    m.ram[0x0318] = 0x00; // changed since the last stop
+    m.ram[0x0319] = 0xC0;
+    uint8_t jmp[3] = { 0x4C, 0x10, 0xE0 };
+    debug_predict(0xE003, jmp, false, &pred);
+    DebugContext jumped;
+    if (expect(m.trace(stored, pred, &jumped) == DebugSession::DBG_OK,
+               "emulated jump must complete")) return 1;
+    if (expect(jumped.nmi_vec == 0xC000,
+               "an emulated jump must refresh the NMI field")) return 1;
+    return 0;
+}
+
 static int test_parked_rts_without_frame_reports_not_in_subroutine()
 {
     FakeVisibleRomMachine m(false);
@@ -10318,6 +10371,7 @@ int main()
     RUN(test_parked_step_into_jsr_into_kernal_is_emulated);
     RUN(test_parked_branch_in_ram_under_rom_is_emulated);
     RUN(test_parked_jmp_indirect_emulation_wraps_vector_page);
+    RUN(test_firmware_completed_steps_refresh_the_vector_fields);
     RUN(test_parked_rts_without_frame_reports_not_in_subroutine);
     RUN(test_parked_plain_ram_jsr_step_into_runs_live);
     RUN(test_unparked_unsafe_step_into_uses_live_path);
