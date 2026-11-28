@@ -181,6 +181,15 @@ static bool patch_verify_now(uint16_t addr, uint8_t live_cpu_port,
     return monitor_backing_store_for_cpu_port(addr, live_cpu_port) == target;
 }
 
+// Stepping past a breakpoint enters a RAM subroutine, so that every breakpoint
+// is armed again after the one JSR. Other callees are run as a whole.
+static bool jsr_targets_ram(const DebugPredictResult &pred, uint8_t cpu_port)
+{
+    return pred.kind == DBG_PREDICT_JSR && pred.has_target &&
+        monitor_backing_store_for_cpu_port(pred.branch_target, cpu_port) ==
+            MONITOR_BACKING_RAM;
+}
+
 struct DebugOwnerState {
     BrkDebugSession *owner;
     bool remote;
@@ -2842,11 +2851,15 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
     uint16_t run_pc = have_context ? from.pc : start_pc;
     uint8_t cpu_port = execution_cpu_port(have_context ? &from : 0);
 
-    // Step once to escape self-hits or stale visible-ROM launch fetches.
+    // A breakpoint the program is stopped on traps again at once if armed there.
+    bool on_breakpoint = context_at_breakpoint(from, bps, 0, false);
+
+    // Step once to leave such a breakpoint, a self-hit or a stale visible-ROM
+    // launch fetch.
     bool launch_site_lags = visible_rom_fetch_lags() && !debug_owner.remote &&
         monitor_backing_store_is_visible_rom(
             monitor_backing_store_for_cpu_port(run_pc, cpu_port));
-    if (run_pc == target_pc || launch_site_lags) {
+    if (run_pc == target_pc || on_breakpoint || launch_site_lags) {
         uint8_t bytes[3];
         if (launch_site_lags) {
             // Use the disassembly byte source for the trampoline copy.
@@ -2862,7 +2875,8 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
         debug_predict(run_pc, bytes, false, &pred);
         DebugContext stepped;
         // Self-hit escape steps into; launch priming steps over.
-        bool into = (run_pc == target_pc);
+        bool into = (run_pc == target_pc) ||
+            (on_breakpoint && jsr_targets_ram(pred, cpu_port));
         Result skip = step_with_predict(have_context ? &from : 0, run_pc, pred, into,
                                         &stepped, cpu_port, bps, run_pc, true,
                                         launch_site_lags ? bytes : 0,
@@ -2873,9 +2887,16 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
         resume_from = stepped;
         have_context = stepped.valid;
         run_pc = have_context ? stepped.pc : run_pc;
-        if (have_context && run_pc == target_pc) {
+        // The instruction stepped may have changed the banking.
+        cpu_port = execution_cpu_port(have_context ? &stepped : 0);
+        if (have_context && (run_pc == target_pc ||
+                context_at_breakpoint(stepped, bps, 0, false))) {
             *ctx = stepped;
             return DBG_OK;
+        }
+        // The run goes on through a frame the step entered.
+        if (on_breakpoint && jsr_targets_ram(pred, cpu_port)) {
+            pop_return_target(pred.fall_through);
         }
     }
 

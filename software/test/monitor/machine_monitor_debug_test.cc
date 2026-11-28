@@ -5915,6 +5915,91 @@ static int test_go_from_current_visible_rom_breakpoint_uses_patch_aware_bytes()
     return 0;
 }
 
+// A CPU released onto a BRK traps there before it executes anything.
+class FakeTrappingMachine : public FakeFreezeMachine
+{
+public:
+    uint8_t captured_port;
+
+    FakeTrappingMachine() : FakeFreezeMachine(false), captured_port(0x07) { }
+
+    // Stops the CPU once, so that later launches resume a parked context.
+    bool park(void)
+    {
+        ram[0x1000] = 0xEA;
+        ram[0x1001] = 0xEA;
+        uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+        DebugPredictResult pred;
+        debug_predict(0x1000, nop, false, &pred);
+        DebugContext ctx;
+        return trace_at(0x1000, pred, &ctx) == DebugSession::DBG_OK;
+    }
+
+protected:
+    virtual uint8_t current_cpu_port(void) const { return captured_port; }
+    virtual void note_captured_cpu_port(uint8_t port) { captured_port = port; }
+    virtual void delay_ms(int ms)
+    {
+        uint16_t pc = (uint16_t)(ram[FAKE_STORE_PCLO] |
+                                 (ram[FAKE_STORE_PCHI] << 8));
+        if (!capture_override_armed && ram[pc] == 0x00) {
+            arm_capture_context(pc, ram[FAKE_STORE_SP], 0, 0, 0, 0x24);
+        }
+        FakeFreezeMachine::delay_ms(ms);
+    }
+};
+
+static int test_run_to_leaves_the_breakpoint_it_is_stopped_on()
+{
+    FakeTrappingMachine m;
+    memset(&m.ram[0x2000], 0xEA, 8);
+    if (expect(m.park(), "parking step must complete")) return 1;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x2000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xF8;
+
+    DebugContext ctx;
+    if (expect(m.run_to(from, 0x2005, &bps, 0x2000, &ctx) == DebugSession::DBG_OK,
+               "K from a breakpoint must complete")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0x2005,
+               "K from a breakpoint must run on to the cursor")) return 1;
+    return 0;
+}
+
+static int test_run_to_uses_the_banking_after_leaving_a_breakpoint()
+{
+    FakeTrappingMachine m;
+    memset(&m.ram[0x2000], 0xEA, 8);
+    m.ram[0xE000] = 0xEA;
+    if (expect(m.park(), "parking step must complete")) return 1;
+    // The instruction under the breakpoint banks the KERNAL out.
+    m.ram[FAKE_STORE_CPU_DDR] = 0x07;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x05;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x2000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xF8;
+    from.live_cpu_port_valid = true;
+    from.live_cpu_port = 0x07;
+
+    DebugContext ctx;
+    if (expect(m.run_to(from, 0xE000, &bps, 0x2000, &ctx) == DebugSession::DBG_OK &&
+               ctx.pc == 0xE000,
+               "K must target the memory banked in after the step")) return 1;
+    return 0;
+}
+
 static int test_step_over_stops_at_callee_breakpoint()
 {
     FakeFreezeMachine m(false);
@@ -9938,6 +10023,8 @@ int main()
     RUN(test_go_from_current_breakpoint_stops_at_callee_breakpoint);
     RUN(test_go_from_current_visible_rom_breakpoint_uses_patch_aware_bytes);
     RUN(test_step_over_stops_at_callee_breakpoint);
+    RUN(test_run_to_leaves_the_breakpoint_it_is_stopped_on);
+    RUN(test_run_to_uses_the_banking_after_leaving_a_breakpoint);
     RUN(test_visible_basic_step_uses_rom_patch_support);
     RUN(test_visible_rom_step_bytes_use_cpu_visible_mapping);
     RUN(test_u64_debug_cpu_port_uses_live_cpu_bank);
