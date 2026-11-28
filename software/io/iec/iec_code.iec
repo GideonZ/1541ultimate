@@ -221,7 +221,13 @@ _jiffy_outer
             IF CTRL THEN _jiffy_load_eoi
             SET DATA=0
             SET CLK=1
-            WAIT FOR 50 us
+            # The host polls CLK and reads DATA at the first poll that sees CLK high. When the answer
+            # is already there as the host releases DATA, a host that reaches that poll late (a
+            # badline, a slower host) finds the window closed, sees DATA high and ends the LOAD with
+            # ST=66. A real JiffyDOS 1541 answers about 100 us after the host's release and then
+            # holds for 77 us, so its window ends about 180 us after the release; 200 us here gives
+            # the same reach. It is harmless: the host waits for DATA high without a timeout.
+            WAIT FOR 200 us
 _jiffy_inner
             POPB # Read byte is now popped from fifo
             SET DATA=1
