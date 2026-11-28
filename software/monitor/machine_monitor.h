@@ -171,6 +171,7 @@ struct MonitorCommandInput {
     int (*transform)(const char *buffer, int cursor, int key);
     bool template_mode;     // pre-filled, and the first typed key replaces it
     bool uppercase;         // typed letters are normalised to upper case
+    bool cancel_untouched_template; // a placeholder, so Return must not run it
 };
 
 extern const MonitorCommandInput monitor_input_jump;

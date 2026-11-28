@@ -2230,9 +2230,9 @@ const MonitorCommandInput monitor_input_jump =
 const MonitorCommandInput monitor_input_go =
     { "Go AAAA", "A", accepts_address, 0, true, true };
 const MonitorCommandInput monitor_input_fill =
-    { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true };
+    { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true, true };
 const MonitorCommandInput monitor_input_transfer =
-    { "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", "A-A,A,A-A", accepts_transfer, 0, true, true };
+    { "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", "A-A,A,A-A", accepts_transfer, 0, true, true, true };
 const MonitorCommandInput monitor_input_compare =
     { "Compare AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
 // Hunt keeps its default range and takes the needle after it, so there is no
@@ -3403,7 +3403,8 @@ bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_l
 
 bool MachineMonitor :: prompt_command(const MonitorCommandInput &input, char *buffer, int max_len)
 {
-    UIStringEditPolicy policy = { input.accepts, input.transform, monitor_key_arrow_left };
+    UIStringEditPolicy policy = { input.accepts, input.transform, monitor_key_arrow_left,
+                                  input.cancel_untouched_template };
 
     return get_ui()->string_box(input.title, buffer, max_len,
                                 input.template_mode, input.uppercase, &policy) > 0;

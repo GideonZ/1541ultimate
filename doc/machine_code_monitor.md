@@ -641,7 +641,7 @@ Here the first two instructions are copied to `$C010` while the scan covers a th
 
 Both pickers list at most 256 matches. A search with no result shows `No matches` or `No differences`.
 
-A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`.
+A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`. On Fill and Transfer, `Return` does nothing while the placeholder is untouched.
 
 ## File I/O
 

@@ -301,6 +301,9 @@ int UIStringEdit :: poll(int dummy)
     if (policy && policy->cancel_key && (key == policy->cancel_key)) {
         return -1; // cancel, exactly as RUN/STOP does below
     }
+    if (key == KEY_RETURN && clear_template_on_input && policy && policy->cancel_untouched_template) {
+        return -1;
+    }
     if ((key >= 32) && (key < 127)) {
         // Settle what this key would actually insert, then decide whether the
         // field accepts it. Both happen here rather than at the insertion

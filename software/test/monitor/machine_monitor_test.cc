@@ -6687,6 +6687,44 @@ static int test_prompt_cancel_and_empty_clipboard(void)
         mon.deinit();
     }
 
+    // Nothing scripted, so Return reaches the real prompt: a placeholder
+    // template does nothing, and a prompt holding real values accepts them.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        uint16_t go_addr = 0;
+        const int keys[] = { 'F', KEY_RETURN, 'T', KEY_RETURN, 'S', KEY_RETURN,
+                             'L', KEY_RETURN, 'G', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_name, "demo.prg");
+        monitor_io::g_monitor_io.load_data[1] = 0x08;
+        monitor_io::g_monitor_io.load_size = 3;
+        backend.write(0xAAAA, 0x11);
+        backend.write(0xCCCC, 0x22);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Untouched Fill test: command failed.")) return 1;
+        if (expect(backend.read(0xAAAA) == 0x11 && ui.popup_count == 0,
+                   "Return on the untouched Fill template must do nothing.")) return 1;
+        if (expect(mon.poll(0) == 0, "Untouched Transfer test: command failed.")) return 1;
+        if (expect(backend.read(0xCCCC) == 0x22 && ui.popup_count == 0,
+                   "Return on the untouched Transfer template must do nothing.")) return 1;
+        if (expect(mon.poll(0) == 0 && monitor_io::g_monitor_io.save_called,
+                   "Return on the pre-filled Save prompt must accept it.")) return 1;
+        if (expect(mon.poll(0) == 0 && monitor_io::g_monitor_io.load_called,
+                   "Return on the pre-filled Load prompt must accept it.")) return 1;
+        if (expect(mon.poll(0) == 1 && mon.consume_pending_go(&go_addr),
+                   "Return on the pre-filled Go prompt must accept it.")) return 1;
+        mon.deinit();
+    }
+
     {
         TestUserInterface ui;
         CaptureScreen screen;
@@ -8398,6 +8436,7 @@ public:
         policy.accepts = input.accepts;
         policy.transform = input.transform;
         policy.cancel_key = monitor_key_arrow_left;
+        policy.cancel_untouched_template = input.cancel_untouched_template;
         edit.set_uppercase(input.uppercase);
         edit.set_policy(&policy);
         edit.init(&window, &keyboard, 0, 2, MONITOR_CONTENT_WIDTH - 2);
