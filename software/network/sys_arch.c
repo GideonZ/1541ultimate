@@ -194,6 +194,34 @@ portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 }
 
 /*---------------------------------------------------------------------------*
+ * Routine:  sys_mbox_trypost_fromisr
+ *---------------------------------------------------------------------------*
+ * Description:
+ *      Try to post the "msg" to the mailbox from an interrupt service routine
+ *      (tcpip_callbackmsg_trycallback_fromisr). Returns immediately.
+ * Inputs:
+ *      sys_mbox_t mbox         -- Handle of mailbox
+ *      void *msg               -- Pointer to data to post
+ * Outputs:
+ *      err_t                   -- ERR_OK if message posted, ERR_NEED_SCHED if it
+ *                                  was posted and woke a task of higher priority
+ *                                  (the interrupt has to switch context), else
+ *                                  ERR_MEM if the mailbox was full.
+ *---------------------------------------------------------------------------*/
+err_t sys_mbox_trypost_fromisr( sys_mbox_t *pxMailBox, void *pxMessageToPost )
+{
+portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
+	if( xQueueSendFromISR( *pxMailBox, &pxMessageToPost, &xHigherPriorityTaskWoken ) != pdPASS )
+	{
+		SYS_STATS_INC( mbox.err );
+		return ERR_MEM;
+	}
+
+	return ( xHigherPriorityTaskWoken != pdFALSE ) ? ERR_NEED_SCHED : ERR_OK;
+}
+
+/*---------------------------------------------------------------------------*
  * Routine:  sys_arch_mbox_fetch
  *---------------------------------------------------------------------------*
  * Description:

@@ -51,5 +51,8 @@ typedef TaskHandle_t sys_thread_t;
 #define sys_sem_valid( x ) ( ( ( *x ) == NULL) ? pdFALSE : pdTRUE )
 #define sys_sem_set_invalid( x ) ( ( *x ) = NULL )
 
+/* Returned by sys_mbox_trypost_fromisr() when the post woke a task of higher priority */
+#define ERR_NEED_SCHED 123
+
 #endif /* __ARCH_SYS_ARCH_H__ */
 

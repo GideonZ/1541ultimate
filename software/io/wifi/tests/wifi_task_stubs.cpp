@@ -340,6 +340,7 @@ int wifi_get_voltages(voltages_t *v)
 int wifi_is_connected(uint8_t &status) { count(); note('Q'); status = world.link; return 0; }
 
 err_t wifi_tx_packet(void *driver, void *buffer, int length) { return 0; }
+void wifi_tx_wake_init(DmaUART *uart) {}
 void wifi_free(void *driver, void *buffer) {}
 
 // As NetworkInterface :: start, it applies the settings (effectuate_settings)
