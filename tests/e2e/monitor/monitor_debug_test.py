@@ -4202,6 +4202,13 @@ def _rom_store_program(target: int, port: int, sub: int,
     head = bytes([
         0x78,                          # SEI
         0xA9, 0x2F, 0x85, 0x00,        # LDA #$2F / STA $00
+        0xA9, 0x37, 0x85, 0x01,
+        # Leaving Debug can clear the I flag. With no CIA1 source enabled or
+        # pending, no IRQ runs while I/O or the KERNAL is banked out, and the
+        # cursor blink cannot store through ($D1) into the target.
+        0xA9, 0x7F, 0x8D, 0x0D, 0xDC,  # LDA #$7F / STA $DC0D
+        0xAD, 0x0D, 0xDC,              # LDA $DC0D: acknowledge
+        0x85, 0xCC,                    # STA $CC: no cursor blink
         0xA9, lo, 0x85, 0xD1,          # ($D1) = target
         0xA9, hi, 0x85, 0xD2,
         0xA9, 0x00, 0x85, 0xD3,        # Y = 0 in the routine
@@ -4211,6 +4218,10 @@ def _rom_store_program(target: int, port: int, sub: int,
         0xA9, ROM_STORE_STARTED, 0x8D, 0xF4, 0xC0,
         0xAD, lo, hi,                  # LDA target: what the CPU reads
         0x8D, 0xF0, 0xC0,
+        # RAM underneath = the ROM byte, so a store that is lost cannot pass.
+        0xA2, 0x34, 0x86, 0x01,        # LDX #$34 / STX $01
+        0x8D, lo, hi,                  # STA target
+        0xA2, port, 0x86, 0x01,        # LDX #port / STX $01
     ]) + (bytes([0x49, 0xFF]) if value is None else bytes([0xA9, value]))
     jsr_at = ROM_STORE_PROGRAM + len(head)
     body = head + bytes([
@@ -4221,6 +4232,7 @@ def _rom_store_program(target: int, port: int, sub: int,
         0xA9, 0x37, 0x85, 0x01,
         0x8C, 0xF1, 0xC0,
         0x8E, 0xF2, 0xC0,
+        0xA9, 0x81, 0x8D, 0x0D, 0xDC,  # CIA1 timer A interrupt back on
         0xA9, ROM_STORE_DONE, 0x8D, 0xF3, 0xC0,
     ])
     spin = ROM_STORE_PROGRAM + len(body)
