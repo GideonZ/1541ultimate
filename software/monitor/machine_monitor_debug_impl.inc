@@ -922,6 +922,11 @@ void MachineMonitor :: debug_request_go()
     monitor_log_debug("go", start_pc, r);
     debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
+        if (!debug_has_enabled_breakpoint()) {
+            // The program runs freely: there is no stop left to show.
+            debug_leave();
+            return;
+        }
         // If the session captured a fresh context (BRK fired during this
         // Go), `snapshot` now returns it. Pull it back so the footer shows
         // the real post-stop state on the next draw.

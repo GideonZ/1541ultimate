@@ -2196,17 +2196,17 @@ static int test_g_after_goto_ignores_successful_stale_snapshot()
     backend.write(0xE001, 0x56);
     backend.write(0xE002, 0xEA);
 
-    const int keys[] = { 'J', 'A', 'D', 'G', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 6);
+    const int keys[] = { 'J', 'A', 'D', 'P', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 7);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 7; i++) {
         int r = monitor.poll(0);
-        if (i < 5) {
+        if (i < 6) {
             if (expect(r == 0, "Stale-snapshot Go setup polls should return 0")) return 1;
         } else {
             if (expect(r == 1, "Final RUN/STOP exits")) return 1;
@@ -2243,17 +2243,17 @@ static int test_g_after_cursor_stop_uses_captured_context()
     backend.write(0xE002, 0xEA);
     backend.write(0xE003, 0xEA);
 
-    const int keys[] = { 'J', 'A', 'D', 'G', 'G', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 7);
+    const int keys[] = { 'J', 'A', 'D', 'P', 'G', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         int r = monitor.poll(0);
-        if (i < 6) {
+        if (i < 7) {
             if (expect(r == 0, "Two-Go cursor/context setup polls should return 0")) return 1;
         } else {
             if (expect(r == 1, "Final RUN/STOP exits")) return 1;
@@ -2317,8 +2317,9 @@ static int test_g_invalidates_context()
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
-    const int keys[] = { 'A', 'D', 'G', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 5);
+    // The breakpoint keeps Debug open after G.
+    const int keys[] = { 'A', 'D', 'P', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
 
@@ -2326,6 +2327,7 @@ static int test_g_invalidates_context()
     monitor.init(&screen, &keyboard);
     if (expect(monitor.poll(0) == 0, "Switch ASM ok")) return 1;
     if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Set breakpoint ok")) return 1;
     if (expect(monitor.poll(0) == 0, "G performs Go and stays in monitor")) return 1;
     if (expect(backend.last_session != NULL && backend.last_session->go_calls == 1,
                "G should call go() exactly once")) return 1;
@@ -2346,6 +2348,25 @@ static int test_g_invalidates_context()
     for (int i = 0; i < 35; i++) if (values[i] != ' ') { all_blank = false; break; }
     if (expect(all_blank, "G must invalidate the captured context (footer blank)")) return 1;
     monitor.deinit();
+
+    // With no enabled breakpoint nothing can stop the program again.
+    monitor_reset_saved_state();
+    TrackingDebugBackend free_backend;
+    const int free_keys[] = { 'A', 'D', 'G', KEY_BREAK };
+    FakeKeyboard free_keyboard(free_keys, 4);
+    ui.keyboard = &free_keyboard;
+    BackendMachineMonitor free_run(&ui, &free_backend);
+    free_run.init(&screen, &free_keyboard);
+    for (int i = 0; i < 3; i++) {
+        if (expect(free_run.poll(0) == 0, "G without breakpoint stays in the monitor")) return 1;
+    }
+    if (expect(free_backend.last_session->go_calls == 1,
+               "G without breakpoint must run the program")) return 1;
+    screen.get_slice(1, 3, 38, row);
+    if (expect(strstr(row, "Dbg") == NULL,
+               "G without breakpoint must leave Debug")) return 1;
+    if (expect(free_run.poll(0) == 1, "RUN/STOP then exits the monitor")) return 1;
+    free_run.deinit();
     return 0;
 }
 
