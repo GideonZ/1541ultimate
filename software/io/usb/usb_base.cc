@@ -5,6 +5,7 @@ extern "C" {
 }
 #include "usb_base.h"
 #include "usb_device.h"
+#include "usb_bot_policy.h"
 #include "task.h"
 #include "profiler.h"
 #include "endianness.h"
@@ -558,7 +559,7 @@ void UsbBase :: doPing(struct t_pipe *pipe)
 }
 
 // Protected by Mutex
-int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
+int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen, int timeout)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("%s USB unavailable.\n", pipe->name);
@@ -567,13 +568,13 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 
     // One exit, so no path out can leave the mutex held. It was forgotten on the
     // setup length check once already; see GideonZ/1541ultimate#822, problem 5.
-    int result_code = control_exchange_locked(pipe, out, outlen, in, inlen);
+    int result_code = control_exchange_locked(pipe, out, outlen, in, inlen, timeout);
     xSemaphoreGive(mutex);
     return result_code;
 }
 
 // Runs with the mutex held; the caller above gives it back on every path.
-int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
+int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen, int timeout)
 {
     if (outlen != 8) {
         printf("%s Unsupported setup length.\n", pipe->name);
@@ -595,7 +596,7 @@ int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outle
 	uint16_t result = 0;
 	descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_SETUP;
 
-	result = complete_command(100);
+	result = complete_command(timeout);
 	if ((result & URES_RESULT_MSK) != URES_ACK) {
 		printf("%s Setup Result: %04x\n", pipe->name, result);
 		return -1;
@@ -612,7 +613,7 @@ int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outle
     descr->started = 0;
 	descr->command = command;
 
-	result = complete_command(100);
+	result = complete_command(timeout);
 
 	uint32_t transferred = inlen - descr->length;
 
@@ -630,7 +631,7 @@ int UsbBase :: control_exchange_locked(struct t_pipe *pipe, void *out, int outle
 	    descr->started = 0;
         descr->result = 0xFFFF;
 		descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | UCMD_RETRY_ON_NAK; // send zero bytes as out packet
-		result = complete_command(100);
+		result = complete_command(timeout);
 
 		switch (result & URES_RESULT_MSK) {
 		case URES_ACK:
@@ -751,7 +752,7 @@ void UsbBase :: free_input_pipe(int index)
     xSemaphoreGive(mutex);
 }
 
-int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
+int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout, int retries)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("%s USB unavailable.\n", pipe->name);
@@ -779,7 +780,6 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	uint16_t result;
 	int current_len = 0;
 
-	int retries = 5;
 	do {
 		current_len = (len > 49152) ? 49152 : len;
 		descr->devEP    = pipe->DevEP;
@@ -827,7 +827,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	return total_trans;
 }
 
-int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, int retries) // blocking
+int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, int retries, bool stop_on_short) // blocking
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("%s USB unavailable.\n", pipe->name);
@@ -868,6 +868,7 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, in
 		uint16_t result = complete_command(timeout);
 
 		int transferred = current_len - descr->length;
+		uint16_t toggle_before = pipe->Command & URES_TOGGLE;
 	    if (pipe->debugMode)
 	    	printf("Command completion: Result: %4x Command: (%4x)\n", result, descr->command);
 
@@ -896,6 +897,17 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout, in
 		addr += transferred;
 		len -= transferred;
 		pipe->Command = descr->command & URES_TOGGLE; // that's what we start with next time.
+
+		// A packet shorter than requested ends a transfer. Callers that know the exact length they need
+		// (the BOT status phase) take the short count and decide, rather than waiting for the rest.
+		// Only a packet that arrived counts: a NAK timeout moves nothing and is handled by the retries above.
+		// A packet the controller discarded as a duplicate (toggle unchanged, nothing stored) is not an answer: poll again.
+		bool is_packet = ((result & URES_RESULT_MSK) == URES_PACKET);
+		uint16_t toggle_after = pipe->Command & URES_TOGGLE;
+		if (stop_on_short && bot_in_stop_on_short(is_packet, toggle_before, toggle_after, transferred, current_len, descr->maxTrans))
+			break;
+		if (stop_on_short && is_packet && (transferred < current_len) && !bot_in_last_accepted(toggle_before, toggle_after, transferred, descr->maxTrans))
+			printf("%s IN toggle discard\n", pipe->name);
 	} while (len > 0);
 
     // printf("Bulk in done: %d\n", total_trans);

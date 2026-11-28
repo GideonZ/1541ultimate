@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include "usb_bot_policy.h"
 #include <stdlib.h>
 extern "C" {
 	#include "itu.h"
@@ -27,6 +28,7 @@ FactoryRegistrator<UsbInterface *, UsbDriver *> scsi_tester(UsbInterface :: getU
 UsbScsiDriver :: UsbScsiDriver(UsbInterface *intf) : UsbDriver(intf)
 {
 	poll_enable = false;
+	memset(scsi_blk_dev, 0, sizeof(scsi_blk_dev));
 	current_lun = 0;
 	max_lun = 0;
 	file_manager = FileManager :: getFileManager();
@@ -261,7 +263,12 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 	*signature = 0;
 	int len = 0;
 
-	len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries);
+	// stop_on_short: a CSW that arrives as a short packet is invalid; do not wait for the missing bytes
+	len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries, true);
+	if (len == 0) {
+		// A zero length packet between the data phase and the CSW (a known device quirk): read the status once more
+		len = host->bulk_in(&bulk_in, stat_resp, 13, timeout, retries, true);
+	}
 
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
 		printf("Invalid status (len = %d, signature = %8x)..\n", len, *signature);
@@ -275,22 +282,34 @@ int UsbScsiDriver :: status_transport(int timeout, int retries)
 	return (int)stat_resp[12]; // OK, or other error
 }
 
-/*
+// Bulk-Only Mass Storage Reset: class request 0xFF to the interface, no data stage.
 int UsbScsiDriver :: mass_storage_reset()
 {
-	uint8_t buf[8];
-
-	printf("Executing reset...\n");
-	c_scsi_reset[4] = interface->getInterfaceDescriptor()->interface_number;
-	int i =  host->control_exchange(&(device->control_pipe),
-								    c_scsi_reset, 8,
-								    buf, 8);
-
-	printf("Device reset. (returned %d bytes)\n", i);
-
-	return i;
+	uint8_t request[8];
+	memcpy(request, c_scsi_reset, 8);
+	request[4] = interface->getInterfaceDescriptor()->interface_number;
+	return host->control_exchange(&(device->control_pipe), request, 8, NULL, 0, c_bot_recovery_ticks);
 }
-*/
+
+// Reset Recovery (USB Mass Storage Bulk-Only Transport 1.0, 5.3.4): after an invalid CSW the device and
+// the host are out of step. Reset the device, clear the halt on both bulk endpoints and restart both
+// data toggles. The caller holds the driver mutex.
+int UsbScsiDriver :: reset_recovery()
+{
+	uint8_t ep_in  = bot_in_endpoint(bulk_in.DevEP);
+	uint8_t ep_out = bot_out_endpoint(bulk_out.DevEP);
+
+	printf("USB SCSI: invalid status, BOT Reset Recovery.\n");
+	int r = mass_storage_reset();
+	device->unstall_pipe(ep_in, c_bot_recovery_ticks);
+	device->unstall_pipe(ep_out, c_bot_recovery_ticks);
+	bulk_in.Command = 0;
+	bulk_out.Command = 0;
+	// The device has been reset: it is read-only until it is re-enumerated (a new driver object).
+	write_lock.on_recovery();
+	printf("USB SCSI: Reset Recovery issued, unit is read-only.\n");
+	return r;
+}
 
 int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
 {
@@ -372,6 +391,22 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return -9;
     }
 
+    // Read-only after a Reset Recovery. Checked here, with the mutex held, so that a write that queued on the mutex
+    // while another command recovered is refused too and never reaches the device.
+    if (bot_refuse_write(write_lock.refuses_write(), out && data && datalen)) {
+        xSemaphoreGive(mutex);
+        return -8;
+    }
+
+    // The retry after a Reset Recovery must not make a caller wait longer than the original code did
+    // (a stalled command holds this mutex and everything that waits for the drive). It only happens after a
+    // fast protocol fault, with short timeouts and no NAK-timeout retries, so the recovery and the retry add
+    // at most about 13 s, even if the device is dead (usb_bot_policy.h).
+    bool recovered = false;
+    bool short_retried = false;
+    uint16_t attempt_start;
+retry:
+    attempt_start = getMsTimer();
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
@@ -389,7 +424,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     }
     int len = 0;
     int retval = 0;
-    int st = host->bulk_out(&bulk_out, &cbw, 31);
+    int st = host->bulk_out(&bulk_out, &cbw, 31, recovered ? c_bot_retry_cbw_timeout : 20000, recovered ? 0 : 5);
     if(st != 31) { // out failed.. terminate.
     	printf("USB SCSI: Out failed... Terminate.\n");
     	if (st == -4) {
@@ -412,6 +447,12 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
         timeout = 8000; // 1000 ms
         retries = 3;
     }
+    if (recovered) {
+        // second attempt after a fast fault: no NAK-timeout retries and a 1 s CBW timeout (see usb_bot_policy.h).
+        // The data and status phases keep their normal timeout: a device that is executing the command (a flash
+        // write commit) NAKs the status for a while, and aborting it mid-command can hang the device.
+        retries = 0;
+    }
 
     /* DATA PHASE */
     if((data)&&(datalen)) {
@@ -425,10 +466,11 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
                 return -4;
             }
     	} else { // in
-			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries);
+			// stop_on_short: a device may end the data early and send the CSW in its place (see bot_short_data_tail)
+			len = host->bulk_in(&bulk_in, data, datalen, timeout, retries, true);
 		    if (len == -4) { // Stall
                 printf("Stalled Data Phase. Unstalling Endpoint\n");
-                device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+                device->unstall_pipe(bot_in_endpoint(bulk_in.DevEP));
                 bulk_in.Command = 0; // reset toggle
                 xSemaphoreGive(mutex);
                 return -4;
@@ -439,12 +481,46 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     retval = len;
 
     /* STATUS PHASE */
-    st = status_transport(timeout, retries);
+    bool csw_in_data = false;
+    if (!out && data && datalen && (len > 0)) {
+        BotShortTail tail = bot_short_data_tail((const uint8_t *)data, len, datalen, cbw.tag, short_retried);
+        if (tail != e_tail_not_csw) {
+            const uint8_t *csw = (const uint8_t *)data + len - 13;
+            printf("USB SCSI: CSW in the data phase (got %d of %d):\n", len, datalen);
+            dump_hex_relative((void *)csw, 13);
+            if (tail == e_tail_retry_read) {
+                // Status 0 and no residue, but the data is incomplete. The device is in step (its status is sent),
+                // so no Reset Recovery: issue the command once more.
+                short_retried = true;
+                goto retry;
+            }
+            csw_in_data = true;
+            // Status 0 with no residue and data still missing, after the one retry: the device lies. An invalid
+            // status, which takes the usual fault path (Reset Recovery once, then the unit fails).
+            // Status 2 (phase error) takes the fault path too: BOT 6.7 wants a Reset Recovery.
+            st = ((csw[12] == 0 && bot_le32(csw + 8) == 0) || (csw[12] == 2)) ? -1 : csw[12];
+            len -= 13;
+            retval = len;
+        }
+    }
+    if (!csw_in_data)
+        st = status_transport(timeout, retries);
 
     if (st == -4) {
     	printf("Stalled Status Phase. Unstalling Endpoint\n");
-    	device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+    	device->unstall_pipe(bot_in_endpoint(bulk_in.DevEP));
 	    bulk_in.Command = 0; // reset toggle
+    }
+
+    if (bot_retry_after_status_fault(st, recovered, uint16_t(getMsTimer() - attempt_start), cmd[0], out && data && datalen)) {
+        // A fast invalid or short CSW (the device answered, but wrongly) on a command that does not send data to the
+        // device: the BOT spec requires Reset Recovery.
+        // Then the command is issued once more, like other hosts do. If that fails as well, the caller marks
+        // the unit failed. An attempt that already spent a NAK timeout is not retried and not reset: the unit
+        // fails after the same wait as before this change.
+        recovered = true;
+        reset_recovery();
+        goto retry;
     }
 
 	xSemaphoreGive(mutex);
@@ -479,7 +555,8 @@ void UsbScsi :: inquiry(void)
     strncpy(disp_name, driver->getDevice()->product, 31);
 
     uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
-    if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
+    // a reply shorter than 36 bytes (a CSW alone, say) leaves response unset: a failure
+    if(((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) || (len < 36)) {
         printf("Inquiry failed. %d\n", len);
     	//initialized = false; // don't try again
     	return;
@@ -524,6 +601,12 @@ bool UsbScsi :: test_unit_ready(void)
     uint8_t test_ready_command[12] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0,
                                           0, 0, 0, 0, 0, 0 };
     int res = driver->exec_command(lun, 6, true, test_ready_command, 0, NULL, false);
+    if (res == -9) {
+        // The driver is busy with another command (a stalled transfer holds its mutex for tens of seconds).
+        // The unit is busy, not failed: skip this poll. Marking it failed would tear the filesystem down
+        // under the transfer that is still running.
+        return false;
+    }
     if (res == -7) {
 		return true; // handled by sense
 	}
@@ -551,7 +634,7 @@ DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
     // printf("Read capacity.\n");
     int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, (uint8_t *)buf, false);
     
-    if(stat >= 0) {
+    if(stat == 8) { // the whole reply: a shorter one with a good status leaves buf unset
     	*num_blocks = LD_DWORD_BE(&buf[0]);
         ++(*num_blocks);
         *blk_size = LD_DWORD_BE(&buf[4]);
@@ -821,6 +904,10 @@ DSTATUS UsbScsi :: status(void)
 {
     if(!initialized)
         return STA_NODISK;
+#ifndef BOOTLOADER
+    if(driver->is_read_only())
+        return STA_PROTECT; // read-only after a Reset Recovery
+#endif
     return RES_OK;
 }
 
@@ -861,6 +948,11 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
     if(!initialized)
         return RES_NOTRDY;
 
+#ifndef BOOTLOADER
+    if(driver->is_read_only()) // after a Reset Recovery: before the device is touched
+        return RES_WRPRT;
+#endif
+
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
@@ -876,6 +968,12 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
 	ST_DWORD_BE(&write_10_command[2], sector);
 
 	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (uint8_t *)buf, false);
+#ifndef BOOTLOADER
+	if(len == -8) { // refused: the unit became read-only while this write waited for the driver
+		ioWrite8(ITU_USB_BUSY, 0);
+		return RES_WRPRT;
+	}
+#endif
 	if(len != block_size*num_sectors) {
 		printf("Error %d.\n", len);
 		ioWrite8(ITU_USB_BUSY, 0);

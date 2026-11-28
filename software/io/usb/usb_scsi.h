@@ -5,6 +5,7 @@
 #include "usb_device.h"
 #include "blockdev.h"
 #include "file_device.h"
+#include "usb_bot_policy.h"
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
@@ -37,11 +38,13 @@ class UsbScsiDriver : public UsbDriver
 	uint16_t poll_interval[16];
 	bool media_seen[16];
 	SemaphoreHandle_t mutex;
+	BotWriteLock write_lock; // read-only after a Reset Recovery, until the device is re-enumerated
 	
 	int max_lun;
 	int current_lun;
     int get_max_lun(UsbDevice *dev);
     int mass_storage_reset(void);
+    int reset_recovery(void);
 
     uint32_t      id;
     struct t_pipe bulk_in;
@@ -60,6 +63,7 @@ public:
 	~UsbScsiDriver();
 
 	UsbDevice  *getDevice(void) { return device; }
+	bool is_read_only(void) { return write_lock.refuses_write(); }
 	void install(UsbInterface *dev);
 	void deinstall(UsbInterface *dev);
 	void poll(void);
