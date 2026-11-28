@@ -5312,6 +5312,8 @@ void MachineMonitor :: draw_opcode_picker()
     if (box_x + box_w > width) box_x = width - box_w;
     if (box_x < 0) box_x = 0;
 
+    // The bottom row has no room below it, so the box starts one row up.
+    if (anchor_row >= content_height) anchor_row = content_height - 1;
     int max_rows = content_height - anchor_row;
     if (max_rows < 0) max_rows = 0;
     int visible = opcode_candidate_count;

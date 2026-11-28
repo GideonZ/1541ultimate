@@ -5249,6 +5249,36 @@ static int test_opcode_picker_near_bottom_refresh_stays_inside_content(void)
     if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should close the picker first.")) return 1;
     if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should leave edit mode next.")) return 1;
     mon.deinit();
+
+    // On the bottom row the box moves up, so the opcode Return writes is shown.
+    n = 0;
+    keys[n++] = 'A';
+    keys[n++] = 'E';
+    for (int i = 0; i < 17; i++) keys[n++] = KEY_DOWN;
+    keys[n++] = 'L';
+    keys[n++] = 'D';
+    keys[n++] = 'A';
+    keys[n++] = KEY_RETURN;
+    FakeKeyboard bottom_kb(keys, n);
+    ui.keyboard = &bottom_kb;
+    monitor_reset_saved_state();
+    for (uint16_t addr = 0x0000; addr < 0x0020; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    BackendMachineMonitor bottom(&ui, &backend);
+    bottom.init(&screen, &bottom_kb);
+    for (int i = 0; i < n - 1; i++) {
+        if (expect(bottom.poll(0) == 0, "Bottom-row opcode picker test: setup failed.")) return 1;
+    }
+    char row[39];
+    screen.get_slice(1, 21, 38, row);
+    if (expect(strstr(row, "LDA #") != NULL,
+               "Opcode picker on the bottom row must show the selected entry.")) return 1;
+    if (expect(bottom.poll(0) == 0, "Bottom-row opcode picker test: commit failed.")) return 1;
+    if (expect(backend.read(0x0011) == 0xA9,
+               "Return on the bottom row must write the opcode the picker shows.")) return 1;
+    bottom.deinit();
     return 0;
 }
 
