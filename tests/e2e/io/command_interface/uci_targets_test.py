@@ -416,6 +416,17 @@ class FtpFixture:
         finally:
             self._close(ftp)
 
+    def track(self, directory: str, prefix: str) -> list[str]:
+        """Note for cleanup every file in `directory` whose name starts with `prefix`."""
+        ftp = self._open()
+        try:
+            found = [f"{directory}/{name.rsplit('/', 1)[-1]}"
+                     for name in ftp_lib.names(ftp, directory, prefix)]
+        finally:
+            self._close(ftp)
+        self.created.extend(p for p in found if p not in self.created)
+        return found
+
     def cleanup(self) -> bool:
         """Delete what this suite created. Returns False if anything is left."""
         if not self.created:
@@ -1440,27 +1451,30 @@ def run_load_config_name(session: RestSession, ftp: "FtpFixture", uci: Uci) -> b
 def run_savemem_name(session: RestSession, ftp: "FtpFixture", uci: Uci) -> bool:
     """SAVEMEM writes the file the command names, whatever a longer command left (#1155)."""
     scenario = "savemem-name"
-    # The name the firmware made of the short one when it ran into the rest of the longer.
-    run_on = SAVEMEM_FILE + SAVEMEM_LONGER[len(SAVEMEM_FILE):]
-    with check(f"{scenario}: SAVEMEM with a longer name"):
-        _, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_U64_SAVEMEM]) + SAVEMEM_LONGER.encode("ascii"))
-        if status == STATUS_UNKNOWN_COMMAND:
-            detail(f"{scenario}: SAVEMEM is a U64 command and this machine does not serve it; skipped")
-            return True
-        ftp.created.append(SAVEMEM_LONGER)
-        if status != STATUS_OK:
-            raise Failure(f"{scenario}: expected status {STATUS_OK!r}, got {status!r}")
+    # Without the terminator even the longer name runs into whatever came before it, so the
+    # names written cannot be predicted; everything starting like ours is cleaned up.
+    directory, prefix = SAVEMEM_FILE.rsplit("/", 1)
+    prefix = prefix.split(".")[0]
+    with check(f"{scenario}: no file of an earlier run is left, SAVEMEM never overwrites"):
+        ftp.track(directory, prefix)
+        if not ftp.cleanup():
+            raise Failure(f"{scenario}: could not delete what an earlier run left in {directory}")
     try:
+        with check(f"{scenario}: SAVEMEM with a longer name"):
+            _, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_U64_SAVEMEM]) + SAVEMEM_LONGER.encode("ascii"))
+            if status == STATUS_UNKNOWN_COMMAND:
+                detail(f"{scenario}: SAVEMEM is a U64 command and this machine does not serve it; skipped")
+                return True
+            if status != STATUS_OK:
+                raise Failure(f"{scenario}: expected status {STATUS_OK!r}, got {status!r}")
         expect(uci, f"{scenario}: SAVEMEM with the shorter name sent next",
                bytes([TARGET_CONTROL, CTRL_CMD_U64_SAVEMEM]) + SAVEMEM_FILE.encode("ascii"), STATUS_OK)
         with check(f"{scenario}: the shorter name is the file that was written"):
             if not session.file_exists(SAVEMEM_FILE):
-                raise Failure(f"{scenario}: {SAVEMEM_FILE} is missing"
-                              + (f", {run_on} was written instead" if session.file_exists(run_on) else ""))
-            ftp.created.append(SAVEMEM_FILE)
+                written = ftp.track(directory, prefix)
+                raise Failure(f"{scenario}: {SAVEMEM_FILE} is missing, written: {', '.join(written) or 'nothing'}")
     finally:
-        if session.file_exists(run_on):
-            ftp.created.append(run_on)
+        ftp.track(directory, prefix)
     return True
 
 
