@@ -2978,6 +2978,7 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
     bool launch_site_lags = visible_rom_fetch_lags() && !debug_owner.remote &&
         monitor_backing_store_is_visible_rom(
             monitor_backing_store_for_cpu_port(run_pc, cpu_port));
+    bool mask_current = false;
     if (run_pc == target_pc || on_breakpoint || launch_site_lags) {
         uint8_t bytes[3];
         if (launch_site_lags) {
@@ -2993,13 +2994,20 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
         DebugPredictResult pred;
         debug_predict(run_pc, bytes, false, &pred);
         DebugContext stepped;
+        // As in go(), a breakpoint on an opcode that cannot be stepped stays
+        // masked for the whole run.
+        mask_current = on_breakpoint && run_pc != target_pc &&
+            (pred.kind == DBG_PREDICT_BRK || pred.kind == DBG_PREDICT_UNSAFE);
+        if (mask_current) {
+            stepped = from;
+        }
         // Self-hit escape steps into; launch priming steps over.
         bool into = (run_pc == target_pc) ||
             (on_breakpoint && jsr_targets_ram(pred, cpu_port));
-        Result skip = step_with_predict(have_context ? &from : 0, run_pc, pred, into,
-                                        &stepped, cpu_port, bps, run_pc, true,
-                                        launch_site_lags ? bytes : 0,
-                                        !launch_site_lags);
+        Result skip = mask_current ? DBG_OK :
+            step_with_predict(have_context ? &from : 0, run_pc, pred, into,
+                              &stepped, cpu_port, bps, run_pc, true,
+                              launch_site_lags ? bytes : 0, !launch_site_lags);
         if (skip != DBG_OK) {
             return skip;
         }
@@ -3008,7 +3016,7 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
         run_pc = have_context ? stepped.pc : run_pc;
         // The instruction stepped may have changed the banking.
         cpu_port = execution_cpu_port(have_context ? &stepped : 0);
-        if (have_context && (run_pc == target_pc ||
+        if (!mask_current && have_context && (run_pc == target_pc ||
                 context_at_breakpoint(stepped, bps, 0, false))) {
             *ctx = stepped;
             return DBG_OK;
@@ -3021,8 +3029,11 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
 
     MonitorBackingStore target_store =
         monitor_backing_store_for_cpu_port(target_pc, cpu_port);
-    PatchInstallResult bp_patched = install_breakpoints(
-        bps, target_pc, target_store, true);
+    PatchInstallResult bp_patched = mask_current ?
+        install_breakpoints(bps, run_pc,
+                            monitor_backing_store_for_cpu_port(run_pc, cpu_port),
+                            true, true) :
+        install_breakpoints(bps, target_pc, target_store, true);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?

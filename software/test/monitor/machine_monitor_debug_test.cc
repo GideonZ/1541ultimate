@@ -6215,6 +6215,38 @@ static int test_go_from_a_breakpoint_rearms_it_beside_another()
     return 0;
 }
 
+static int test_run_to_masks_a_breakpoint_it_cannot_step()
+{
+    static const uint8_t opcodes[] = { 0x1A, 0x00 }; // undocumented NOP, BRK
+    for (unsigned i = 0; i < sizeof(opcodes); i++) {
+        FakeTrappingMachine m;
+        memset(&m.ram[0x2000], 0xEA, 8);
+        if (expect(m.park(), "parking step must complete")) return 1;
+        m.ram[0x2000] = opcodes[i];
+
+        MonitorBreakpoints bps;
+        bps.allocate(0x2000, 0x07);
+
+        DebugContext from;
+        debug_context_reset(&from);
+        from.valid = true;
+        from.pc = 0x2000;
+        from.sp = 0xF8;
+
+        // An armed capture keeps the fake from trapping on the BRK at the PC.
+        m.arm_capture_context(0x2005, 0xF8, 0, 0, 0, 0x24);
+        int patches = m.brk_patch_writes;
+        DebugContext ctx;
+        if (expect(m.run_to(from, 0x2005, &bps, 0x2000, &ctx) == DebugSession::DBG_OK &&
+                   ctx.valid && ctx.pc == 0x2005,
+                   "K from an unsteppable breakpoint must run on to the cursor")) return 1;
+        if (expect(m.brk_patch_writes == patches + 1 &&
+                   m.ram[0x2000] == opcodes[i],
+                   "K must leave the unsteppable breakpoint unarmed for the run")) return 1;
+    }
+    return 0;
+}
+
 static int test_step_out_from_a_breakpoint_rearms_it()
 {
     FakeTrappingMachine m;
@@ -10490,6 +10522,7 @@ int main()
     RUN(test_run_to_leaves_the_breakpoint_it_is_stopped_on);
     RUN(test_run_to_uses_the_banking_after_leaving_a_breakpoint);
     RUN(test_go_from_a_breakpoint_rearms_it_beside_another);
+    RUN(test_run_to_masks_a_breakpoint_it_cannot_step);
     RUN(test_debugger_traps_in_cartridge_ram_are_installed);
     RUN(test_go_from_a_breakpoint_in_io_does_not_rearm_it);
     RUN(test_step_out_from_a_breakpoint_rearms_it);

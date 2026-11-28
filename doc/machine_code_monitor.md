@@ -867,7 +867,7 @@ The CPU executes from the memory banked in through `$01`, not from the bank sele
 - `U` needs a stop first. After `T` into subroutines it works at any depth. After a breakpoint or `K` inside a subroutine it works while the return address is on top of the stack. Otherwise it shows `NOT IN SUBROUTINE`.
 - `G` runs until an enabled breakpoint. With no enabled breakpoint, the program runs freely and Debug ends; on the C64 or HDMI screen the monitor also closes.
 - `K` runs until the cursor address, or an earlier enabled breakpoint.
-- `U`, `G` and `K` step past a breakpoint the program is stopped on. It stays set, and stops the program the next time it gets there.
+- `U`, `G` and `K` step past a breakpoint the program is stopped on. It stays set, and stops the program the next time it gets there. If it is on a `BRK` or an undocumented opcode, it stays unarmed for that whole run, and `G` is refused when no other breakpoint is enabled.
 
 On the Ultimate 64, a `BRK` in the program also stops `G` and `K`.
 
