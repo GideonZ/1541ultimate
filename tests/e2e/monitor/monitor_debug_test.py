@@ -2842,6 +2842,28 @@ def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> 
             _clear_breakpoints_and_leave(session, "RAM under KERNAL cleanup")
             _reset_c64_core(rest_host)
 
+    with mt.check("Debug: a G that times out after a stop runs the program once"):
+        _reopen_monitor(session)
+        # $C350: INC $C193 / JMP $C353
+        mt.write_rest_memory(rest_host, 0xC350, bytes.fromhex("EE93C14C53C3"))
+        mt.write_rest_memory(rest_host, 0xC193, bytes([0x00]))
+        _stop_at_breakpoint(session, 0xC350, 0xC350, "timeout after stop")
+        try:
+            _clear_breakpoint_at(session, 0xC350, "timeout after stop clear")
+            # $C3F0 is never executed.
+            _ensure_breakpoint_at(session, 0xC3F0, "timeout after stop second")
+            started = time.monotonic()
+            session.send_char("G")
+            _wait_for_screen_text(session, "DEBUG TIMEOUT", timeout=18.0)
+            took = time.monotonic() - started
+            count = mt.read_rest_memory(rest_host, 0xC193, 1)[0]
+            if count != 1 or took > 10.0:
+                raise mt.Failure(
+                    f"G that timed out ran INC $C193 {count} times in {took:.1f} s")
+        finally:
+            _clear_breakpoints_and_leave(session, "timeout after stop cleanup")
+            _reset_c64_core(rest_host)
+
 
 def run_rom_single_step_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Exercise bare CPU-visible BASIC/KERNAL ROM stepping over Telnet."""
