@@ -514,10 +514,10 @@ void BrkDebugSession :: restore_stale_visible_hard_vector(void)
     uint8_t lo = read_patch_byte(HARD_VECTOR_LO, HARD_VECTOR_ROM_CPU_PORT);
     uint8_t hi = read_patch_byte(HARD_VECTOR_HI, HARD_VECTOR_ROM_CPU_PORT);
     if (hard_vector_points_to_stub(lo, hi)) {
-        poke_cpu(HARD_VECTOR_LO, HARD_VECTOR_DEFAULT_LO,
-                 HARD_VECTOR_ROM_CPU_PORT);
-        poke_cpu(HARD_VECTOR_HI, HARD_VECTOR_DEFAULT_HI,
-                 HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_LO, HARD_VECTOR_DEFAULT_LO,
+                         HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_HI, HARD_VECTOR_DEFAULT_HI,
+                         HARD_VECTOR_ROM_CPU_PORT);
     }
     end_stopped_session(stopped_it);
 }
@@ -543,10 +543,12 @@ void BrkDebugSession :: save_and_install_visible_hard_vector(void)
         saved_hard_rom_vector[0] = HARD_VECTOR_DEFAULT_LO;
         saved_hard_rom_vector[1] = HARD_VECTOR_DEFAULT_HI;
     }
-    poke_cpu(HARD_VECTOR_LO, (uint8_t)(HARD_BRK_STUB_ADDR & 0xFF),
-             HARD_VECTOR_ROM_CPU_PORT);
-    poke_cpu(HARD_VECTOR_HI, (uint8_t)(HARD_BRK_STUB_ADDR >> 8),
-             HARD_VECTOR_ROM_CPU_PORT);
+    // A patch of the ROM image: poke_cpu stores to the RAM underneath, as the
+    // 6510 does.
+    write_patch_byte(HARD_VECTOR_LO, (uint8_t)(HARD_BRK_STUB_ADDR & 0xFF),
+                     HARD_VECTOR_ROM_CPU_PORT);
+    write_patch_byte(HARD_VECTOR_HI, (uint8_t)(HARD_BRK_STUB_ADDR >> 8),
+                     HARD_VECTOR_ROM_CPU_PORT);
     // Point the stub's forward vector ($03EE/$03EF) at the KERNAL's own IRQ/BRK
     // entry, not the RAM default ($0000): the ~60x/sec jiffy IRQ hits this stub
     // while armed, and forwarding to $0000 executed the 6510 port register as
@@ -612,10 +614,10 @@ void BrkDebugSession :: uninstall_hard_vector(void)
     poke_cpu(HARD_VECTOR_LO, saved_hard_vector[0], HARD_VECTOR_RAM_CPU_PORT);
     poke_cpu(HARD_VECTOR_HI, saved_hard_vector[1], HARD_VECTOR_RAM_CPU_PORT);
     if (hard_rom_vector_installed) {
-        poke_cpu(HARD_VECTOR_LO, saved_hard_rom_vector[0],
-                 HARD_VECTOR_ROM_CPU_PORT);
-        poke_cpu(HARD_VECTOR_HI, saved_hard_rom_vector[1],
-                 HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_LO, saved_hard_rom_vector[0],
+                         HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_HI, saved_hard_rom_vector[1],
+                         HARD_VECTOR_ROM_CPU_PORT);
         hard_rom_vector_installed = false;
     }
     for (int i = 0; i < HARD_BRK_STUB_BYTES_LEN; i++) {
