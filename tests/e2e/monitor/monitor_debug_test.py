@@ -4672,6 +4672,47 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         _step_and_assert_pc(session, "D", 0xC7A1, "RAM-under-KERNAL exit re-entry step")
         _ensure_no_debug(session)
 
+    with mt.check("Exit-liveness: leaving Debug with I/O banked out keeps interrupts masked"):
+        # With the character ROM over I/O the KERNAL IRQ handler cannot
+        # acknowledge CIA1, so a cleared I flag takes the IRQ after every RTI
+        # and the jiffy clock races (about 420 counts a second) instead of
+        # standing still.
+        base, loop, counter = 0xCA00, 0xCA09, 0xCAF0
+        program = bytes([0x78,                    # SEI
+                         0xA9, 0x2F, 0x85, 0x00,  # LDA #$2F / STA $00
+                         0xA9, 0x33, 0x85, 0x01,  # LDA #$33 / STA $01
+                         0xEE, 0xF0, 0xCA,        # loop: INC $CAF0
+                         0x4C, 0x09, 0xCA])       # JMP loop
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, base, program)
+        session.goto(f"{base:04X}")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "I/O-out exit clear")
+        _ensure_breakpoint_at(session, loop, "I/O-out exit breakpoint")
+        session.goto(f"{base:04X}")
+        session.send_char("G")
+        _wait_for_go_pc(session, f"{loop:04X}")
+        _clear_all_breakpoints(session, "I/O-out exit release")
+        _ensure_no_debug(session, "I/O-out exit")
+        with _c64_running():
+            time.sleep(0.3)
+            jiffy = mt.read_rest_memory(rest_host, 0x00A0, 3)
+            count = mt.read_rest_memory(rest_host, counter, 1)
+            time.sleep(1.0)
+            jiffy_after = mt.read_rest_memory(rest_host, 0x00A0, 3)
+            count_after = mt.read_rest_memory(rest_host, counter, 1)
+        if count_after == count:
+            raise mt.Failure(
+                f"the program did not run on after Debug was left: jiffy clock "
+                f"{jiffy.hex()} -> {jiffy_after.hex()} in one second")
+        if jiffy_after != jiffy:
+            raise mt.Failure(
+                f"interrupts were taken with I/O banked out: jiffy clock "
+                f"{jiffy.hex()} -> {jiffy_after.hex()} in one second")
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+
 
 def run_edit_visibility_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """An edit to memory must be what the machine executes and reads next.
