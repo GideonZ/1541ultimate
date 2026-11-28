@@ -707,8 +707,6 @@ void MachineMonitor :: debug_request_over()
     monitor_read_predict_bytes(session, backend, start_pc, bytes);
     if (disassembler_6502_is_illegal(bytes[0])) {
         monitor_log_debug("over", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        debug_cleanup_session();
         get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
         redraw_full();
         return;
@@ -770,8 +768,6 @@ void MachineMonitor :: debug_request_trace()
     monitor_read_predict_bytes(session, backend, start_pc, bytes);
     if (disassembler_6502_is_illegal(bytes[0])) {
         monitor_log_debug("trace", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        debug_cleanup_session();
         get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
         redraw_full();
         return;

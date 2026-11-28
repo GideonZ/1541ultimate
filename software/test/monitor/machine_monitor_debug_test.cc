@@ -1742,6 +1742,20 @@ static int test_d_inside_debug_without_context_goto_keeps_cursor_authoritative()
     return 0;
 }
 
+// Whether the row under the Debug footer labels starts with `pc`.
+static bool find_debug_footer_value(CaptureScreen &screen, const char *pc)
+{
+    char row[40];
+    for (int y = 0; y < 24; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "PC") != NULL && strstr(row, "NV-BDIZC") != NULL) {
+            screen.get_slice(1, y + 1, 38, row);
+            return strncmp(row, pc, strlen(pc)) == 0;
+        }
+    }
+    return false;
+}
+
 static int test_d_refuses_undocumented_opcode_with_specific_warning()
 {
     TestUserInterface ui;
@@ -1772,6 +1786,37 @@ static int test_d_refuses_undocumented_opcode_with_specific_warning()
     if (expect(ui.popup_count > 0 && strcmp(ui.last_popup, "UNSUPPORTED OPCODE") == 0,
                "Undocumented opcode refusal must use UNSUPPORTED OPCODE")) return 1;
     monitor.deinit();
+
+    // From a stop, the refusal leaves the program stopped.
+    const int step_keys[] = { 'D', 'T' };
+    for (int step = 0; step < 2; step++) {
+        TrackingDebugBackend stopped_backend;
+        monitor_reset_saved_state();
+        stopped_backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+        stopped_backend.write(0x1000, 0xEA);
+        const int stop_keys[] = { 'J', 'A', 'D', 'D', step_keys[step] };
+        FakeKeyboard stop_keyboard(stop_keys, 5);
+        ui.keyboard = &stop_keyboard;
+        ui.set_prompt("1000", 1);
+        ui.last_popup[0] = 0;
+
+        BackendMachineMonitor stopped(&ui, &stopped_backend);
+        stopped.init(&screen, &stop_keyboard);
+        for (int i = 0; i < 4; i++) {
+            if (expect(stopped.poll(0) == 0, "Step to a stop stays in the monitor")) return 1;
+        }
+        stopped_backend.last_session->predict_bytes_valid = true;
+        stopped_backend.last_session->predict_bytes[0] = 0x1A;
+        if (expect(stopped.poll(0) == 0, "Refused step stays in the monitor")) return 1;
+        if (expect(strcmp(ui.last_popup, "UNSUPPORTED OPCODE") == 0,
+                   "Refused step from a stop must say UNSUPPORTED OPCODE")) return 1;
+        if (expect(stopped_backend.last_session->cleanup_calls == 0 &&
+                   stopped_backend.session_creations == 1,
+                   "Refused step must not release the stopped program")) return 1;
+        if (expect(find_debug_footer_value(screen, "C003"),
+                   "Refused step must keep the stopped registers")) return 1;
+        stopped.deinit();
+    }
     return 0;
 }
 
@@ -1782,27 +1827,25 @@ static int test_go_refuses_to_resume_when_session_reclaim_is_denied()
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
+    // Debug entered without a session, so G has to claim one.
+    backend.refuse_session = true;
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     backend.write(0x1000, 0xEA);
-    const int keys[] = { 'J', 'A', 'U', 'D', 'D', 'G' };
-    FakeKeyboard keyboard(keys, 6);
+    const int keys[] = { 'J', 'A', 'D', 'G' };
+    FakeKeyboard keyboard(keys, 4);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("1000", 1);
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 4; ++i) {
-        if (expect(monitor.poll(0) == 0, "Unsupported step stays in Debug")) return 1;
+    for (int i = 0; i < 3; ++i) {
+        if (expect(monitor.poll(0) == 0, "Debug setup stays in the monitor")) return 1;
     }
-    backend.last_session->predict_bytes_valid = true;
-    backend.last_session->predict_bytes[0] = 0x1A;
-    if (expect(monitor.poll(0) == 0, "Unsupported step stays in the monitor")) return 1;
-    if (expect(strcmp(ui.last_popup, "UNSUPPORTED OPCODE") == 0,
-               "The unsupported step must release its session")) return 1;
+    backend.refuse_session = false;
     backend.session_claim_allowed = false;
     if (expect(monitor.poll(0) == 0, "Busy Go must stay in the monitor")) return 1;
-    if (expect(backend.session_creations == 2 && strcmp(ui.last_popup, "DEBUG IN USE") == 0,
+    if (expect(backend.session_creations == 1 && strcmp(ui.last_popup, "DEBUG IN USE") == 0,
                "Go must report that another monitor owns Debug")) return 1;
     if (expect(!monitor.consume_pending_go(NULL, NULL, NULL) && !monitor.has_deferred_debug_go(),
                "Busy Go must not schedule a jump or resume")) return 1;

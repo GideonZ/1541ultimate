@@ -946,7 +946,7 @@ The two messages that start with `Step` appear on the bottom row. All others app
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `Step Into: run to a breakpoint 1st`         | `T` in ROM or RAM under ROM before the first stop. Set a breakpoint and press `G`.                          |
 | `Step Over: run to a breakpoint 1st`         | `D` on an instruction in ROM, other than a `JSR`, before the first stop.                                    |
-| `UNSUPPORTED OPCODE`                         | `T` or `D` met an undocumented opcode, which cannot be stepped.                                             |
+| `UNSUPPORTED OPCODE`                         | `T` or `D` met an undocumented opcode. The program stays stopped.                                             |
 | `UNSAFE TARGET`                              | The next instruction is a `BRK`, or an `RTS` / `RTI` before the first stop.                                 |
 | `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR`. Set a breakpoint at the return address and press `G`. |
 | `RETURN NOT REACHED`                         | `U` did not stop at the caller.                                                                            |
