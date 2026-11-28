@@ -36,7 +36,7 @@ C=+R      Reset    C=+I     Interface
 F1/SH+SPC Page Up  F7/SPACE Page Down
 ```
 
-While the monitor is open, `C=+R` resets the machine without confirmation. Outside Debug it works from the memory views, Edit and help, and closes the monitor. In Debug it also works from the monitor's lists and pickers, and the monitor stays in Debug. It does not work while a command prompt or message box is open. On hardware that cannot reach a reset the monitor shows `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
+While the monitor is open, `C=+R` resets the machine without confirmation. Outside Debug it works from the memory views, Edit and help, and closes the monitor. In Debug it also works from the monitor's lists and pickers, except the Load and Save file picker, and the monitor stays in Debug. It does not work while a command prompt or message box is open. On hardware that cannot reach a reset the monitor shows `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
 
 To close the monitor:
 
@@ -554,7 +554,7 @@ The number tool is a compact base-conversion and overwrite popup for the current
 - ASCII
 - Screen code
 
-The popup title shows the target address and whether the target is a `BYTE` or a `WORD`. In Assembly view the target is the operand of the current instruction; for an instruction without an operand it is the byte after the instruction.
+The popup title shows the target address and whether the target is a `BYTE` or a `WORD`. In Assembly view the target is the operand of the current instruction; for an instruction without an operand it is the byte after the instruction. On a `DATA` row the target is the byte under the cursor.
 
 The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views.
 
@@ -643,7 +643,7 @@ Here the first two instructions are copied to `$C010` while the scan covers a th
 
 Both pickers list at most 256 matches. A search with no result shows `No matches` or `No differences`.
 
-A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`. On Fill and Transfer, `Return` does nothing while the placeholder is untouched.
+A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`. On Fill and Transfer, `Return` on the untouched placeholder closes the prompt without running the command.
 
 ## File I/O
 
@@ -801,7 +801,7 @@ C021  RTS
 
 `D` starts Debug in the Assembly view. It turns Poll off, because `P` sets breakpoints. Starting Debug runs nothing.
 
-Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and `G` start at the cursor address. `K` starts at the address of the last jump made in Debug, or at the address where Debug started, and runs to the cursor. After a stop, `T`, `D`, `U`, `G` and `K` continue from the stop.
+Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and `G` start at the cursor address. `K` starts at the address last jumped to in Debug with `J`, a bookmark, a search result or an off-screen follow, or else where Debug started, and runs to the cursor. After a stop, `T`, `D`, `U`, `G` and `K` continue from the stop.
 
 | Key                 | Effect                                                                   |
 | ------------------- | ------------------------------------------------------------------------ |
@@ -862,12 +862,14 @@ In the example, `-` and `B` are 1 because the program is stopped by a `BRK`, and
 
 The CPU executes from the memory banked in through `$01`, not from the bank selected with `O`. After each stop on an Ultimate 64, the view switches to the bank the CPU is using.
 
-- `T` executes one instruction. It refuses an `RTS` whose return address does not follow a `JSR`.
+- `T` executes one instruction. An `RTS` goes to the address on the stack. Outside a subroutine entered with `T`, it is refused when that address does not follow a `JSR`.
 - `D` runs a `JSR` as one step, including calls into KERNAL or BASIC. For any other instruction it does the same as `T`.
 - `U` needs a stop first. After `T` into subroutines it works at any depth. After a breakpoint or `K` inside a subroutine it works while the return address is on top of the stack. Otherwise it shows `NOT IN SUBROUTINE`.
 - `G` runs until an enabled breakpoint. With no enabled breakpoint, the program runs freely and Debug ends; on the C64 or HDMI screen the monitor also closes.
 - `K` runs until the cursor address, or an earlier enabled breakpoint.
 - `U`, `G` and `K` step past a breakpoint the program is stopped on. It stays set, and stops the program the next time it gets there.
+
+On the Ultimate 64, a `BRK` in the program also stops `G` and `K`.
 
 If no breakpoint is reached within a few seconds, the debugger shows `DEBUG TIMEOUT`.
 
@@ -882,6 +884,8 @@ Code in ROM, and in RAM under ROM, is limited until the program has stopped once
 | RAM or I/O space               | All but `U`, and `T` / `D` on `RTS` or `RTI`     |
 | RAM under BASIC, KERNAL or I/O | All but `T` and `U`, and `D` on `RTS` or `RTI`   |
 | BASIC, KERNAL or character ROM | `G`, `K`, and `D` on a `JSR`                     |
+
+`T`, `D` and `K` show `PATCH FAILED` when they would need a `BRK` in I/O space.
 
 To get the first stop, set a breakpoint, move the cursor to where execution should start and press `G`, or use `D` on a `JSR`.
 
@@ -951,9 +955,9 @@ The two messages that start with `Step` appear on the bottom row. All others app
 | `Step Over: run to a breakpoint 1st`         | `D` on an instruction in ROM, other than a `JSR`, before the first stop.                                    |
 | `UNSUPPORTED OPCODE`                         | `T` or `D` met an undocumented opcode. The program stays stopped.                                             |
 | `UNSAFE TARGET`                              | The next instruction is a `BRK`, or an `RTS` / `RTI` before the first stop.                                 |
-| `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR`. Set a breakpoint at the return address and press `G`. |
+| `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR` outside a subroutine entered with `T`. Set a breakpoint at the return address and press `G`. |
 | `RETURN NOT REACHED`                         | `U` did not stop at the caller.                                                                            |
-| `PATCH FAILED`                               | The address is in I/O or a reserved range, or memory did not accept the `BRK`.                              |
+| `PATCH FAILED`                               | The address is in I/O or a reserved range, is RAM under a banked-in ROM on a cartridge, or memory did not accept the `BRK`. |
 | `NO FREE BRK SLOT`                           | All 10 breakpoints are in use.                                                                             |
 | `BRK <memory>, CPU <memory>; not mapped now` | The breakpoint is set in memory the CPU does not have banked in.                                           |
 | `DEBUG TIMEOUT`                              | No breakpoint was reached in time.                                                                         |
