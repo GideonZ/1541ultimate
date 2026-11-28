@@ -6039,6 +6039,9 @@ static int test_hunt_and_compare_picker_navigation(void)
         if (expect(mon.poll(0) == 0, "Hunt picker test: hunt command failed.")) return 1;
         screen.get_slice(1, 4, 37, row);
         if (expect(strstr(row, "C000 DE") == row, "Hunt picker must show the first match at the top initially.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Hunt results  1/20 ") == header && strstr(header, "RETURN jumps") != NULL,
+                   "Hunt picker header must show the whole counter and its hint.")) return 1;
         if (expect(mon.poll(0) == 0, "Hunt picker test: page-down failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hunt picker test: RETURN jump failed.")) return 1;
         screen.get_slice(1, 3, 38, header);
@@ -6080,6 +6083,33 @@ static int test_hunt_and_compare_picker_navigation(void)
         if (expect(strstr(header, "MONITOR HEX $C102") == header,
                    "Compare picker RETURN must jump to the selected difference.")) return 1;
         if (expect(mon.poll(0) == 1, "Compare picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        // The widest counter either picker can show.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'C', KEY_END };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        for (uint16_t addr = 0xC000; addr < 0xC100; addr++) {
+            backend.write(addr, 0x01);
+        }
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000-C0FF,C200", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Compare counter test: compare command failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Compare counter test: END failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Compare results  256/256 ") == header &&
+                   strstr(header, "RETURN jumps") != NULL,
+                   "Compare picker header must fit its widest counter and the hint.")) return 1;
         mon.deinit();
     }
 
@@ -7352,6 +7382,41 @@ static int test_edit_indicator_layout_across_views(void)
         if (expect(strncmp(header + 34, "EDIT", 4) == 0,
                    "EDIT must remain fixed at the far right when Undoc, Freeze, and Poll are active.")) return 1;
         mon.deinit();
+    }
+
+    {
+        // Range leaves too little room for these two headers with "MONITOR".
+        struct RangeCase {
+            int view_key;
+            const char *left;
+        } cases[] = {
+            { 'V', "SCR U/G $0000 " },
+            { 'B', "BIN $0000/7 " },
+            { 'M', "MONITOR HEX $0000 " },
+        };
+
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            char header[39];
+            const int keys[] = { cases[i].view_key, 'R' };
+            FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int step = 0; step < 2; step++) {
+                if (expect(mon.poll(0) == 0, "Range header test: key failed.")) return 1;
+            }
+            screen.get_slice(1, 3, 38, header);
+            if (expect(strstr(header, cases[i].left) == header &&
+                       strncmp(header + 19, "Range", 5) == 0, cases[i].left)) return 1;
+            mon.deinit();
+        }
     }
 
     return 0;

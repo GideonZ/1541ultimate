@@ -4319,7 +4319,7 @@ void MachineMonitor :: draw_header()
 
     const char *right = NULL;
     if (!help_visible) {
-        if (hunt_picker_active) right = "ENTER jumps RSTOP exits";
+        if (hunt_picker_active) right = "RETURN jumps";
         else if (edit_mode) right = "Edit";
     }
     if (right && (help_visible || hunt_picker_active)) {
@@ -4358,14 +4358,19 @@ void MachineMonitor :: draw_header()
 
         memset(fixed, ' ', width);
         fixed[width] = 0;
-        int left_len = strlen(line);
+        // Next to the indicators, drop "MONITOR " rather than cut the address.
+        const char *left = line;
+        if ((int)strlen(left) > first_slot - 1 && strncmp(left, "MONITOR ", 8) == 0) {
+            left += 8;
+        }
+        int left_len = strlen(left);
         if (left_len > first_slot - 1) {
             left_len = first_slot - 1;
         }
         if (left_len < 0) {
             left_len = 0;
         }
-        memcpy(fixed, line, left_len);
+        memcpy(fixed, left, left_len);
         if (show_undoc && flag_slot + 5 <= width) {
             memcpy(fixed + flag_slot, "Undoc", 5);
         } else if (range_mode && flag_slot + 5 <= width) {

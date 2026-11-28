@@ -97,6 +97,8 @@ Mode indicators may include any combination of the following:
 | `Dbg`     | Debug mode is active                                  |
 | `EDIT`    | Edit mode is active                                   |
 
+Where an indicator leaves too little room, as `Range` does in the Screen and Binary views, the header omits the word `MONITOR`.
+
 Each indicator has a fixed slot, counted back from the right edge of the header. `Undoc` and `Range` share one slot, so only one of them is shown at a time. `Poll` and `Dbg` share a slot too, and entering Debug turns poll off, so only one of those is ever shown.
 
 ### Body
@@ -630,7 +632,7 @@ T C000-C005,C010,C000-C008
 
 Here the first two instructions are copied to `$C010` while the scan covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
 
-`Hunt` and `Compare` open a result picker with these controls:
+`Hunt` and `Compare` open a result picker. Its header shows the selected match and the number of matches, for example `Hunt results  1/20`. The picker has these controls:
 
 | Key                       | Action                    |
 | ------------------------- | ------------------------- |
