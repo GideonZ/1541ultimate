@@ -421,7 +421,7 @@ Addresses in command prompts are hexadecimal.
 
 Follow code flow in the Assembly view:
 
-- `Enter` follows the resolved target when the cursor is on a jumpable instruction: `JSR`, `JMP` absolute, `JMP` indirect, or any of `BEQ`, `BNE`, `BCC`, `BCS`, `BMI`, `BPL`, `BVC`, `BVS`. For `JMP` indirect the monitor reads the vector and follows the address stored there.
+- `Enter` follows the resolved target when the cursor is on a jumpable instruction: `JSR`, `JMP` absolute, `JMP` indirect, or any of `BEQ`, `BNE`, `BCC`, `BCS`, `BMI`, `BPL`, `BVC`, `BVS`. For `JMP` indirect the monitor reads the vector and follows the address stored there; as on the 6510, a vector at `$xxFF` takes its high byte from `$xx00`.
 - `Enter` returns to the most recent saved source location when the current Assembly instruction is not jumpable and the follow stack is non-empty.
 - The follow stack holds up to 10 return locations. When it is full, the oldest entry is discarded and the newest 10 are kept.
 - After each successful follow or return, the bottom row shows a compact zero-based follow-stack status for about 2 seconds, for example `F1 JMP $E000` and `F0 RET $A000`.

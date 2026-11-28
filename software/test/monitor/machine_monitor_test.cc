@@ -7738,6 +7738,30 @@ static int test_asm_follow_and_return_navigation(void)
         mon.deinit();
     }
 
+    // RETURN on JMP ($xxFF) takes the vector's high byte from $xx00, as the
+    // 6510 does.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C300", 1);
+        backend.write(0xC300, 0x6C); backend.write(0xC301, 0xFF); backend.write(0xC302, 0xC4);
+        backend.write(0xC4FF, 0x34);
+        backend.write(0xC400, 0xC6);
+        backend.write(0xC500, 0xC7);
+        monitor_reset_saved_state();
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "Follow JMP ($xxFF): key failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C634") == header,
+                   "Follow JMP ($xxFF) must wrap the vector within its page.")) return 1;
+        mon.deinit();
+    }
+
     // Test 4: RETURN at stack bottom on a non-followable line is a no-op.
     {
         const int keys[] = { 'J', 'A', KEY_RETURN, KEY_BREAK };

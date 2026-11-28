@@ -3700,7 +3700,9 @@ bool MachineMonitor :: follow_target(uint16_t *target)
                 } else {
                     uint16_t vector = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
                     uint8_t low = canonical_read(vector);
-                    uint8_t high = canonical_read((uint16_t)(vector + 1));
+                    // The 6510 does not carry into the vector's page.
+                    uint8_t high = canonical_read((uint16_t)((vector & 0xFF00) |
+                                                             ((vector + 1) & 0x00FF)));
                     *target = (uint16_t)(low | ((uint16_t)high << 8));
                     return true;
                 }
