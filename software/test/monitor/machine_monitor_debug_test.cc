@@ -2227,7 +2227,7 @@ static int test_g_after_cursor_stop_uses_captured_context()
     return 0;
 }
 
-static int test_g_after_goto_with_active_context_uses_cursor()
+static int test_g_after_goto_with_active_context_continues_from_stop()
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -2239,8 +2239,9 @@ static int test_g_after_goto_with_active_context_uses_cursor()
     backend.write(0xE001, 0x56);
     backend.write(0xE002, 0xEA);
 
-    const int keys[] = { 'J', 'A', 'D', 'D', 'J', 'G', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 8);
+    // The breakpoint keeps Debug open after G.
+    const int keys[] = { 'J', 'A', 'D', 'D', 'J', 'P', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("1000", 1);
@@ -2248,9 +2249,9 @@ static int test_g_after_goto_with_active_context_uses_cursor()
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 9; i++) {
         int r = monitor.poll(0);
-        if (i < 7) {
+        if (i < 8) {
             if (expect(r == 0, "Active-context Goto/Go setup polls should return 0")) return 1;
         } else {
             if (expect(r == 1, "Final RUN/STOP exits")) return 1;
@@ -2259,10 +2260,9 @@ static int test_g_after_goto_with_active_context_uses_cursor()
     if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
     if (expect(backend.last_session->go_calls == 1,
                "G after active-context J must invoke Go once")) return 1;
-    if (expect(!backend.last_session->last_go_from_valid,
-               "G after active-context J must ignore the previous captured context")) return 1;
-    if (expect(backend.last_session->last_start_pc == 0xE000,
-               "G after active-context J must start from the cursor address")) return 1;
+    if (expect(backend.last_session->last_go_from_valid &&
+               backend.last_session->last_go_from_pc == 0xC003,
+               "G after active-context J must continue from the stopped PC")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -9746,7 +9746,7 @@ int main()
     RUN(test_t_after_goto_ignores_successful_stale_snapshot);
     RUN(test_g_after_goto_ignores_successful_stale_snapshot);
     RUN(test_g_after_cursor_stop_uses_captured_context);
-    RUN(test_g_after_goto_with_active_context_uses_cursor);
+    RUN(test_g_after_goto_with_active_context_continues_from_stop);
     RUN(test_g_invalidates_context);
     RUN(test_return_remains_non_executing_navigation);
     RUN(test_ctrl_d_leaves_debug_only);

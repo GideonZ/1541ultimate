@@ -846,9 +846,6 @@ void MachineMonitor :: debug_request_go()
 {
     debug_clear_status();
     DebugContext from = debug.context();
-    if (debug_cursor_override) {
-        debug_context_reset(&from);
-    }
     bool busy;
     DebugSession *session = ensure_debug_session(&busy);
     if (busy) {
@@ -876,10 +873,8 @@ void MachineMonitor :: debug_request_go()
         monitor_log_address("debug go fallback", last_go_addr);
         return;
     }
-    // Start PC for a fresh Go is the Assembly view cursor: this is what the
-    // user is looking at and where they expect execution to begin. If a
-    // captured context is already in hand, the session prefers `from.pc`
-    // and ignores this fallback.
+    // Before the first stop, Go starts at the Assembly view cursor. With a
+    // captured context the session continues at `from.pc` and ignores this.
     uint16_t start_pc = state.current_addr;
     if (debug_run_window_refreeze_enabled &&
             !debug_has_enabled_breakpoint() &&
@@ -1149,12 +1144,9 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             if (backend && backend->supports_cpu_banking()) {
                 backend->set_monitor_cpu_port(state.cpu_port);
             }
-            // Moves the view, not the program counter. apply_go_local() sets
-            // debug_cursor_override when it is given an address the cursor is
-            // not already on, and that override makes the next Continue start
-            // here instead of resuming the captured stop. Reading the
-            // breakpoint list must not cost the session its context, so the
-            // cursor is placed first and RETURN below does the same.
+            // Moves the view, not the program counter. The cursor is placed
+            // first so that apply_go_local() does not record this as a jump the
+            // next command starts from; RETURN below does the same.
             state.current_addr = bp->address;
             apply_go_local(bp->address);
             printf("MCM breakpoint jump %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
