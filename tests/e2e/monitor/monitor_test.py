@@ -4745,6 +4745,10 @@ def run_program_vic_bank_test(context: MonitorContext) -> None:
             raise Failure(f"{when}: the footer does not show VIC{bank}\n{screen.text()}")
 
     try:
+        # From a reset machine, as it ends, so that what the checks before it
+        # left in the debugger cannot decide whether G runs the program.
+        reset_rest_machine(context.control, None)
+        session.enter_monitor()
         write_rest_memory_confirmed(context.rest_host, address, program)
         session.goto_run(f"{address:04X}")
         time.sleep(0.3)
