@@ -904,6 +904,8 @@ There are 10 breakpoints, numbered `0` to `9`.
 
 At `$A000-$BFFF`, `$D000-$DFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory selected with `O` when you set it, as shown by the memory tag. `$E000` in KERNAL and `$E000` in RAM are separate breakpoints. A breakpoint stops the program only while the program has that memory banked in. A breakpoint in I/O is refused with `PATCH FAILED` when the program is run.
 
+An Ultimate II+ or II+L cartridge has no `O` selection: at `$A000-$BFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory the CPU has banked in when you set it. A breakpoint in RAM there is also refused with `PATCH FAILED` if the program is run while ROM is banked in. RAM under I/O cannot have a breakpoint on a cartridge.
+
 If it is not banked in when you set the breakpoint, the monitor shows `BRK <memory>, CPU <memory>; not mapped now`: the memory of the breakpoint, then the memory the CPU has at that address.
 
 #### Breakpoints in ROM

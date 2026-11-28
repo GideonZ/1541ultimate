@@ -727,6 +727,13 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     if (visible_rom_patch && !supports_visible_rom_patching()) {
         return PATCH_INSTALL_NOT_SUPPORTED;
     }
+    // Without ROM patching a read follows the CPU's banking, so the RAM byte
+    // under a banked-in ROM or I/O cannot be saved for the restore.
+    if (!supports_visible_rom_patching() && target == MONITOR_BACKING_RAM &&
+            monitor_backing_store_for_cpu_port(addr, current_cpu_port()) !=
+                MONITOR_BACKING_RAM) {
+        return PATCH_INSTALL_FAILED;
+    }
     if (visible_rom_patch) {
         save_and_install_visible_hard_vector();
     }

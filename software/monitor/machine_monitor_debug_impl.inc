@@ -1015,6 +1015,13 @@ MonitorBackingStore MachineMonitor :: breakpoint_target_for_view(uint16_t addres
 {
     uint8_t view_cpu_port = state.cpu_port & 0x07;
 
+    // A cartridge cannot select the view bank, so under BASIC and KERNAL the
+    // view is whatever the CPU has banked in. RAM under I/O is left out: a
+    // cartridge could not restore the BRK there once I/O is banked back in.
+    if (backend && !backend->supports_cpu_banking() &&
+            (address < 0xD000 || address > 0xDFFF)) {
+        return breakpoint_target_for_live_cpu(address);
+    }
     return backend ? backend->backing_store_for_cpu_port(address, view_cpu_port) :
         monitor_backing_store_for_cpu_port(address, view_cpu_port);
 }

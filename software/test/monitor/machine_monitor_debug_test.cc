@@ -3162,6 +3162,92 @@ static int test_breakpoint_mismatch_message_uses_view_target_and_live_cpu()
     return 0;
 }
 
+// A cartridge cannot select the view bank; it knows the bank the CPU uses.
+struct CartridgeDebugBackend : public TrackingDebugBackend
+{
+    virtual bool supports_cpu_banking(void) const { return false; }
+    virtual uint8_t get_live_cpu_port(void) { return 0x05; }
+    virtual const char *source_name(uint16_t) const { return "RAM"; }
+};
+
+static int test_cartridge_breakpoint_targets_the_memory_the_cpu_has_banked_in()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    CartridgeDebugBackend backend;
+    monitor_reset_saved_state();
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xE000, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'P', KEY_CTRL_P, KEY_BREAK, KEY_BREAK,
+                         KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 5; i++) {
+        if (expect(monitor.poll(0) == 0, "Cartridge breakpoint setup")) return 1;
+    }
+    if (expect(ui.popup_count == 0,
+               "A breakpoint in banked-in RAM must not report a mapping mismatch")) return 1;
+    bool listed_as_ram = false;
+    for (int y = 0; y < 25; y++) {
+        char row[40];
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "$E000 RAM")) listed_as_ram = true;
+    }
+    if (expect(listed_as_ram,
+               "The breakpoint must belong to the RAM under the KERNAL")) return 1;
+    for (int i = 0; i < 2; i++) {
+        if (expect(monitor.poll(0) == 0, "Close the list and leave Debug")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+// A cartridge reads what the CPU sees at an address and writes the RAM there.
+class FakeCartridgeMachine : public FakeFreezeMachine
+{
+public:
+    uint8_t port;
+
+    FakeCartridgeMachine() : FakeFreezeMachine(false), port(0x07) { }
+
+protected:
+    virtual uint8_t current_cpu_port(void) const { return port; }
+    virtual uint8_t peek_cpu(uint16_t a, uint8_t)
+    {
+        return (a >= 0xE000 && (port & 0x02)) ? 0x60 : ram[a];
+    }
+};
+
+static int test_cartridge_leaves_ram_under_a_banked_in_rom_untouched()
+{
+    FakeCartridgeMachine m;
+    m.ram[0xE000] = 0xA9;
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07, MONITOR_BACKING_RAM);
+    DebugContext from;
+    debug_context_reset(&from);
+
+    if (expect(m.go(from, &bps, 0x2000) == DebugSession::DBG_PATCH_FAILED,
+               "A RAM breakpoint under a banked-in KERNAL cannot be armed")) return 1;
+    if (expect(m.ram[0xE000] == 0xA9,
+               "Refusing the breakpoint must not change the RAM")) return 1;
+
+    m.port = 0x05;
+    m.arm_capture_context(0xE000, 0xF8, 0, 0, 0, 0x24);
+    if (expect(m.go(from, &bps, 0x2000) == DebugSession::DBG_OK,
+               "The breakpoint is armed while its RAM is banked in")) return 1;
+    if (expect(m.ram[0xE000] == 0xA9,
+               "The program byte must be restored at the stop")) return 1;
+    return 0;
+}
+
 static int test_breakpoint_popup_store_reuses_selected_slot()
 {
     TestUserInterface ui;
@@ -10077,6 +10163,8 @@ int main()
     RUN(test_monitor_reset_saved_state_clears_breakpoints);
     RUN(test_breakpoint_toggle_via_r);
     RUN(test_breakpoint_mismatch_message_uses_view_target_and_live_cpu);
+    RUN(test_cartridge_breakpoint_targets_the_memory_the_cpu_has_banked_in);
+    RUN(test_cartridge_leaves_ram_under_a_banked_in_rom_untouched);
     RUN(test_breakpoint_popup_store_reuses_selected_slot);
     RUN(test_breakpoint_popup_digit_jumps_to_slot);
     RUN(test_breakpoint_popup_digit_jump_keeps_context);
