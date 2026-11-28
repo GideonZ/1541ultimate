@@ -35,6 +35,7 @@ public:
     virtual uint8_t get_live_cpu_port(void);
     virtual void invalidate_live_cpu_port_cache(void) { clear_observed_live_cpu_port(); }
     virtual uint8_t get_live_vic_bank(void);
+    virtual void set_live_vic_bank(uint8_t vic_bank);
     virtual uint8_t monitor_poll_hz(void) const;
     virtual void begin_session(void);
     virtual void end_session(void);
