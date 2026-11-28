@@ -6911,7 +6911,7 @@ static int test_load_save_and_goto_command_flow(void)
     return 0;
 }
 
-static int test_hex_single_nibble_commits_on_navigation(void)
+static int test_hex_single_nibble_is_discarded_on_navigation(void)
 {
     {
         TestUserInterface ui;
@@ -6929,8 +6929,8 @@ static int test_hex_single_nibble_commits_on_navigation(void)
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: enter edit mode failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: typing nibble failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: moving right failed.")) return 1;
-        if (expect(backend.read(0x0000) == 0x0E,
-                   "Leaving a half-typed hex nibble with cursor-right must commit it as 0x0N.")) return 1;
+        if (expect(backend.read(0x0000) == 0xFF,
+                   "Leaving a half-typed hex nibble with cursor-right must discard it.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: edit-mode exit failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Hex nibble cursor-right test: monitor exit failed.")) return 1;
         mon.deinit();
@@ -6952,11 +6952,75 @@ static int test_hex_single_nibble_commits_on_navigation(void)
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: enter edit mode failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: typing nibble failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: page down failed.")) return 1;
-        if (expect(backend.read(0x0000) == 0x0E,
-                   "Leaving a half-typed hex nibble with page movement must commit it as 0x0N.")) return 1;
+        if (expect(backend.read(0x0000) == 0xFF,
+                   "Leaving a half-typed hex nibble with page movement must discard it.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: edit-mode exit failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Hex nibble page-move test: monitor exit failed.")) return 1;
         mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'E', 'J', 'F' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("1000", 1);
+        monitor_reset_saved_state();
+        backend.write(0x1000, 0xFF);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "Hex nibble jump test failed.")) return 1;
+        }
+        if (expect(backend.read(0x1000) == 0xFF,
+                   "A half-typed hex nibble must not complete a byte at a jump target.")) return 1;
+        mon.deinit();
+    }
+
+    // Assembly edit mode: one digit of an operand, then a move, then a digit.
+    {
+        const int jump[] = { 'J', 'A', 'E', KEY_RIGHT, '5', 'J', '7' };
+        const int page[] = { 'J', 'A', 'E', KEY_RIGHT, '5', KEY_PAGEDOWN, '7' };
+        const int paste[] = { 'J', 'A', 'R', KEY_CTRL_C, 'E', KEY_RIGHT, '5', KEY_CTRL_V, '7' };
+        struct MoveCase {
+            const int *keys;
+            int count;
+            const char *message;
+        } cases[] = {
+            { jump, 7, "A half-typed operand digit must be discarded by a jump." },
+            { page, 7, "A half-typed operand digit must be discarded by paging." },
+            { paste, 9, "A half-typed operand digit must be discarded by a paste." },
+        };
+        for (int c = 0; c < 3; c++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            FakeKeyboard kb(cases[c].keys, cases[c].count);
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            ui.push_prompt("C000", 1);
+            ui.push_prompt("C010", 1);
+            monitor_reset_saved_state();
+            for (int addr = 0xC000; addr < 0xC100; addr += 2) {
+                backend.write((uint16_t)addr, 0xA9);
+                backend.write((uint16_t)(addr + 1), 0x12);
+            }
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int i = 0; i < cases[c].count; i++) {
+                if (expect(mon.poll(0) == 0, "Operand digit move test failed.")) return 1;
+            }
+            for (int addr = 0xC002; addr < 0xC100; addr++) {
+                if (expect(backend.read((uint16_t)addr) == ((addr & 1) ? 0x12 : 0xA9),
+                           cases[c].message)) return 1;
+            }
+            mon.deinit();
+        }
     }
 
     return 0;
@@ -9955,7 +10019,7 @@ int main()
     if (test_hunt_and_compare_picker_navigation()) return 1;
     if (test_prompt_cancel_and_empty_clipboard()) return 1;
     if (test_load_save_and_goto_command_flow()) return 1;
-    if (test_hex_single_nibble_commits_on_navigation()) return 1;
+    if (test_hex_single_nibble_is_discarded_on_navigation()) return 1;
     if (test_header_invariants_and_parity()) return 1;
     if (test_poll_mode_refreshes_visible_ram()) return 1;
     if (test_poll_mode_disabled_on_full_refresh_screen()) return 1;

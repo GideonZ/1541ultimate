@@ -501,7 +501,6 @@ class MachineMonitor : public UIObject
     // Apply a typed bit (0 or 1) to the byte at the cursor at binary_bit_index.
     void binary_apply_bit(uint8_t bit_value);
     void enter_edit_mode();
-    void commit_pending_hex_nibble(void);
     void apply_hex_digit(uint8_t value);
     void apply_ascii_char(char value);
     void apply_screen_char(char value);
@@ -512,6 +511,7 @@ class MachineMonitor : public UIObject
     int handle_reset_shortcut(void);
     int handle_interface_shortcut(void);
     void exit_edit_mode();
+    void discard_partial_entry(void);
     void reset_edit_blink();
     bool update_edit_blink();
     uint16_t next_poll_interval_ms(void);

@@ -523,7 +523,7 @@ Typing a letter in the mnemonic field opens the opcode picker. A branch operand 
 | Binary       | Clears the selected bit                         |
 | Assembly     | Replaces the current instruction with `NOP` bytes; clears a `DATA` row to `$00` |
 
-In Memory view, `DEL` first rolls back a half-typed nibble. In Assembly view, `DEL` first undoes the characters typed on the current instruction.
+In Memory view, `DEL` first rolls back a half-typed nibble. In Assembly view, `DEL` first undoes the characters typed on the current instruction. Moving to another address discards a half-typed digit; in Assembly view, a digit that is already written stays in memory.
 
 ## Selection and Clipboard
 

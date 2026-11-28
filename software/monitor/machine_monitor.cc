@@ -2444,6 +2444,7 @@ void MachineMonitor :: apply_go_local(uint16_t address)
         debug_cursor_override = true;
     }
     state.current_addr = address;
+    discard_partial_entry();
     // Every way of being sent to an address goes through here, so this is where
     // the Assembly view learns which boundary it disassembles from. See
     // decode_row: no row above it may reach across it, which is what keeps a
@@ -2699,7 +2700,7 @@ bool MachineMonitor :: clipboard_paste(void)
     } else {
         ensure_current_visible();
     }
-    pending_hex_nibble = -1;
+    discard_partial_entry();
     if (edit_mode) {
         reset_edit_blink();
     }
@@ -3319,7 +3320,6 @@ uint16_t MachineMonitor :: row_span(void) const
 
 void MachineMonitor :: move_current(int delta)
 {
-    commit_pending_hex_nibble();
     state.current_addr = (uint16_t)(state.current_addr + delta);
     if (state.view == MONITOR_VIEW_ASM) {
         ensure_disasm_visible();
@@ -3367,7 +3367,6 @@ void MachineMonitor :: move_binary_bits(int delta)
 
 void MachineMonitor :: page_move(int lines)
 {
-    commit_pending_hex_nibble();
     uint16_t span = row_span();
     if (span == 0) span = 1;
     uint16_t step = (uint16_t)(lines * span);
@@ -3407,15 +3406,6 @@ bool MachineMonitor :: prompt_command(const MonitorCommandInput &input, char *bu
 
     return get_ui()->string_box(input.title, buffer, max_len,
                                 input.template_mode, input.uppercase, &policy) > 0;
-}
-
-void MachineMonitor :: commit_pending_hex_nibble(void)
-{
-    if (!edit_mode || state.view != MONITOR_VIEW_HEX || pending_hex_nibble < 0) {
-        return;
-    }
-    canonical_write(state.current_addr, (uint8_t)pending_hex_nibble);
-    pending_hex_nibble = -1;
 }
 
 void MachineMonitor :: toggle_help()
@@ -5992,6 +5982,15 @@ bool MachineMonitor :: consume_pending_interface_swap(void)
     return wanted;
 }
 
+// A half-typed digit belongs to the address it was typed at.
+void MachineMonitor :: discard_partial_entry(void)
+{
+    pending_hex_nibble = -1;
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_history_reset(state.current_addr);
+}
+
 void MachineMonitor :: exit_edit_mode()
 {
     edit_mode = false;
@@ -6602,6 +6601,7 @@ int MachineMonitor :: handle_key(int key)
         case KEY_CONFIG:
             if (state.view == MONITOR_VIEW_DISASM) {
                 page_disassembly(-content_height);
+                discard_partial_entry();
                 draw();
                 return 0;
             }
@@ -6611,6 +6611,7 @@ int MachineMonitor :: handle_key(int key)
         case KEY_PAGEDOWN:
             if (state.view == MONITOR_VIEW_DISASM) {
                 page_disassembly(content_height);
+                discard_partial_entry();
                 draw();
                 return 0;
             }
