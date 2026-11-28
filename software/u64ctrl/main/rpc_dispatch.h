@@ -26,8 +26,10 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.30"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.35"
 #define IDENT_MAJOR   1
+// 1.35: a request shorter than what its command reads is answered ESP_ERR_INVALID_ARG (or dropped, when it has no
+// header), not run from the stale rest of its buffer.
 // 1.30: the recovery's root list drops the roots NSS master has deleted, no longer trusts
 // for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
 // QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
@@ -53,7 +55,7 @@ void send_keepalive();
 // when this is higher than what the module reports, so a module change that
 // does not bump it is silently never installed, and an older release never
 // replaces a newer module.
-#define IDENT_MINOR   30
+#define IDENT_MINOR   35
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
