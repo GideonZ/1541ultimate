@@ -765,8 +765,12 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
         if (skipped) {
             continue;
         }
-        PatchInstallResult patched = install_brk_at(bp->address, bp->view_cpu_port,
-                                                    bp->target);
+        // $0340-$035C is overwritten by the step trampoline, which arms its
+        // own BRK there, and by the cartridge's CPU-port capture.
+        bool scratch = bp->address >= INSN_TRAMPOLINE_ADDR &&
+                bp->address < HANDLER_ADDR;
+        PatchInstallResult patched = scratch ? PATCH_INSTALL_FAILED :
+                install_brk_at(bp->address, bp->view_cpu_port, bp->target);
         if (patched != PATCH_INSTALL_OK) {
             blocking_bp_address = bp->address;
             blocking_bp_valid = true;

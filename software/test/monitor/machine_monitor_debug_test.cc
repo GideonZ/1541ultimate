@@ -6517,6 +6517,18 @@ static int test_breakpoint_in_the_debugger_scratch_area_is_a_patch_failure()
     if (expect(r == DebugSession::DBG_PATCH_FAILED,
                "A breakpoint inside the debugger's own page-three area must report a patch failure")) return 1;
 
+    // The step trampoline and the cartridge's CPU-port capture use $0340-$035C.
+    static const uint16_t scratch[] = { 0x0340, 0x035C };
+    for (unsigned i = 0; i < sizeof(scratch) / sizeof(scratch[0]); i++) {
+        bps.clear_all();
+        bps.allocate(scratch[i], 0x07);
+        m.ram[scratch[i]] = 0xEA;
+        r = m.over_at(0xC020, pred, &bps, &ctx);
+        if (expect(r == DebugSession::DBG_PATCH_FAILED &&
+                   !fake_recorded_brk_patch(m, scratch[i]),
+                   "A breakpoint in $0340-$035C must report a patch failure")) return 1;
+    }
+
     // $D020 with I/O banked in is a register: a BRK written there changes it.
     bps.clear_all();
     bps.allocate(0xD020, 0x07);

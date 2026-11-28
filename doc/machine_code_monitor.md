@@ -936,7 +936,7 @@ Showing a breakpoint moves the view and selects its memory bank. The program sta
 | `$0340-$035C` | Work area for executing single instructions.                                      |
 | `$035D-$03FB` | The debugger's own code and the saved CPU registers.                              |
 
-The debugger also changes the vectors at `$FFFA` and `$FFFE` temporarily and uses a few stack bytes below `SP`. Keep no data in `$0340-$03FB`. A breakpoint in `$0314-$0319` or `$035D-$03FB` is refused with `PATCH FAILED` when the program is run.
+The debugger also changes the vectors at `$FFFA` and `$FFFE` temporarily and uses a few stack bytes below `SP`. Keep no data in `$0340-$03FB`. A breakpoint in `$0314-$0319` or `$0340-$03FB` is refused with `PATCH FAILED` when the program is run.
 
 ### Debug messages
 
