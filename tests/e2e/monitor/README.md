@@ -51,6 +51,10 @@ the facade itself before any suite built on it runs.
 ./run-tests u2@c64u -s machine-code-monitor -m telnet
 ```
 
+`monitor_test.py` also runs single checks:
+`python3 tests/e2e/monitor/monitor_test.py -H u64 --mode overlay --test picker-shortcuts`.
+`--help` lists the names `--test` accepts.
+
 A bare target is a whole machine. `cartridge@computer` is a cartridge under
 test in the computer it is plugged into; see
 [`tests/lib/targets.py`](../../lib/targets.py). The split matters here more
@@ -99,6 +103,7 @@ Monitor behaviour:
 
 Interaction contract:
 
+- the Load file picker ignores `C=+O`, `C=+R` and `C=+I`
 - Back removes one layer at a time, from `RUN/STOP` and from the real `←` key,
   through help, the number expression, popups, edit mode and finally the
   monitor

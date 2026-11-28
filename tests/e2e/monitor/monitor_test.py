@@ -4567,6 +4567,59 @@ class MonitorContext:
     machine: "machine_lib.Machine"
 
 
+def run_file_picker_shortcut_test(context: MonitorContext) -> None:
+    """The Load file picker ignores C=+O, C=+R and C=+I.
+
+    Each key is sent once. The picker must still be up afterwards, with the C64
+    not reset and the interface setting unchanged.
+    """
+    session = context.session
+    title = "MONITOR LOAD: Select File"
+
+    def picker_gone(snapshot: Snapshot) -> bool:
+        return title not in snapshot.text()
+
+    ensure_view(session, "HEX ")
+    interface = read_interface_type(context.device_host)
+    write_rest_memory_confirmed(context.rest_host, RESET_SENTINEL_ADDRESS,
+                                RESET_SENTINEL)
+    try:
+        session.send_char("L", settle=True)
+        wait_for_screen_contains(session, title)
+        for key, name in (("CTRL_O", "C=+O"), ("CBM_R", "C=+R"),
+                          ("CBM_I", "C=+I")):
+            send_key_that_may_close_the_ui(session, key)
+            snapshot = wait_until(session, picker_gone, timeout=2.0)
+            if picker_gone(snapshot):
+                raise Failure(f"{name} acted inside the file picker\n"
+                              f"{snapshot.text()}")
+            if not reset_sentinel_survives(context.rest_host):
+                raise Failure(f"{name} reset the C64 from the file picker")
+            if read_interface_type(context.device_host) != interface:
+                raise Failure(f"{name} changed '{UI_ITEM}' from the file picker")
+    finally:
+        if read_interface_type(context.device_host) != interface:
+            rest_api(context.device_host).configs.set(UI_STORE, UI_ITEM,
+                                                      interface)
+            wait_for_interface_type(context.device_host, None)
+            reset_rest_machine(context.control, None)
+        back_out_to_the_bare_browser(session)
+        ensure_monitor_open(session)
+
+
+# Checks that --test runs on their own; the full run includes them too.
+SELECTABLE_CHECKS: dict[str, tuple[str, Callable[[MonitorContext], None]]] = {
+    "picker-shortcuts": ("the file picker ignores C=+O, C=+R and C=+I",
+                         run_file_picker_shortcut_test),
+}
+
+
+def run_selectable_check(context: MonitorContext, name: str) -> None:
+    label, run = SELECTABLE_CHECKS[name]
+    with check(label):
+        run(context)
+
+
 def run_tests(context: MonitorContext) -> None:
     session = context.session
     rest_host = context.rest_host
@@ -5000,6 +5053,8 @@ def run_tests(context: MonitorContext) -> None:
 
     with check("save/load round-trip to file in new /Temp D64"):
         run_save_load_d64_test(session, rest_host, files_host, save_load_token)
+
+    run_selectable_check(context, "picker-shortcuts")
 
     # These two checks are about the Telnet transport itself -- a concurrent
     # poll-mode connection, and Telnet's own per-keystroke output volume --
@@ -5658,6 +5713,8 @@ def main() -> int:
                         help="REST address of the device under test, when it differs "
                              "from its name in the target.")
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
+    parser.add_argument("--test", action="append", choices=sorted(SELECTABLE_CHECKS),
+                        help="Run only this check; repeatable.")
     args = parser.parse_args()
 
     # A settled Telnet command is finished only once the screen has been quiet
@@ -5711,14 +5768,19 @@ def main() -> int:
         session = MonitorSession(backend)  # opens the menu and enters the monitor
         frozen = ui_freezes_machine(device_host, args.mode, machine_was_running)
         memory_host = device_host if frozen else live_host
-        run_tests(MonitorContext(
+        context = MonitorContext(
             session=session, rest_host=memory_host, mode=args.mode,
             is_u2=is_u2, control=control, video_host=live_host,
             files_host=device_host, live_host=live_host, frozen=frozen,
             device_host=device_host,
             machine=machine_lib.identify(
                 device_host,
-                lambda: (info.product, info.firmware_version))))
+                lambda: (info.product, info.firmware_version)))
+        if args.test:
+            for name in args.test:
+                run_selectable_check(context, name)
+        else:
+            run_tests(context)
     except Failure as exc:
         report_first_attempt_losses()
         suite_fail("monitor_test", str(exc))
