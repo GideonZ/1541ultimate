@@ -4545,12 +4545,18 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         _acquire_rom_context_at(rest_host, session, 0xE000, "exit-liveness ROM step")
         snap = session.capture()
         row = _disassembly_row(snap, 0xE000)
-        _step_and_assert_pc(session, "T", 0xE000 + _instruction_length_from_row(row),
-                            "exit-liveness ROM step")
-        # The KERNAL step resumes inside live KERNAL code; the IRQ (jiffy) is the
-        # deterministic anti-freeze proof. The editor-main-loop oracle is asserted
-        # in the RETURN-follow case below, where the C64 stays at the live BASIC
-        # editor (an arbitrary KERNAL step does not deterministically resume there).
+        stepped = _step_and_assert_pc(session, "T", 0xE000 + _instruction_length_from_row(row),
+                                      "exit-liveness ROM step")
+        # $E000 is the middle of BASIC's EXP, entered with JMP, so its closing
+        # RTS pops whatever the stack page holds above SP. A stale address there
+        # can run the program into a JAM (measured on u64: 3 of 16 with SP=$F0),
+        # so the return goes to a RAM loop that keeps the IRQ, and the jiffy, live.
+        # The editor-main-loop oracle is asserted in the RETURN-follow case below.
+        landing = 0xC7E0
+        mt.write_rest_memory(rest_host, landing, bytes([0x4C, landing & 0xFF, landing >> 8]))
+        sp = int(stepped["sp"], 16)
+        for offset, value in ((1, (landing - 1) & 0xFF), (2, (landing - 1) >> 8)):
+            mt.write_rest_memory(rest_host, 0x0100 + ((sp + offset) & 0xFF), bytes([value]))
         prove_monitor_exit_basic_liveness_and_reentry(
             rest_host, session, "KERNAL ROM step exit",
             require_jiffy=True, require_editor=False)
