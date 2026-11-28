@@ -50,7 +50,7 @@ static uint8_t my_irq(void *context)
 void WD177x :: init(void)
 {
     printf("Init WD177x...\n");
-    wd177x->command = 3; // enable index pulse; inverted
+    wd177x->command = 7; // enable index pulse; inverted; acknowledge write completions
     
 	// xTaskCreate( WD177x :: run, "WD177x", configMINIMAL_STACK_SIZE, this, PRIO_FLOPPY, &taskHandle );
     // Runs from the drive task now
@@ -61,6 +61,25 @@ void WD177x :: init(void)
 	}
 
 	install_high_irq(irqNr, my_irq, this);
+}
+
+// The drive CPU reads the status register as soon as busy drops, so a write that
+// could not be stored has to be reported before the bit is given back. The block
+// waits for this as long as bit 2 of register 0 is set; see init(). The
+// acknowledge only counts while the block waits for it, and a core without it
+// ignores the register, so this never touches a command the drive CPU has
+// issued since.
+void WD177x :: complete_write(bool stored)
+{
+    // A write that could not be stored is reported as record not found, which
+    // a WD177x also sets when it cannot write a sector. Both drive ROMs decode
+    // it. Lost data would be closer, but the 1571 ignores it, and the 1581's
+    // decoder at $CD3F leaves the flags it pushed on the stack when it sees it,
+    // so its RTS returns into the middle of the ROM.
+    if (!stored) {
+        wd177x->status_set = WD_STATUS_RNF;
+    }
+    wd177x->write_ack = 0;
 }
 
 void WD177x :: wait_head_settle(void)
@@ -389,6 +408,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
     uint32_t dummy;
     FRESULT res;
     MfmTrack newTrack;
+    bool stored = false;
     int refused;
 
     switch ((cmd >> 4) & 0x0F) {
@@ -403,6 +423,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             if (res == FR_OK) {
                 res = mount_file->write(buffer, sectSize, &dummy);
                 if (res == FR_OK) {
+                    stored = true;
                     printf("Sector write OK. %d/%d bytes written to offset %6x.\n", dummy, sectSize, offset);
                 } else {
                     printf("-> Image write error.\n");
@@ -418,6 +439,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
         if(track_updater) {
             track_updater(track_update_object, drive->track, drive->side, NULL);
         }
+        complete_write(stored);
         break;
 
     case WD_CMD_WRITE_TRACK:
@@ -430,14 +452,14 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             // The track was refused, so 'offset' still holds what the previous command
             // left there. Writing now would land in another track of the image, which is
             // worse than not writing at all: the format the drive asked for is lost either
-            // way, but the data that was there is not. The drive cannot be told at this
-            // point, as it read the status when busy dropped; see #937.
+            // way, but the data that was there is not. The drive is told through
+            // complete_write(), before busy is given back.
             // -1 is a track or side out of range, -2 a format larger than the track's space.
             printf("-> Track %d/%d refused (%d): %d sectors need %04x bytes, the image has %04x.\n",
                    drive->track, drive->side, refused, newTrack.numSectors, newTrack.actualDataSize,
                    (refused == -2) ? disk.GetTrack(drive->track, drive->side)->reservedSpace : 0);
-            wd177x->status_set = WD_STATUS_LOST;
             wd177x->dma_mode = 0;
+            complete_write(false);
             break;
         }
 
@@ -448,6 +470,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             if (res == FR_OK) {
                 res = mount_file->write(binbuf, newTrack.actualDataSize, &dummy);
                 if (res == FR_OK) {
+                    stored = true;
                     printf("Track format OK.\n");
                 } else {
                     printf("-> Image write error.\n");
@@ -463,6 +486,7 @@ void WD177x :: handle_wd177x_completion(t_wd177x_cmd& cmd)
             track_updater(track_update_object, drive->track, drive->side, &newTrack);
         }
         wd177x->dma_mode = 0;
+        complete_write(stored);
         break;
     default:
         printf("Unrecognized completion..\n");
