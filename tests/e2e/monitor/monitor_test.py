@@ -4720,6 +4720,52 @@ def run_overwrite_declined_test(context: MonitorContext) -> None:
         ensure_monitor_open(session)
 
 
+def run_program_vic_bank_test(context: MonitorContext) -> None:
+    """The footer shows the VIC bank a running program selected, and Shift+O returns to it."""
+    session = context.session
+    # Bank 2, because a menu that holds the machine turns the bank pins into
+    # inputs, and $DD00 then reads as bank 0 whatever the program selected.
+    address = 0xC000 if context.is_u2 and context.frozen else 0x1000
+    loop = address + 10
+    # LDA $DD00; AND #$FC; ORA #$01; STA $DD00; JMP *
+    program = bytes((0xAD, 0x00, 0xDD, 0x29, 0xFC, 0x09, 0x01, 0x8D, 0x00, 0xDD,
+                     0x4C, loop & 0xFF, loop >> 8))
+
+    def shows(bank: int):
+        def ready(snapshot: Snapshot) -> bool:
+            try:
+                return assert_u2_footer_consistent(snapshot) == bank
+            except Failure:
+                return False
+        return ready
+
+    def expect_bank(bank: int, when: str) -> None:
+        screen = wait_until(session, shows(bank), timeout=2.0)
+        if not shows(bank)(screen):
+            raise Failure(f"{when}: the footer does not show VIC{bank}\n{screen.text()}")
+
+    try:
+        write_rest_memory_confirmed(context.rest_host, address, program)
+        session.goto_run(f"{address:04X}")
+        time.sleep(0.3)
+        session.enter_monitor()
+        expect_bank(2, "monitor opened over a program in VIC bank 2")
+        session.send_char("O")
+        expect_bank(3, "Shift+O from the program's bank")
+        for _ in range(3):
+            session.send_char("O")
+        expect_bank(2, "Shift+O round to the program's bank")
+        session.send_key("ESC")
+        close_rest_menu(context.control, None)
+        dd00 = read_rest_memory(context.live_host, 0xDD00, 1)[0]
+        if 3 - (dd00 & 0x03) != 2:
+            raise Failure(f"the program left the monitor in VIC{3 - (dd00 & 0x03)}: "
+                          f"$DD00=${dd00:02X}")
+    finally:
+        reset_rest_machine(context.control, None)
+        session.enter_monitor()
+
+
 # Checks that --test runs on their own; the full run includes them too.
 SELECTABLE_CHECKS: dict[str, tuple[str, Callable[[MonitorContext], None]]] = {
     "picker-shortcuts": ("the file picker ignores C=+O, C=+R and C=+I",
@@ -4730,6 +4776,8 @@ SELECTABLE_CHECKS: dict[str, tuple[str, Callable[[MonitorContext], None]]] = {
                        run_long_load_name_test),
     "overwrite-declined": ("No on Save's overwrite question raises no error",
                            run_overwrite_declined_test),
+    "program-vic-bank": ("the footer shows the running program's VIC bank",
+                         run_program_vic_bank_test),
 }
 
 

@@ -106,6 +106,8 @@ Interaction contract:
 - the Load file picker ignores `C=+O`, `C=+R` and `C=+I`
 - Save creates, and Load opens, a file under the whole of a long name
 - answering No to Save's overwrite question keeps the file and raises no popup
+- the footer shows the VIC bank a running program selected, also in a menu
+  that holds the machine, and `Shift+O` cycles back round to it
 - Back removes one layer at a time, from `RUN/STOP` and from the real `←` key,
   through help, the number expression, popups, edit mode and finally the
   monitor
