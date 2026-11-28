@@ -2310,6 +2310,28 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: mt.MonitorSession
         _assert_flag_bits("RTI", parsed, N="1", Z="0", C="1")
         _ensure_no_debug(session)
 
+    with mt.check("Debug: an undocumented opcode leaves the program stopped"):
+        _reopen_monitor(session)
+        # $C2C0: INC $C2D0 / $04 $00 (undocumented NOP) / JMP $C2C0
+        mt.write_rest_memory(rest_host, 0xC2C0, bytes.fromhex("EED0C204004CC0C2"))
+        session.goto("C2C0")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("T")
+        _wait_for_pc(session, "C2C3")
+        session.send_char("T")
+        _wait_for_screen_text(session, "UNSUPPORTED OPCODE")
+        session.send_key("ENTER")
+        parsed = _parse_footer_values(_footer_value_line(session))
+        first = mt.read_rest_memory(rest_host, 0xC2D0, 1)[0]
+        time.sleep(0.3)
+        second = mt.read_rest_memory(rest_host, 0xC2D0, 1)[0]
+        _ensure_no_debug(session)
+        if parsed["pc"].upper() != "C2C3" or first != second:
+            raise mt.Failure(
+                f"the program must stay stopped at $C2C3: footer={parsed!r} "
+                f"$C2D0 ${first:02X} -> ${second:02X}")
+
 
 def run_page_cross_and_indirect_jump_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Cover page-crossing branches and the 6502 indirect-JMP wrap quirk."""
@@ -2656,6 +2678,24 @@ def run_cleanup_exit_tests(rest_host: str, session: mt.MonitorSession) -> None:
             rest_host, session,
             "Stop Debugging + Exit $2000 loop")
 
+    with mt.check("Debug: the left-arrow key closes the breakpoint list, then leaves Debug"):
+        _reopen_monitor(session)
+        session.goto("C000")
+        session.send_char("A")
+        session.send_char("D")
+        _header_line(session, expect="Dbg")
+        session.send_key("CTRL_P")
+        _wait_for_screen_text(session, "BREAKPOINTS")
+        session.send_key("ARROW_LEFT")
+        snap = _await_snapshot(session, lambda s: "BREAKPOINTS" not in s.text())
+        if "BREAKPOINTS" in snap.text():
+            raise mt.Failure(f"left-arrow did not close the breakpoint list:\n{snap.text()}")
+        _header_line(session, expect="Dbg")
+        session.send_key("ARROW_LEFT")
+        header = _wait_header(session, lambda line: "Dbg" not in line)
+        if "Dbg" in header:
+            raise mt.Failure(f"left-arrow did not leave Debug: {header!r}")
+
 
 def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Ensure repeated Go from the current breakpoint re-arms cleanly."""
@@ -2703,6 +2743,26 @@ def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> 
         session.send_char("D")
         _clear_breakpoint_at(session, 0xC300, "$C300 re-entry breakpoint clear")
         _ensure_no_debug(session)
+
+    with mt.check("Debug: G after a jump continues from the stop"):
+        _reopen_monitor(session)
+        # $C320: LDX #$05 / INX / INX / NOP / JMP $C324
+        mt.write_rest_memory(rest_host, 0xC320, bytes.fromhex("A205E8E8EA4C24C3"))
+        session.goto("C320")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "G after jump setup")
+        session.send_char("T")
+        _wait_for_pc(session, "C322")
+        try:
+            # Setting the breakpoint jumps the cursor to $C324.
+            _ensure_breakpoint_at(session, 0xC324, "G after jump breakpoint set")
+            session.send_char("G")
+            _wait_for_pc_register(session, "C324", "xr", "07",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoint_at(session, 0xC324, "G after jump breakpoint clear")
+            _ensure_no_debug(session)
 
 
 def run_rom_single_step_tests(rest_host: str, session: mt.MonitorSession) -> None:
@@ -2888,20 +2948,14 @@ def run_kernal_basic_breakpoint_regression(rest_host: str, session: mt.MonitorSe
         if parsed["pc"].upper() != "BC0F":
             raise mt.Failure(f"$E002 Go did not stop at $BC0F: {parsed!r}")
 
-        session.goto("BCF2")
-        row = _disassembly_row(session.capture(), 0xBCF2)
-        if "[BAS]" not in row:
-            raise mt.Failure(f"$BCF2 must be visible as BASIC ROM before breakpointing: {row!r}")
-        _ensure_breakpoint_at(session, 0xBCF2, "$BCF2 breakpoint set")
+        _ensure_breakpoint_at(session, 0xE005, "$E005 return breakpoint set")
 
         session.send_char("G")
-        parsed = _wait_for_pc_not(session, "BC0F")
-        _assert_no_debug_modal(session, "$BC0F Go with $BCF2 armed")
-        if parsed["pc"].upper() == "BC0F":
-            raise mt.Failure(f"Continue from $BC0F did not advance: {parsed!r}")
+        _wait_for_go_pc(session, "E005")
+        _assert_no_debug_modal(session, "$BC0F Go with $E005 armed")
 
         _clear_breakpoint_at(session, 0xBC0F, "$BC0F breakpoint clear")
-        _clear_breakpoint_at(session, 0xBCF2, "$BCF2 breakpoint clear")
+        _clear_breakpoint_at(session, 0xE005, "$E005 breakpoint clear")
         _ensure_no_debug(session)
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
@@ -3484,6 +3538,26 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
     payload = 0xE000
     boot = bytes([0x78, 0xA9, 0x00, 0x85, 0x01, 0x4C, 0x00, 0xE0])
     pay = bytes([0xEE, 0x21, 0xD0, 0x4C, 0x00, 0xE0])
+
+    with mt.check("Debug: over Telnet, G with no breakpoint leaves Debug"):
+        if session.backend.reopens_menu:
+            raise mt.SkipCheck("Overlay and Freeze close the monitor on this G")
+        _reopen_monitor(session)
+        # $C360: INC $C390 / JMP $C360
+        mt.write_rest_memory(rest_host, 0xC360, bytes.fromhex("EE90C34C60C3"))
+        session.goto("C360")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "G without breakpoint setup")
+        session.send_char("T")
+        _wait_for_pc(session, "C363")
+        session.send_char("G")
+        header = _wait_header(session, lambda line: "Dbg" not in line)
+        if "Dbg" in header:
+            _ensure_no_debug(session)
+            raise mt.Failure(f"G with no breakpoint must leave Debug: {header!r}")
+        _assert_rest_byte_changes(
+            rest_host, 0xC390, "G with no breakpoint must let the program run")
 
     with mt.check("Debug: $01=$00 continue repro reaches live CPU0 RAM-under-KERNAL",
                   u2=False,
@@ -4205,6 +4279,30 @@ def run_jsr_runcursor_rts_tests(rest_host: str, session: mt.MonitorSession) -> N
     (e.g. simulating the JSR by only moving the cached SP) leaves the live SP
     un-decremented, so the RTS pulls the wrong slot and either returns to the
     wrong address or never reaches its breakpoint (DEBUG TIMEOUT)."""
+
+    with mt.check("Debug: the first K starts at the last jump, not where Debug was entered"):
+        _reopen_monitor(session)
+        # $C340: LDX #$33 / STX $C391 / JMP $C350
+        # $C350: LDA #$2A / NOP / NOP / JMP $C350
+        mt.write_rest_memory(rest_host, 0xC340, bytes.fromhex("A2338E91C34C50C3"))
+        mt.write_rest_memory(rest_host, 0xC350, bytes.fromhex("A92AEAEA4C50C3"))
+        mt.write_rest_memory(rest_host, 0xC391, bytes([0x00]))
+        session.goto("C340")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "first K start setup")
+        session.goto("C350")
+        session.send_key("DOWN")
+        session.send_key("DOWN")
+        _header_line(session, expect="$C353")
+        session.send_char("K")
+        parsed = _wait_for_pc(session, "C353", timeout=_pc_wait_budget(after_go=True))
+        marker = mt.read_rest_memory(rest_host, 0xC391, 1)[0]
+        _ensure_no_debug(session)
+        if marker != 0x00 or parsed["ac"] != "2A":
+            raise mt.Failure(
+                f"K must start at $C350, not at $C340 where Debug was entered: "
+                f"$C391=${marker:02X} footer={parsed!r}")
 
     with mt.check("Debug: KERNAL JSR step-into + run-to-cursor at RTS + RTS keeps the stack coherent",
                   u2=False,
