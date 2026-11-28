@@ -650,6 +650,8 @@ A command prompt accepts only characters that can occur in the command being ent
 
 Files may exist directly in the Ultimate filesystem or inside a disk image such as `.D64`.
 
+The Load and Save file picker ignores `C=+O`, `C=+R` and `C=+I`.
+
 ### Load
 
 Load is a two-step flow:

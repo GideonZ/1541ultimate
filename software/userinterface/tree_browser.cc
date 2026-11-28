@@ -411,6 +411,10 @@ int TreeBrowser :: handle_key(int c)
             case KEY_MENU:
                 picked = false;
                 return MENU_CLOSE;
+            case KEY_CTRL_O:
+            case KEY_CTRL_R:
+            case KEY_CTRL_I:
+                return 0;
             default:
                 break;
         }
