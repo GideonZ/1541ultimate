@@ -771,7 +771,7 @@ Default slots are aimed at common C64 locations:
 
 Debug mode runs your program on the C64's own 6510 under your control. You can execute it one instruction at a time, stop it at breakpoints, and see the CPU registers after every stop. Debug works in the Assembly view, and the other monitor commands stay available between stops.
 
-To stop a program, the debugger writes a temporary `BRK` where execution should stop, and puts the original byte back at the stop. A breakpoint therefore needs memory the debugger can write to: RAM, and on the Ultimate 64 also BASIC, KERNAL and character ROM (see [Hardware support](#hardware-support)).
+To stop a program, the debugger writes a temporary `BRK` where execution should stop, and puts the original byte back at the stop. A breakpoint therefore needs memory the debugger can write to: RAM, and on the Ultimate 64 also BASIC and KERNAL ROM (see [Hardware support](#hardware-support)).
 
 ### Quick start
 
@@ -883,7 +883,7 @@ Code in ROM, and in RAM under ROM, is limited until the program has stopped once
 | ------------------------------ | ------------------------------------------------ |
 | RAM or I/O space               | All but `U`, and `T` / `D` on `RTS` or `RTI`     |
 | RAM under BASIC, KERNAL or I/O | All but `T` and `U`, and `D` on `RTS` or `RTI`   |
-| BASIC, KERNAL or character ROM | `G`, `K`, and `D` on a `JSR`                     |
+| BASIC or KERNAL ROM            | `G`, `K`, and `D` on a `JSR`                     |
 
 `T`, `D`, `U` and `K` write their own `BRK` into I/O space. Cartridge RAM at `$DE00-$DFFF` can execute it. A register changes instead, and shows `PATCH FAILED` if it does not read back `$00`.
 
@@ -1008,7 +1008,7 @@ The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 a
 | Memory view, edit, fill, compare                  | Yes                            | Yes                                                          |
 | `G` jump to address                               | Yes                            | Yes                                                          |
 | Stepping and breakpoints in C64 RAM               | Yes                            | Yes                                                          |
-| Stepping and breakpoints in BASIC / KERNAL / character ROM | Yes                   | No, the cartridge cannot change the C64's ROM                |
+| Stepping and breakpoints in BASIC / KERNAL ROM             | Yes                   | No, the cartridge cannot change the C64's ROM                |
 | Memory tag per row (`[KRN]`, `[RAM]`, ...)        | Yes                            | Yes, once the monitor has read `$01`; `[CPU]` until then      |
 | CPU bank selection with `O`                       | Yes                            | No; the footer shows the CPU's banking instead               |
 | VIC bank selection with `SH+O`                    | Yes                            | Yes                                                          |
