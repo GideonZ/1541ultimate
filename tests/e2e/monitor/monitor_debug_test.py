@@ -3991,6 +3991,212 @@ def run_side_effect_step_tests(rest_host: str, session: mt.MonitorSession) -> No
                 f"(expected +2)")
         _ensure_no_debug(session)
 
+    run_rom_store_step_checks(rest_host, session)
+
+
+# Stores to an address where ROM is banked in. Some steps are completed by the
+# firmware while the 6510 stays parked (Trace in or under ROM, and Over or Out
+# into ROM while an Overlay or Freeze menu holds the C64); such a store has to
+# reach the RAM underneath, as it does on a 6510, and leave the ROM alone.
+#
+# The program reads the target the way the CPU sees it before and after the
+# call, and the RAM underneath with $01=$34. The monitor's own ROM view is a
+# cached copy of the loaded image, so only the CPU's read shows a changed ROM.
+ROM_STORE_PROGRAM = 0xC000
+# before, after, RAM underneath, done marker, started marker
+ROM_STORE_RESULTS = 0xC0F0
+ROM_STORE_DONE = 0x99
+ROM_STORE_STARTED = 0x77
+# LDY $D3 / STA ($D1),Y / TXA / STA ($F3),Y / RTS in the stock KERNAL. The second
+# store goes to the colour pointer, which the program aims at $C0E0.
+KERNAL_STORE_ROUTINE = 0xEA1C
+UNDER_BASIC_STUB = 0xA000
+
+
+def _rom_store_program(target: int, port: int, sub: int,
+                       value: int | None) -> tuple[bytes, int]:
+    """The test program and the address of its JSR. With `value` None the
+    stored byte is the complement of what the CPU read, so it always differs."""
+    lo, hi = target & 0xFF, target >> 8
+    head = bytes([
+        0x78,                          # SEI
+        0xA9, 0x2F, 0x85, 0x00,        # LDA #$2F / STA $00
+        0xA9, lo, 0x85, 0xD1,          # ($D1) = target
+        0xA9, hi, 0x85, 0xD2,
+        0xA9, 0x00, 0x85, 0xD3,        # Y = 0 in the routine
+        0xA9, 0xE0, 0x85, 0xF3,        # ($F3) = $C0E0
+        0xA9, 0xC0, 0x85, 0xF4,
+        0xA9, port, 0x85, 0x01,        # bank under test
+        0xA9, ROM_STORE_STARTED, 0x8D, 0xF4, 0xC0,
+        0xAD, lo, hi,                  # LDA target: what the CPU reads
+        0x8D, 0xF0, 0xC0,
+    ]) + (bytes([0x49, 0xFF]) if value is None else bytes([0xA9, value]))
+    jsr_at = ROM_STORE_PROGRAM + len(head)
+    body = head + bytes([
+        0x20, sub & 0xFF, sub >> 8,    # JSR: the store under test
+        0xAC, lo, hi,                  # LDY target: what the CPU reads now
+        0xA9, 0x34, 0x85, 0x01,
+        0xAE, lo, hi,                  # LDX target: the RAM underneath
+        0xA9, 0x37, 0x85, 0x01,
+        0x8C, 0xF1, 0xC0,
+        0x8E, 0xF2, 0xC0,
+        0xA9, ROM_STORE_DONE, 0x8D, 0xF3, 0xC0,
+    ])
+    spin = ROM_STORE_PROGRAM + len(body)
+    return body + bytes([0x4C, spin & 0xFF, spin >> 8]), jsr_at
+
+
+def _rom_store_run(rest_host: str, session: mt.MonitorSession, context: str, *,
+                   target: int, port: int, how: str,
+                   value: int | None = None) -> bytes:
+    """Run the program, stop it at a breakpoint and step the store as `how`
+    says, then let it finish. Returns the five result bytes.
+
+    `how`: "run" (the 6510 runs the store), "trace" (Trace into the KERNAL
+    routine's STA), "under-basic" (Trace of an STA in RAM under BASIC), "over"
+    (Over the JSR), "out" (Out of the KERNAL routine), "probe" (no Debug)."""
+    sub = UNDER_BASIC_STUB if how == "under-basic" else KERNAL_STORE_ROUTINE
+    program, jsr_at = _rom_store_program(target, port, sub, value)
+    back = jsr_at + 3
+    bp, steps = {
+        "run": (KERNAL_STORE_ROUTINE, ()),
+        "trace": (KERNAL_STORE_ROUTINE, (("T", 0xEA1E), ("T", 0xEA20))),
+        "under-basic": (UNDER_BASIC_STUB, (("T", UNDER_BASIC_STUB + 3),)),
+        "over": (jsr_at, (("D", back),)),
+        "out": (KERNAL_STORE_ROUTINE, (("U", back),)),
+        "probe": (None, ()),
+    }[how]
+    _reopen_monitor(session)
+    _ensure_no_debug(session, context)
+    mt.write_rest_memory(rest_host, ROM_STORE_RESULTS, bytes(5))
+    mt.write_rest_memory_confirmed(rest_host, ROM_STORE_PROGRAM, program)
+    if bp is None:
+        session.goto_run(f"{ROM_STORE_PROGRAM:04X}")
+    else:
+        _select_monitor_view(session, port if how == "under-basic" else 7, context)
+        if how == "under-basic":
+            # STA target / RTS. A REST write here could reach the BASIC image.
+            for offset, byte in enumerate((0x8D, target & 0xFF, target >> 8, 0x60)):
+                address = UNDER_BASIC_STUB + offset
+                session.fill(f"{address:04X}-{address:04X},{byte:02X}")
+        session.goto(f"{bp:04X}")
+        session.send_char("A")
+        if "Dbg" not in _header_line(session):
+            session.send_char("D")
+        _ensure_breakpoint_at(session, bp, f"{context}: bp")
+        try:
+            session.goto(f"{ROM_STORE_PROGRAM:04X}")
+            session.send_char("G")
+            _wait_rom_entry_outcome(session, bp, context)
+            for key, pc in steps:
+                if key == "U":
+                    _step_out_to(session, f"{pc:04X}")
+                else:
+                    _step_and_assert_pc(session, key, pc, context)
+        finally:
+            _clear_breakpoint_at(session, bp, f"{context}: bp clear")
+        _ensure_no_debug(session, context)
+    session.leave_monitor()
+    results = b""
+    with _c64_running():
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            results = mt.read_rest_memory(rest_host, ROM_STORE_RESULTS, 5)
+            if results[3] == ROM_STORE_DONE:
+                break
+            time.sleep(0.1)
+    if results[3:4] != bytes([ROM_STORE_DONE]):
+        raise mt.Failure(f"{context}: the program did not finish; results "
+                         f"${ROM_STORE_RESULTS:04X}={results.hex().upper()}")
+    return results
+
+
+def _put_rom_byte_back(rest_host: str, session: mt.MonitorSession, context: str,
+                       target: int, port: int, results: bytes | None) -> None:
+    """Make the CPU read the ROM byte it read before the check.
+
+    A store stepped as "trace" writes the ROM image on firmware with the
+    defect, so stepping one that stores the original byte repairs it. On
+    correct firmware the ROM is never changed and nothing is stepped."""
+    if results is None:
+        recorded = mt.read_rest_memory(rest_host, ROM_STORE_RESULTS, 5)
+        if recorded[4] != ROM_STORE_STARTED:
+            return  # the store was never reached
+        original = recorded[0]
+        current = _rom_store_run(rest_host, session, f"{context} probe",
+                                 target=target, port=port, how="probe")[0]
+    else:
+        original, current = results[0], results[1]
+    if current == original:
+        return
+    print(f"[info] {context}: putting ${original:02X} back at ${target:04X}", flush=True)
+    repaired = _rom_store_run(rest_host, session, f"{context} repair",
+                              target=target, port=port, how="trace",
+                              value=original)
+    if repaired[1] != original:
+        raise mt.Failure(f"{context}: ROM byte at ${target:04X} could not be put "
+                         f"back: the CPU reads ${repaired[1]:02X}, not ${original:02X}")
+
+
+def _assert_rom_store_reaches_ram(rest_host: str, session: mt.MonitorSession,
+                                  context: str, *, target: int, port: int,
+                                  how: str) -> None:
+    results = None
+    failed = True
+    try:
+        results = _rom_store_run(rest_host, session, context,
+                                 target=target, port=port, how=how)
+        before, after, ram = results[0], results[1], results[2]
+        problems = []
+        if after != before:
+            problems.append(f"the CPU reads ${after:02X} at ${target:04X}, "
+                            f"not the ROM byte ${before:02X}")
+        if ram != before ^ 0xFF:
+            problems.append(f"the RAM underneath holds ${ram:02X}, not the "
+                            f"stored ${before ^ 0xFF:02X}")
+        if problems:
+            raise mt.Failure(f"{context}: " + "; ".join(problems))
+        failed = False
+    finally:
+        try:
+            if failed:
+                _reopen_monitor(session)
+                _clear_all_breakpoints(session, f"{context}: cleanup")
+                _ensure_no_debug(session, f"{context}: cleanup")
+            _put_rom_byte_back(rest_host, session, context, target, port, results)
+        except Exception as exc:  # noqa: BLE001 - never replace the original outcome
+            if not failed:
+                raise
+            print(f"[info] {context}: ROM repair failed: {exc}", flush=True)
+
+
+def run_rom_store_step_checks(rest_host: str, session: mt.MonitorSession) -> None:
+    """A stepped store to an address showing ROM reaches the RAM underneath."""
+    cases = (
+        # Control: the 6510 runs the store, so this holds on any firmware and
+        # proves the program's oracle.
+        ("Debug: a KERNAL store the 6510 runs writes RAM under the KERNAL",
+         0xE4C0, 0x37, "run"),
+        ("Debug: Trace of a KERNAL store writes RAM under the KERNAL",
+         0xE4C0, 0x37, "trace"),
+        ("Debug: Trace of a KERNAL store writes RAM under BASIC",
+         0xBF60, 0x37, "trace"),
+        ("Debug: Trace of a KERNAL store writes RAM under the character ROM",
+         0xD7F8, 0x33, "trace"),
+        ("Debug: Trace of a store in RAM under BASIC writes RAM under the KERNAL",
+         0xE4C0, 0x36, "under-basic"),
+        ("Debug: Over a JSR into a KERNAL store writes RAM under the KERNAL",
+         0xE4C0, 0x37, "over"),
+        ("Debug: Out of a KERNAL store routine writes RAM under the KERNAL",
+         0xE4C0, 0x37, "out"),
+    )
+    for label, target, port, how in cases:
+        with mt.check(label, u2=False,
+                      u2_reason="U64 CPU banking and the ROM image are required"):
+            mt.skip_unsupported()
+            _assert_rom_store_reaches_ram(rest_host, session, label,
+                                          target=target, port=port, how=how)
+
 
 def run_jsr_runcursor_rts_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Step into a visible-ROM JSR, run to the cursor at the subroutine's RTS,

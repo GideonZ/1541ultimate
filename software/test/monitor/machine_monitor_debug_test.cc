@@ -852,13 +852,9 @@ protected:
         }
         return ram[a];
     }
-    virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t patch_cpu_port)
+    // A store to a ROM-mapped address reaches the RAM underneath, as on a 6510.
+    virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
     {
-        volatile uint8_t *rom = rom_patch_ptr(a, patch_cpu_port);
-        if (rom && allow_visible_rom_patching) {
-            *rom = b;
-            return;
-        }
         ram[a] = b;
     }
     virtual uint8_t read_patch_byte(uint16_t a, uint8_t patch_cpu_port)
@@ -872,6 +868,13 @@ protected:
     virtual void write_patch_byte(uint16_t a, uint8_t b, uint8_t patch_cpu_port)
     {
         volatile uint8_t *rom = rom_patch_ptr(a, patch_cpu_port);
+        // The KERNAL hard vector is a ROM patch too, but the counters below
+        // record breakpoint patches only.
+        if (rom && allow_visible_rom_patching &&
+                (a == FAKE_HARD_VECTOR_LO || a == FAKE_HARD_VECTOR_HI)) {
+            *rom = b;
+            return;
+        }
         if (rom && allow_visible_rom_patching) {
             if (b == 0x00) {
                 if (brk_patch_writes < MAX_RECORDED_BRK_PATCHES) {
