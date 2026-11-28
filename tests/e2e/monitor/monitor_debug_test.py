@@ -623,6 +623,10 @@ def _ensure_breakpoint_at(session: mt.MonitorSession, address: int,
     if "[BRK" in row:
         return
     session.send_char("P")
+    # Armed against a store the live CPU does not map, P raises a note that
+    # owns the keyboard.
+    if "not mapped now" in session.capture().text():
+        session.send_key("ENTER")
     _assert_no_debug_modal(session, context)
     row = _disassembly_row(session.capture(), address)
     if "[BRK" not in row:
@@ -4312,6 +4316,24 @@ def _put_rom_byte_back(rest_host: str, session: mt.MonitorSession, context: str,
                          f"back: the CPU reads ${repaired[1]:02X}, not ${original:02X}")
 
 
+def _recover_rom_store_state(rest_host: str, session: mt.MonitorSession,
+                             context: str) -> None:
+    """From whatever a failed check left on screen, get to a reset C64, no
+    armed breakpoint and a monitor outside Debug."""
+    session.enter_monitor()
+    _dismiss_modal_if_present(session)  # an alert box owns the keyboard
+    _reopen_monitor(session)
+    _reset_c64_core(rest_host)
+    _reopen_monitor(session)
+    # Outside Debug, C=+P is ignored while the breakpoint table is empty.
+    session.goto("C000")
+    session.send_char("A")
+    if "Dbg" not in _header_line(session):
+        session.send_char("D")
+    _clear_all_breakpoints(session, context)
+    _ensure_no_debug(session, context)
+
+
 def _assert_rom_store_reaches_ram(rest_host: str, session: mt.MonitorSession,
                                   context: str, *, target: int, port: int,
                                   how: str) -> None:
@@ -4334,14 +4356,20 @@ def _assert_rom_store_reaches_ram(rest_host: str, session: mt.MonitorSession,
     finally:
         try:
             if failed:
-                _reopen_monitor(session)
-                _clear_all_breakpoints(session, f"{context}: cleanup")
-                _ensure_no_debug(session, f"{context}: cleanup")
+                _recover_rom_store_state(rest_host, session, f"{context}: cleanup")
             _put_rom_byte_back(rest_host, session, context, target, port, results)
         except Exception as exc:  # noqa: BLE001 - never replace the original outcome
             if not failed:
                 raise
             print(f"[info] {context}: ROM repair failed: {exc}", flush=True)
+        finally:
+            if failed:
+                # The repair steps a program of its own and can fail part way.
+                try:
+                    _recover_rom_store_state(rest_host, session,
+                                             f"{context}: after repair")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[info] {context}: cleanup failed: {exc}", flush=True)
 
 
 def run_rom_store_step_checks(rest_host: str, session: mt.MonitorSession) -> None:
