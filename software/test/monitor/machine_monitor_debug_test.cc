@@ -8113,6 +8113,34 @@ static int test_cleanup_resume_preserves_interrupts_when_kernal_banked_out()
     return 0;
 }
 
+// With the character ROM in place of I/O the KERNAL IRQ handler cannot
+// acknowledge the CIA, so a cleared I flag would take the IRQ after every RTI.
+static int test_cleanup_resume_preserves_interrupts_when_io_banked_out()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+    fake_seed_captured_context(m, 0x2001, 0xF9, 0x42, 0x17, 0x99, 0xA4);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x07;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x03;   // KERNAL, BASIC and character ROM
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext next;
+    if (expect(m.over_at(0x2000, pred, &next) == DebugSession::DBG_OK,
+               "Setup step must succeed before I/O-out cleanup")) return 1;
+
+    m.cleanup();
+
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 5] == 0x03,
+               "I/O-out resume must restore the captured $01")) return 1;
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 17] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 18] == 0xA4,
+               "I/O-out resume must keep the I flag")) return 1;
+    return 0;
+}
+
 // Regression for the step-mode stack side effect: the NMI used to launch a run
 // pushes a 3-byte frame (PCH/PCL/SR). Because we resume with a JMP, that frame
 // must be pulled back off inside the trampoline so the program's SP - and hence
@@ -10575,6 +10603,7 @@ int main()
     RUN(test_freeze_step_timeout_refreezes_and_recovers);
     RUN(test_cleanup_resume_trampoline_restores_full_context);
     RUN(test_cleanup_resume_preserves_interrupts_when_kernal_banked_out);
+    RUN(test_cleanup_resume_preserves_interrupts_when_io_banked_out);
     RUN(test_nmi_launch_trampoline_balances_stack);
     RUN(test_kernal_out_cold_nmi_launch_installs_hard_nmi_vector);
     RUN(test_kernal_out_cold_nmi_launch_restores_hard_nmi_vector_on_timeout);

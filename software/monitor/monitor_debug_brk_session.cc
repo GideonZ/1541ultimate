@@ -1268,14 +1268,15 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     uint8_t resume_ddr = from.cpu_port_registers_valid ? from.cpu_ddr : 0x37;
     uint8_t resume_port = from.cpu_port_registers_valid ?
         from.cpu_port_latch : (uint8_t)(from.live_cpu_port & 0x07);
-    // Clear I on resume (only when KERNAL is mapped) so a program that never
-    // re-enables interrupts itself (e.g. BASIC's idle loop) does not leave the
-    // cursor/keyboard/jiffy dead until a reset; with KERNAL banked out there is
-    // no IRQ handler at $FFFE, so clearing I there would wedge it worse.
+    // Clear I on resume (only when KERNAL and I/O are mapped) so a program that
+    // never re-enables interrupts itself (e.g. BASIC's idle loop) does not leave
+    // the cursor/keyboard/jiffy dead until a reset. Without KERNAL there is no
+    // IRQ handler at $FFFE; without I/O the KERNAL handler cannot acknowledge
+    // the CIA and takes the IRQ again after every RTI.
     uint8_t resume_effective_port = from.live_cpu_port_valid ?
         (uint8_t)(from.live_cpu_port & 0x07) : (uint8_t)(resume_port & 0x07);
     uint8_t resume_sr = from.sr;
-    if (resume_effective_port & 0x02) {
+    if ((resume_effective_port & 0x06) == 0x06) {
         resume_sr &= (uint8_t)~0x04;
     }
     poke_visible(0x0000, resume_ddr);
