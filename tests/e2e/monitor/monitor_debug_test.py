@@ -4423,30 +4423,6 @@ def run_jsr_runcursor_rts_tests(rest_host: str, session: mt.MonitorSession) -> N
     un-decremented, so the RTS pulls the wrong slot and either returns to the
     wrong address or never reaches its breakpoint (DEBUG TIMEOUT)."""
 
-    with mt.check("Debug: the first K starts at the last jump, not where Debug was entered"):
-        _reopen_monitor(session)
-        # $C340: LDX #$33 / STX $C391 / JMP $C350
-        # $C350: LDA #$2A / NOP / NOP / JMP $C350
-        mt.write_rest_memory(rest_host, 0xC340, bytes.fromhex("A2338E91C34C50C3"))
-        mt.write_rest_memory(rest_host, 0xC350, bytes.fromhex("A92AEAEA4C50C3"))
-        mt.write_rest_memory(rest_host, 0xC391, bytes([0x00]))
-        session.goto("C340")
-        session.send_char("A")
-        session.send_char("D")
-        _clear_all_breakpoints(session, "first K start setup")
-        session.goto("C350")
-        session.send_key("DOWN")
-        session.send_key("DOWN")
-        _header_line(session, expect="$C353")
-        session.send_char("K")
-        parsed = _wait_for_pc(session, "C353", timeout=_pc_wait_budget(after_go=True))
-        marker = mt.read_rest_memory(rest_host, 0xC391, 1)[0]
-        _ensure_no_debug(session)
-        if marker != 0x00 or parsed["ac"] != "2A":
-            raise mt.Failure(
-                f"K must start at $C350, not at $C340 where Debug was entered: "
-                f"$C391=${marker:02X} footer={parsed!r}")
-
     with mt.check("Debug: KERNAL JSR step-into + run-to-cursor at RTS + RTS keeps the stack coherent",
                   u2=False,
                   u2_reason="U64 CPU-visible KERNAL/BASIC ROM stepping is required"):

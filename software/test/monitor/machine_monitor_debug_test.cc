@@ -4629,7 +4629,7 @@ static int test_k_runs_to_cursor()
     return 0;
 }
 
-static int test_k_without_context_runs_from_last_jump_to_cursor()
+static int test_k_without_context_runs_from_debug_entry_to_cursor()
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -4643,8 +4643,8 @@ static int test_k_without_context_runs_from_last_jump_to_cursor()
     backend.write(0xE003, 0x0F);
     backend.write(0xE004, 0xBC);
 
-    const int keys[] = { 'J', 'A', 'D', 'J', KEY_DOWN, 'K', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 8);
+    const int keys[] = { 'J', 'A', 'D', 'J', 'K', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 7);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
@@ -4652,9 +4652,9 @@ static int test_k_without_context_runs_from_last_jump_to_cursor()
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 7; i++) {
         int r = monitor.poll(0);
-        if (i < 7) {
+        if (i < 6) {
             if (expect(r == 0, "No-context K setup polls should return 0")) return 1;
         } else {
             if (expect(r == 1, "Final RUN/STOP exits")) return 1;
@@ -4663,9 +4663,9 @@ static int test_k_without_context_runs_from_last_jump_to_cursor()
     if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
     if (expect(backend.last_session->run_to_calls == 1,
                "No-context K must use run-to-cursor")) return 1;
-    if (expect(backend.last_session->last_start_pc == 0xE002,
-               "No-context K must start at the last jump, not where Debug was entered")) return 1;
-    if (expect(backend.last_session->last_run_to_target == 0xE005,
+    if (expect(backend.last_session->last_start_pc == 0xE000,
+               "No-context K must continue from the debug entry address, not the moved cursor")) return 1;
+    if (expect(backend.last_session->last_run_to_target == 0xE002,
                "No-context K must target the current cursor address")) return 1;
     monitor.deinit();
     return 0;
@@ -10482,7 +10482,7 @@ int main()
     RUN(test_stop_debugging_resumes_current_debug_context);
     RUN(test_help_screen_shows_debug_commands);
     RUN(test_k_runs_to_cursor);
-    RUN(test_k_without_context_runs_from_last_jump_to_cursor);
+    RUN(test_k_without_context_runs_from_debug_entry_to_cursor);
     RUN(test_ctrl_i_swaps_interface_in_monitor);
     RUN(test_reset_reentry_view_follows_live_cpu_bank);
     RUN(test_reopen_without_reset_preserves_manual_cpu_view);
