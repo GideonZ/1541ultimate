@@ -23,7 +23,7 @@
 #include "freertos/ringbuf.h"
 #include "hal/uart_hal.h"
 #include "hal/gpio_hal.h"
-#include "soc/uart_periph.h"
+#include "hal/uart_periph.h"
 #include "soc/rtc_cntl_reg.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -368,7 +368,7 @@ BaseType_t my_uart_get_buffer(uint8_t uart_num, command_buf_t **buf, TickType_t 
 }
 
 #include "esp_check.h"
-esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg, int intr_alloc_flags,  uart_isr_handle_t *handle)
+esp_err_t uart_isr_register(uart_port_t uart_num, void (*fn)(void *), void *arg, int intr_alloc_flags, intr_handle_t *handle)
 {
     int ret;
     ESP_RETURN_ON_FALSE((uart_num < UART_NUM_MAX), ESP_FAIL, UART_TAG, "uart_num error");

@@ -23,6 +23,7 @@
 #include "jtag.h"
 #include "sntp.h"
 #include "power_state.h"
+#include "radio_entropy.h"
 #include "recovery.h"
 
 static const char *TAG = "u64ctrl";
@@ -97,7 +98,6 @@ static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_att
 }
 
 static adc_oneshot_unit_handle_t adc1_handle;
-static SemaphoreHandle_t adc_lock = NULL;
 static adc_cali_handle_t adc1_cali_handle[7] = { 0 };
 
 static void configure_adc(void)
@@ -121,8 +121,6 @@ static void configure_adc(void)
     for(int i=0;i<7;i++) {
         adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0+i, ADC_ATTEN_DB_12, &adc1_cali_handle[i]);
     }
-
-    adc_lock = xSemaphoreCreateMutex();
 }
 
 const int adc_scale[7] = { SCALE_VBUS, SCALE_VAUX, SCALE_V50, SCALE_V33, SCALE_V18, SCALE_V10, SCALE_VUSB };
@@ -139,26 +137,37 @@ static uint16_t adc_data_local[7];
 //     }
 // }
 
-esp_err_t read_adc_channels(uint16_t *adc_data)
+// The last voltages that were read, for a read that cannot get the ADC in time
+static uint16_t adc_cache[7];
+static bool adc_cache_valid;
+
+// With the gate held exclusively, which is what keeps others off the unit
+static int read_adc_unit(uint16_t *adc_data)
 {
     int adc_raw, voltage;
     esp_err_t ret = ESP_OK;
-    xSemaphoreTake(adc_lock, portMAX_DELAY);
     for(int i=0;i<7;i++) {
         ret = adc_oneshot_read(adc1_handle, ADC_CHANNEL_0+i, &adc_raw);
         if (ret != ESP_OK) {
-            xSemaphoreGive(adc_lock);
             return ret;
         }
         ret = adc_cali_raw_to_voltage(adc1_cali_handle[i], adc_raw, &voltage);
         if (ret != ESP_OK) {
-            xSemaphoreGive(adc_lock);
             return ret;
         }
         adc_data[i] = (voltage * adc_scale[i]) >> 16;
     }
-    xSemaphoreGive(adc_lock);
     return ESP_OK;
+}
+
+// While the radio is off, the SAR ADC feeds the RNG, and a oneshot read takes ADC1 over
+// from that source. So a read of the voltages takes the ADC for the length of the read,
+// under the entropy gate. When it cannot get it in time it gives the values of the last
+// read, never zeros; before there is a last read it waits for the ADC, and if that fails
+// too it returns an error and leaves adc_data alone.
+esp_err_t read_adc_channels(uint16_t *adc_data)
+{
+    return radio_entropy_read_adc(adc_data, adc_cache, &adc_cache_valid, 7, read_adc_unit);
 }
 
 
@@ -200,6 +209,7 @@ void app_main(void)
 
     while (1) {
         read_adc_channels(adc_data_local);
+        radio_entropy_poll();
         ESP_LOGI(TAG, "App Main Alive; 5V_GOOD: %d (Initial: %d). VBus = %d mV", gpio_get_level(IO_5V_GOOD), initial_state, adc_data_local[0]);
         // show_buffer_status();
         if (recovery_owns_leds()) {

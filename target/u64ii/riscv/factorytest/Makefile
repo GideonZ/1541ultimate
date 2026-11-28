@@ -103,6 +103,8 @@ VPATH +=	$(PATH_SW)/portable/riscv
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/u64ctrl/main
+VPATH +=	$(PATH_SW)/wifi/common
+VPATH +=	$(PATH_SW)/wifi/tls
 VPATH +=	$(PATH_SW)/application/u64ii_tester
 
 

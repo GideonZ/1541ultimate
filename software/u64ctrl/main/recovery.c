@@ -9,6 +9,7 @@
 
 #include <string.h>
 #include <strings.h>
+#include "sdkconfig.h"
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,16 +19,21 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_netif.h"
-#include "mbedtls/sha256.h"
 #include "nvs.h"
 #include "button_handler.h"
 #include "jtag.h"
 #include "pinout.h"
 #include "recovery.h"
+#include "recovery_dates.h"
 #include "recovery_image.h"
 #include "recovery_manifest.h"
 #include "recovery_url.h"
+#include "recovery_verify.h"
 #include "rpc_dispatch.h"
+#include "sntp.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/x509.h"
+#include "mbedtls/x509_crt.h"
 
 static const char *TAG = "recovery";
 
@@ -244,6 +250,49 @@ static esp_err_t on_http_event(esp_http_client_event_t *evt)
    body, with its status in `status`, or NULL when no response arrived. The URL
    the body came from goes to `final_url` when it is not NULL: the client's own
    esp_http_client_get_url() leaves out the port, so it is tracked here. */
+/* Certificate dates: a clock SNTP has not set makes every certificate "not yet valid" (recovery_dates.h). The
+   bundle's own verify callback does the chain, then the date flags are dropped while the clock is unknown. The
+   callback is esp_crt_bundle.c's; it is not in the header, but it is not static. */
+_Static_assert(RECOVERY_X509_BADCERT_EXPIRED == MBEDTLS_X509_BADCERT_EXPIRED, "mbedTLS flag value");
+_Static_assert(RECOVERY_X509_BADCERT_FUTURE == MBEDTLS_X509_BADCERT_FUTURE, "mbedTLS flag value");
+_Static_assert(RECOVERY_X509_BADCRL_EXPIRED == MBEDTLS_X509_BADCRL_EXPIRED, "mbedTLS flag value");
+_Static_assert(RECOVERY_X509_BADCRL_FUTURE == MBEDTLS_X509_BADCRL_FUTURE, "mbedTLS flag value");
+extern int esp_crt_verify_callback(void *buf, mbedtls_x509_crt *crt, int depth, uint32_t *flags);
+// esp_crt_verify_callback looks the issuer up in the bundle only for a certificate whose flags are exactly "not
+// trusted", and the chain top of most servers is not in the bundle itself but is issued by a root that is
+// (cross-signed). Both need this option, and the ca list's README says why.
+#if !CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY
+#error "recovery needs CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY: the built-in servers verify only through cross-signed chains"
+#endif
+
+static bool dates_unchecked_logged;
+
+static int bundle_verify(void *ctx, void *crt, int depth, uint32_t *flags)
+{
+    return esp_crt_verify_callback(ctx, (mbedtls_x509_crt *)crt, depth, flags);
+}
+
+static int recovery_verify_callback(void *ctx, mbedtls_x509_crt *crt, int depth, uint32_t *flags)
+{
+    bool cleared;
+    bool valid = recovery_clock_valid(sntp_has_time(), (int64_t)time(NULL));
+    int ret = recovery_verify(bundle_verify, ctx, crt, depth, flags, valid, &cleared);
+    if (cleared && !dates_unchecked_logged) {
+        dates_unchecked_logged = true;
+        ESP_LOGW(TAG, "The clock is not set: certificate dates were not checked");
+    }
+    return ret;
+}
+
+static esp_err_t recovery_crt_attach(void *conf)
+{
+    esp_err_t err = esp_crt_bundle_attach(conf);
+    if (err == ESP_OK && conf) {
+        mbedtls_ssl_conf_verify((mbedtls_ssl_config *)conf, recovery_verify_callback, NULL);
+    }
+    return err;
+}
+
 static esp_http_client_handle_t http_open(const char *get_url, int *status, char *final_url, size_t final_size)
 {
     static char current[256];
@@ -251,11 +300,13 @@ static esp_http_client_handle_t http_open(const char *get_url, int *status, char
     esp_http_client_config_t cfg = {
         .url = get_url,
         .timeout_ms = 15000,
-        .crt_bundle_attach = esp_crt_bundle_attach,
+        .crt_bundle_attach = recovery_crt_attach,
+        .tls_version = ESP_HTTP_CLIENT_TLS_VER_TLS_1_2,
         .buffer_size = READ_SIZE,
         .buffer_size_tx = 1024,
         .event_handler = on_http_event,
     };
+    dates_unchecked_logged = false;
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) {
         return NULL;
@@ -322,9 +373,12 @@ static bool stream_file(const char *get_url, const recovery_file_t *file, sink_f
         return false;
     }
 
-    mbedtls_sha256_context sha;
-    mbedtls_sha256_init(&sha);
-    mbedtls_sha256_starts(&sha, 0);
+    recovery_hash_t sha;
+    if (recovery_hash_start(&sha) != RECOVERY_OK) {
+        ESP_LOGW(TAG, "%s: cannot start a hash", get_url);
+        close_client(client);
+        return false;
+    }
     uint32_t total = 0;
     uint32_t since_yield = 0;
     bool ok = true;
@@ -345,7 +399,11 @@ static bool stream_file(const char *get_url, const recovery_file_t *file, sink_f
             ok = false;
             break;
         }
-        mbedtls_sha256_update(&sha, read_buf, n);
+        if (recovery_hash_update(&sha, read_buf, n) != RECOVERY_OK) {
+            ESP_LOGW(TAG, "%s: cannot hash", get_url);
+            ok = false;
+            break;
+        }
         ok = sink(ctx, total, read_buf, n);
         total += n;
         since_yield += n;
@@ -356,19 +414,22 @@ static bool stream_file(const char *get_url, const recovery_file_t *file, sink_f
     }
     close_client(client);
 
-    uint8_t hash[32];
-    mbedtls_sha256_finish(&sha, hash);
-    mbedtls_sha256_free(&sha);
     if (cancelled) {
+        recovery_hash_abort(&sha);
         return false;
     }
     if (ok && total != file->size) {
         ESP_LOGW(TAG, "%s: %lu bytes, its manifest says %lu", get_url, (unsigned long)total, (unsigned long)file->size);
         ok = false;
     }
-    if (ok && memcmp(hash, file->sha256, sizeof(hash)) != 0) {
-        ESP_LOGW(TAG, "%s: hash differs from its manifest", get_url);
-        ok = false;
+    if (ok) {
+        recovery_result_t r = recovery_hash_finish(&sha, file);
+        if (r != RECOVERY_OK) {
+            ESP_LOGW(TAG, "%s: %s", get_url, r == RECOVERY_ERR_HASH_MISMATCH ? "hash differs from its manifest" : recovery_result_name(r));
+            ok = false;
+        }
+    } else {
+        recovery_hash_abort(&sha);
     }
     if (ok) {
         uint32_t ms = (xTaskGetTickCount() - started) * portTICK_PERIOD_MS;

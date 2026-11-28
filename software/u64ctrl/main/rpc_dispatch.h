@@ -26,8 +26,23 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.30"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.38"
 #define IDENT_MAJOR   1
+// 1.38: CMD_GET_RANDOM no longer checks the random source a second time after the draw; the entropy gate
+// it holds already keeps the radio from changing. A refused TLS version is reported as the ServerHello
+// carried it.
+// 1.37: the recovery's root list drops the roots NSS master has deleted, no longer trusts
+// for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
+// QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
+// 1.36: serves the TLS client sessions of software/wifi/tls (CMD_TLS_*, 0x30-0x35), built with
+// the mbedTLS options the engine needs (TLS 1.3, certificate dates, client only, no renegotiation).
+//       Every random draw of the TLS task holds the entropy gate for that draw (tls_rng_gate), so a radio
+//       start or stop cannot switch the source off in the middle of one, and a voltage read with the radio on
+//       holds the gate shared; a draw with no source ends the handshake as NO ENTROPY. The recovery does not
+//       check certificate dates while the clock is unknown (SNTP not run and time() before 2024).
+// 1.32: CMD_GET_RANDOM, served with the radio off too, from the SAR ADC source; starts and
+// stops the radio through the code it shares with the U64 module.
+// 1.31: built with ESP-IDF 6.1.1; the recovery code uses PSA Crypto (mbedTLS 4).
 // 1.30: the recovery's root list drops the roots NSS master has deleted, no longer trusts
 // for websites or distrusts for every certificate still valid (Buypass Class 2 and 3,
 // QuoVadis Root CA 1 and 3 G3, Certigna Root CA, Izenpe.com).
@@ -53,7 +68,7 @@ void send_keepalive();
 // when this is higher than what the module reports, so a module change that
 // does not bump it is silently never installed, and an older release never
 // replaces a newer module.
-#define IDENT_MINOR   30
+#define IDENT_MINOR   38
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 

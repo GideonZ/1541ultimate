@@ -1,0 +1,11 @@
+format=1
+package=test-1.0
+idcode=0362c093
+serial=U64E2-1*
+fpga.file=fake.bit
+fpga.size=88
+fpga.sha256=53ee5bc784105e3444f8810df9c0b13ea5542d8ce5e112bfafcdf0cd49088408
+image.file=fake.ue2
+image.size=28
+image.sha256=e3989004d19d6ccedafac4b3d6ed7531ed17a26eb4a389a2a5e8050777aa1162
+sig=aebip2VIXnU8CC2yuSAKFNXczOZvuSgd0BIYw58QuryLpRLoeZ/QGxP15u1bR5WhNU4waJHDhXZweC1FyM0WWg==
