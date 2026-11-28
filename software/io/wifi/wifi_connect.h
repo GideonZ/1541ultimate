@@ -54,7 +54,7 @@ static inline bool wifi_disconnect_is_radio_start(const void *pkt, int size)
 
 // Authentication or the 4-way handshake failed: the access point took the client
 // for one with the wrong key (WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT, _AUTH_FAIL,
-// _HANDSHAKE_TIMEOUT; the same values in ESP-IDF 5.3.1 and 6.0.3)
+// _HANDSHAKE_TIMEOUT; the same values in ESP-IDF 5.3.1, 6.0.3 and 6.1.1)
 static inline bool wifi_disconnect_is_password(uint8_t reason)
 {
     return reason == 15 || reason == 202 || reason == 204;
