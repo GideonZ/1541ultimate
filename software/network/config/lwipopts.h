@@ -697,8 +697,12 @@
 
 /**
  * TCP_LISTEN_BACKLOG: Enable the backlog option for tcp listen pcb.
+ * With it on, the backlog argument of listen() takes effect: an established connection
+ * that accept() has not taken counts against its listener, and while a listener is at
+ * its backlog the SYN of a further caller is not answered (the caller retries). Without
+ * it every such caller takes one of the shared netconns before accept().
  */
-#define TCP_LISTEN_BACKLOG              0
+#define TCP_LISTEN_BACKLOG              1
 
 /**
  * The maximum allowed backlog for TCP listen netconns.
