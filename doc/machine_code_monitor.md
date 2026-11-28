@@ -97,7 +97,7 @@ Mode indicators may include any combination of the following:
 | `Dbg`     | Debug mode is active                                  |
 | `EDIT`    | Edit mode is active                                   |
 
-Where an indicator leaves too little room, as `Range` does in the Screen and Binary views, the header omits the word `MONITOR`.
+While range selection (`R`) is active in the Screen or Binary view, the header omits the word `MONITOR`, so that the address fits beside the `Range` indicator.
 
 Each indicator has a fixed slot, counted back from the right edge of the header. `Undoc` and `Range` share one slot, so only one of them is shown at a time. `Poll` and `Dbg` share a slot too, and entering Debug turns poll off, so only one of those is ever shown.
 
