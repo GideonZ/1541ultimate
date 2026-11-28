@@ -562,7 +562,7 @@ Number tool controls:
 | ----------- | ----------------------------------------------------------- |
 | `Up`/`Down` | Select the row to type in                                   |
 | Typing      | Build a new value in the selected row's notation            |
-| `DEL`       | Remove the last typed character                             |
+| `DEL`       | Remove the last typed character; with none left, preview the target |
 | `Return`    | Write the previewed value to the target                     |
 | `C=+C`      | Copy the previewed value to the clipboard and close         |
 | `+ - * /`   | Open the calculator with the current value and that operator |

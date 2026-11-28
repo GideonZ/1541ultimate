@@ -2813,8 +2813,7 @@ void MachineMonitor :: number_picker_update_preview_from_buffer(void)
     bool word;
 
     if (number_edit_length <= 0) {
-        number_preview_value = number_base_bytes[0];
-        number_word = false;
+        number_picker_refresh_preview_from_memory();
         return;
     }
     if (!monitor_number_parse_buffer(number_selected, number_edit_buffer, number_edit_length,

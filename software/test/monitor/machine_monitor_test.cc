@@ -4009,7 +4009,8 @@ static int test_asm_number_popup_targets_operands(void)
         CaptureScreen screen;
         FakeMemoryBackend backend;
         char line[32];
-        const int keys[] = { 'J', 'A', 'N', '1', '2', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        const int keys[] = { 'J', 'A', 'N', '5', KEY_DELETE, KEY_RETURN,
+                             '1', '2', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
         backend.write(0x9010, 0xB9);
@@ -4035,6 +4036,15 @@ static int test_asm_number_popup_targets_operands(void)
         get_popup_line(screen, 6, line, sizeof(line));
         if (expect(strncmp(line, "Calc with +-*/ $Hex Dec %Bin", 28) == 0,
                    "ASM Number popup must show the compact calculator legend after removing redundant rows.")) return 1;
+        for (int i = 0; i < 2; i++) {
+            if (expect(mon.poll(0) == 0, "ASM word Number test: type and delete failed.")) return 1;
+        }
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $FF99") == line,
+                   "DEL of the only typed digit must restore the operand word.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: commit after DEL failed.")) return 1;
+        if (expect(backend.read(0x9011) == 0x99 && backend.read(0x9012) == 0xFF,
+                   "Return after DEL must leave both operand bytes unchanged.")) return 1;
         for (int i = 0; i < 5; i++) {
             if (expect(mon.poll(0) == 0, "ASM word Number test: editing/commit failed.")) return 1;
         }
