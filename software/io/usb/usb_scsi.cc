@@ -7,6 +7,7 @@ extern "C" {
 }
 #include "integer.h"
 #include "usb_scsi.h"
+#include "usb_scsi_max_lun.h"
 #include "filemanager.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -80,11 +81,7 @@ int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
                                    c_scsi_getmaxlun, 8,
                                    dummy_buffer, 8);
 
-    if(!i)
-        return 0;
-
-    //printf("Got %d bytes. Max lun: %b\n", i, dummy_buffer[0]);
-    return (int)dummy_buffer[0];
+    return usb_scsi_max_lun(i, dummy_buffer[0]);
 }
 
 void UsbScsiDriver :: install(UsbInterface *intf)
