@@ -526,6 +526,7 @@ void ControlTarget :: save_u64_memory(Message *command)
 
     const char *fn = "/temp/c64_memory.bin";
     if(command->length > 2) {
+        command->message[command->length] = 0; // the buffer still holds the end of a longer command
         fn = (const char *)command->message + 2;
     }
     FRESULT res = fm->fopen(fn, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
@@ -567,6 +568,7 @@ void ControlTarget :: load_config(Message *command, Message **reply, Message **s
 
     const char *fn = "/temp/uci_config.cfg";
     if (command->length > 2) {
+        command->message[command->length] = 0; // the buffer still holds the end of a longer command
         fn = (const char *)command->message + 2;
     }
 

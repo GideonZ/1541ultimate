@@ -122,8 +122,10 @@ TARGET_UNREGISTERED = 0x0F
 CTRL_CMD_IDENTIFY = 0x01
 CTRL_CMD_LOAD_REU = 0x08
 CTRL_CMD_SAVE_REU = 0x09
+CTRL_CMD_U64_SAVEMEM = 0x0F
 CTRL_CMD_GET_HWINFO = 0x28
 CTRL_CMD_GET_DRVINFO = 0x29
+CTRL_CMD_LOAD_CONFIG = 0x50
 CTRL_CMD_GET_PALETTE = 0x51
 CTRL_CMD_SET_PALETTE = 0x52
 CTRL_CMD_SET_PALETTE_COLOR = 0x53
@@ -218,6 +220,16 @@ X00_HEADER = b"C64File\0" + X00_CBM_NAME.ljust(16, b"\0") + b"\0\0"
 # The first reply byte is the drive's file type: 0 for a name without a CBM type, 1 PRG.
 IEC_TYPE_ANY = 0
 IEC_TYPE_PRG = 1
+# LOAD_CONFIG and SAVEMEM take a file name from the command. The command buffer is not
+# cleared between commands, so each is sent once with a longer name and then with a short
+# one, whose name has to end with the command and not run into the rest of the first
+# (#1155). A config file of only a comment loads without changing a setting; an empty
+# one is not kept on the RAM disk (measured on an Ultimate II+L, 3.15a).
+CONFIG_FILE = "/Temp/uci_e2e.cfg"
+CONFIG_LONGER_ABSENT = "/Temp/uci_e2e_a_longer_name_nobody_has.cfg"
+SAVEMEM_FILE = "/Temp/uci_e2e_mem.bin"
+SAVEMEM_LONGER = "/Temp/uci_e2e_mem_saved_under_a_longer_name.bin"
+STATUS_CANNOT_OPEN_CONFIG = b"88,CANNOT OPEN CONFIG FILE"
 
 BUSY_TIMEOUT_SECONDS = 15.0
 BUSY_POLL_SECONDS = 0.05
@@ -243,6 +255,8 @@ TESTS = [
     "get-drvinfo",
     "softiec-x00-name",
     "softiec-setting-modes",
+    "load-config-name",
+    "savemem-name",
     "palette-stream",
     "interface-usable-after",
 ]
@@ -401,6 +415,17 @@ class FtpFixture:
             raise Failure(f"FTP upload of {path!r} failed: {exc}") from exc
         finally:
             self._close(ftp)
+
+    def track(self, directory: str, prefix: str) -> list[str]:
+        """Note for cleanup every file in `directory` whose name starts with `prefix`."""
+        ftp = self._open()
+        try:
+            found = [f"{directory}/{name.rsplit('/', 1)[-1]}"
+                     for name in ftp_lib.names(ftp, directory, prefix)]
+        finally:
+            self._close(ftp)
+        self.created.extend(p for p in found if p not in self.created)
+        return found
 
     def cleanup(self) -> bool:
         """Delete what this suite created. Returns False if anything is left."""
@@ -1407,6 +1432,52 @@ def run_softiec_x00_name(ftp: "FtpFixture", uci: Uci) -> bool:
     return True
 
 
+def run_load_config_name(session: RestSession, ftp: "FtpFixture", uci: Uci) -> bool:
+    """LOAD_CONFIG opens the file the command names, whatever a longer command left (#1155)."""
+    scenario = "load-config-name"
+    with check(f"{scenario}: put a config file that changes nothing on the RAM disk"):
+        ftp.upload(CONFIG_FILE, b"# uci_targets_test\n")
+        if not session.file_exists(CONFIG_FILE):
+            raise Failure(f"{scenario}: {CONFIG_FILE} is not on the device after the upload")
+    expect(uci, f"{scenario}: a longer name that does not exist cannot be opened",
+           bytes([TARGET_CONTROL, CTRL_CMD_LOAD_CONFIG]) + CONFIG_LONGER_ABSENT.encode("ascii"),
+           STATUS_CANNOT_OPEN_CONFIG)
+    expect(uci, f"{scenario}: the shorter name sent next loads its own file",
+           bytes([TARGET_CONTROL, CTRL_CMD_LOAD_CONFIG]) + CONFIG_FILE.encode("ascii"),
+           STATUS_OK)
+    return True
+
+
+def run_savemem_name(session: RestSession, ftp: "FtpFixture", uci: Uci) -> bool:
+    """SAVEMEM writes the file the command names, whatever a longer command left (#1155)."""
+    scenario = "savemem-name"
+    # Without the terminator even the longer name runs into whatever came before it, so the
+    # names written cannot be predicted; everything starting like ours is cleaned up.
+    directory, prefix = SAVEMEM_FILE.rsplit("/", 1)
+    prefix = prefix.split(".")[0]
+    with check(f"{scenario}: no file of an earlier run is left, SAVEMEM never overwrites"):
+        ftp.track(directory, prefix)
+        if not ftp.cleanup():
+            raise Failure(f"{scenario}: could not delete what an earlier run left in {directory}")
+    try:
+        with check(f"{scenario}: SAVEMEM with a longer name"):
+            _, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_U64_SAVEMEM]) + SAVEMEM_LONGER.encode("ascii"))
+            if status == STATUS_UNKNOWN_COMMAND:
+                detail(f"{scenario}: SAVEMEM is a U64 command and this machine does not serve it; skipped")
+                return True
+            if status != STATUS_OK:
+                raise Failure(f"{scenario}: expected status {STATUS_OK!r}, got {status!r}")
+        expect(uci, f"{scenario}: SAVEMEM with the shorter name sent next",
+               bytes([TARGET_CONTROL, CTRL_CMD_U64_SAVEMEM]) + SAVEMEM_FILE.encode("ascii"), STATUS_OK)
+        with check(f"{scenario}: the shorter name is the file that was written"):
+            if not session.file_exists(SAVEMEM_FILE):
+                written = ftp.track(directory, prefix)
+                raise Failure(f"{scenario}: {SAVEMEM_FILE} is missing, written: {', '.join(written) or 'nothing'}")
+    finally:
+        ftp.track(directory, prefix)
+    return True
+
+
 SOFTIEC_CATEGORY = "SoftIEC Drive Settings"
 SOFTIEC_ENABLE = "IEC Drive"
 SOFTIEC_BUS_ID = "Soft Drive Bus ID"
@@ -1607,6 +1678,8 @@ def main() -> int:
         run("get-drvinfo", run_get_drvinfo, session, uci)
         run("softiec-x00-name", run_softiec_x00_name, ftp, uci)
         run("softiec-setting-modes", run_softiec_setting_modes, session, uci)
+        run("load-config-name", run_load_config_name, session, ftp, uci)
+        run("savemem-name", run_savemem_name, session, ftp, uci)
         run("palette-stream", run_palette_stream, session, uci)
         run("interface-usable-after", run_interface_usable_after, uci)
 
