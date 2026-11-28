@@ -2806,10 +2806,13 @@ def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> 
         mt.write_rest_memory(rest_host, 0xC190, bytes([0x00]))
         _stop_at_breakpoint(session, 0xC300, 0xC300, "G beside breakpoint")
         try:
+            # The previous check leaves this loop running, so the counter has
+            # moved on by the time the first stop is reached.
+            count = mt.read_rest_memory(rest_host, 0xC190, 1)[0]
             # $C3F0 is never executed.
             _ensure_breakpoint_at(session, 0xC3F0, "G beside breakpoint second")
             session.send_char("G")
-            _wait_for_pc_register(session, "C300", "xr", "01",
+            _wait_for_pc_register(session, "C300", "xr", f"{(count + 1) & 0xFF:02X}",
                                   timeout=_pc_wait_budget(after_go=True))
         finally:
             _clear_breakpoints_and_leave(session, "G beside breakpoint cleanup")
