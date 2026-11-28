@@ -15,6 +15,7 @@
 #include "semphr.h"
 #include "rpc_calls.h"
 #include "wifi_reply.h"
+#include "wifi_call.h"
 extern "C" {
     #include "cmd_buffer.h"
 }

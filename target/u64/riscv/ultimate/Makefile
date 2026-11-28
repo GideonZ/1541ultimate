@@ -143,6 +143,7 @@ SRCS_CC	 =  u2p_init.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			network_target_tls.cc \
 			control_target.cc \
 			softiec_target.cc \
 			iec.cc \

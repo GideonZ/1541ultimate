@@ -11,14 +11,20 @@ typedef void *SemaphoreHandle_t;
 typedef uint16_t u16_t;
 typedef long BaseType_t;
 typedef unsigned long TickType_t;
-typedef void *TaskHandle_t;
+// A pointer to a structure, as in FreeRTOS, not void *: a declaration that spells it otherwise does not link
+struct tskTaskControlBlock;
+typedef struct tskTaskControlBlock *TaskHandle_t;
 typedef void *QueueHandle_t;
+// The queues of the UART driver (dma_uart.h, cmd_buffer.c) are not under test here
+static inline QueueHandle_t xQueueCreate(int length, int item_size) { return NULL; }
+static inline BaseType_t xQueueSendFromISR(QueueHandle_t q, const void *item, BaseType_t *w) { return 0; }
 #define pdFALSE 0
 #define pdTRUE  1
 #define portMAX_DELAY 0xFFFFFFFFUL
 #define pdMS_TO_TICKS(x) (x)
 // The test can let the ISR run just before a critical section
 extern "C" void enter_safe_section(void);
+extern "C" void leave_safe_section(void);
 #define ENTER_SAFE_SECTION enter_safe_section()
-#define LEAVE_SAFE_SECTION
+#define LEAVE_SAFE_SECTION leave_safe_section()
 #endif
