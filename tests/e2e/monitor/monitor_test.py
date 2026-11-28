@@ -4679,6 +4679,47 @@ def run_long_load_name_test(context: MonitorContext) -> None:
         remove_temp_files(context, prefix)
 
 
+def run_overwrite_declined_test(context: MonitorContext) -> None:
+    """Answering No to Save's overwrite question leaves the file, with no error."""
+    session = context.session
+    prefix = f"OW{int(time.time()) % 100000:05d}"
+    path = f"/Temp/{prefix}.PRG"
+    original = b"\x00\xc0" + bytes(range(16))
+
+    def reported(snapshot: Snapshot) -> bool:
+        return "FAILED" in snapshot.text() or "bytes)" in snapshot.text()
+
+    ensure_view(session, "HEX ")
+    try:
+        with ftp_lib.session(context.files_host, context.password) as client:
+            ftp_lib.store(client, path, original)
+        session.send_char("S", settle=True)
+        session.send_text("C000-C00F\r", "save range")
+        picker_to_root(session)
+        picker_enter(session, "Temp")
+        for ch in prefix:
+            session.send_char(ch)
+        session.send_key("ENTER")  # context menu
+        session.send_key("ENTER")  # Select
+        wait_for_screen_contains(session, "Overwrite?")
+        session.send_key("RIGHT", settle=True)  # Yes -> No
+        session.send_key("ENTER", settle=True)
+        screen = wait_until(session, reported, timeout=2.0)
+        if reported(screen):
+            session.send_key("ENTER", settle=True)  # dismiss the popup
+            raise Failure(f"No on the overwrite question raised a popup\n"
+                          f"{screen.text()}")
+        assert_monitor_visible(screen, "answering No to the overwrite question")
+        with ftp_lib.session(context.files_host, context.password) as client:
+            kept = ftp_lib.retrieve(client, path)
+        if kept != original:
+            raise Failure(f"{path} changed after No: {kept.hex()}")
+    finally:
+        remove_temp_files(context, prefix)
+        back_out_to_the_bare_browser(session)
+        ensure_monitor_open(session)
+
+
 # Checks that --test runs on their own; the full run includes them too.
 SELECTABLE_CHECKS: dict[str, tuple[str, Callable[[MonitorContext], None]]] = {
     "picker-shortcuts": ("the file picker ignores C=+O, C=+R and C=+I",
@@ -4687,6 +4728,8 @@ SELECTABLE_CHECKS: dict[str, tuple[str, Callable[[MonitorContext], None]]] = {
                        run_long_save_name_test),
     "long-load-name": ("Load opens a file with a long name",
                        run_long_load_name_test),
+    "overwrite-declined": ("No on Save's overwrite question raises no error",
+                           run_overwrite_declined_test),
 }
 
 
