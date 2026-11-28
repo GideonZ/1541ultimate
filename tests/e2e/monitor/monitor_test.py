@@ -21,6 +21,7 @@ sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
 import cli  # noqa: E402
+import ftp as ftp_lib  # noqa: E402
 import pacing
 import rest as rest_lib
 import machine as machine_lib  # noqa: E402
@@ -3052,7 +3053,7 @@ def clear_prompt_field(session: MonitorSession) -> None:
 
     The monitor's "Save as" prompt is pre-filled with the last-used name and
     does not auto-clear on the first keystroke, so we delete it first. The
-    field is at most 35 characters, hence the generous count."""
+    count covers every name this suite saves."""
     session.send_key_repeat("BACKSPACE", 40)
 
 
@@ -4565,6 +4566,7 @@ class MonitorContext:
     frozen: bool
     device_host: str
     machine: "machine_lib.Machine"
+    password: str | None = None
 
 
 def run_file_picker_shortcut_test(context: MonitorContext) -> None:
@@ -4602,15 +4604,89 @@ def run_file_picker_shortcut_test(context: MonitorContext) -> None:
             rest_api(context.device_host).configs.set(UI_STORE, UI_ITEM,
                                                       interface)
             wait_for_interface_type(context.device_host, None)
-            reset_rest_machine(context.control, None)
+            reset_rest_machine(context.control, context.password)
         back_out_to_the_bare_browser(session)
         ensure_monitor_open(session)
+
+
+def remove_temp_files(context: MonitorContext, prefix: str) -> None:
+    """Delete the /Temp files a check made, found by their unique prefix."""
+    with ftp_lib.session(context.files_host, context.password) as client:
+        for name in ftp_lib.names(client, "/Temp", prefix):
+            ftp_lib.delete_quietly(client, name)
+
+
+def run_long_save_name_test(context: MonitorContext) -> None:
+    """Save creates the file under the whole of a 37-character name."""
+    session = context.session
+    prefix = f"LS{int(time.time()) % 100000:05d}"
+    name = prefix + "-ABCDEFGHIJKLMNOPQRSTUVWXY.PRG"
+    ensure_view(session, "HEX ")
+    try:
+        session.send_char("S", settle=True)
+        session.send_text("C000-C00F\r", "save range")
+        picker_to_root(session)
+        picker_enter(session, "Temp")
+        session.send_key("RIGHT")  # "<< Create New File >>"
+        clear_prompt_field(session)
+        session.send_text(name, "long file name", settle=False)
+        wait_until(session,
+                   lambda screen: prompt_field_or_none(screen, "Save as") == name)
+        session.send_key("ENTER")
+        wait_for_screen_contains(session, "bytes)")
+        session.send_key("ENTER", settle=True)
+        with ftp_lib.session(context.files_host, context.password) as client:
+            saved = ftp_lib.names(client, "/Temp", prefix)
+        if saved != [name]:
+            raise Failure(f"Save as {name!r} created {saved!r}")
+    finally:
+        back_out_to_the_bare_browser(session)
+        ensure_monitor_open(session)
+        remove_temp_files(context, prefix)
+
+
+def run_long_load_name_test(context: MonitorContext) -> None:
+    """Load opens a file with a 70-character name."""
+    session = context.session
+    prefix = f"LL{int(time.time()) % 100000:05d}"
+    name = prefix + "-" + "ABCDEFGHIJ" * 5 + "ABCDEFGH.PRG"
+    pattern = bytes(range(0x61, 0x71))
+    ensure_view(session, "HEX ")
+    try:
+        with ftp_lib.session(context.files_host, context.password) as client:
+            ftp_lib.store(client, f"/Temp/{name}", b"\x00\xc0" + pattern)
+        write_rest_memory_confirmed(context.rest_host, 0xC000, bytes(len(pattern)))
+        session.send_char("L", settle=True)
+        picker_to_root(session)
+        picker_enter(session, "Temp")
+        for ch in prefix:
+            session.send_char(ch)
+        session.send_key("ENTER")  # context menu
+        session.send_key("ENTER")  # Select
+        session.send_text("PRG,0,AUTO\r", "load parameters")
+        screen = wait_until(
+            session,
+            lambda scr: "bytes)" in scr.text() or "FAILED" in scr.text())
+        if "bytes)" not in screen.text():
+            session.send_key("ENTER", settle=True)  # dismiss the error popup
+            raise Failure(f"Load of {name!r} did not succeed\n{screen.text()}")
+        session.send_key("ENTER", settle=True)
+        assert_monitor_write_landed(context.rest_host, 0xC000, pattern,
+                                    f"a load of {name}")
+    finally:
+        back_out_to_the_bare_browser(session)
+        ensure_monitor_open(session)
+        remove_temp_files(context, prefix)
 
 
 # Checks that --test runs on their own; the full run includes them too.
 SELECTABLE_CHECKS: dict[str, tuple[str, Callable[[MonitorContext], None]]] = {
     "picker-shortcuts": ("the file picker ignores C=+O, C=+R and C=+I",
                          run_file_picker_shortcut_test),
+    "long-save-name": ("Save keeps the whole of a long file name",
+                       run_long_save_name_test),
+    "long-load-name": ("Load opens a file with a long name",
+                       run_long_load_name_test),
 }
 
 
@@ -5054,7 +5130,8 @@ def run_tests(context: MonitorContext) -> None:
     with check("save/load round-trip to file in new /Temp D64"):
         run_save_load_d64_test(session, rest_host, files_host, save_load_token)
 
-    run_selectable_check(context, "picker-shortcuts")
+    for name in SELECTABLE_CHECKS:
+        run_selectable_check(context, name)
 
     # These two checks are about the Telnet transport itself -- a concurrent
     # poll-mode connection, and Telnet's own per-keystroke output volume --
@@ -5772,7 +5849,7 @@ def main() -> int:
             session=session, rest_host=memory_host, mode=args.mode,
             is_u2=is_u2, control=control, video_host=live_host,
             files_host=device_host, live_host=live_host, frozen=frozen,
-            device_host=device_host,
+            device_host=device_host, password=args.password,
             machine=machine_lib.identify(
                 device_host,
                 lambda: (info.product, info.firmware_version)))
