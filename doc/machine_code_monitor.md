@@ -959,10 +959,10 @@ The two messages that start with `Step` appear on the bottom row. All others app
 
 When you leave Debug, the program continues from where it stopped. The debugger removes every `BRK` it wrote and restores the vectors and `$00` / `$01`.
 
-- With KERNAL banked in, interrupts are enabled, so the cursor, keyboard and jiffy clock keep working.
-- With KERNAL banked out (bit 1 of `$01` clear), the interrupt flag stays as the program had it.
+- With KERNAL and I/O banked in, interrupts are enabled, so the cursor, keyboard and jiffy clock keep working.
+- With KERNAL banked out (bit 1 of `$01` clear) or the character ROM banked in (bit 2 clear), the interrupt flag stays as the program had it.
 
-To keep interrupts disabled in a program with KERNAL banked in, for example between `SEI` and `CLI` in a raster routine, do not leave Debug there. Set a breakpoint after the `CLI` and press `G`.
+To keep interrupts disabled in a program with KERNAL and I/O banked in, for example between `SEI` and `CLI` in a raster routine, do not leave Debug there. Set a breakpoint after the `CLI` and press `G`.
 
 ### Help screen
 
