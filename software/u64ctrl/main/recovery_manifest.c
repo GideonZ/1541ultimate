@@ -24,6 +24,8 @@ const char *recovery_result_name(recovery_result_t result)
         case RECOVERY_ERR_DUPLICATE_KEY: return "duplicate key";
         case RECOVERY_ERR_MISSING_KEY:   return "missing key";
         case RECOVERY_ERR_BAD_VALUE:     return "bad value";
+        case RECOVERY_ERR_CRYPTO:        return "crypto library failed";
+        case RECOVERY_ERR_HASH_MISMATCH: return "hash differs";
     }
     return "unknown result";
 }
