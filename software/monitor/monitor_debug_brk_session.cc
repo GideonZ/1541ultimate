@@ -1059,6 +1059,7 @@ void BrkDebugSession :: drop_queued_execution_keys(void)
         if (key == 'd' || key == 'D' ||
             key == 't' || key == 'T' ||
             key == 'o' || key == 'O' ||
+            key == 'u' || key == 'U' ||
             key == 'g' || key == 'G' ||
             key == 'k' || key == 'K') {
             continue;

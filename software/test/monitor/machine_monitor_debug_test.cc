@@ -8227,6 +8227,24 @@ static int test_freeze_go_with_breakpoint_still_uses_session_go()
     return 0;
 }
 
+// A key handed back to the keyboard is read again, as on the device.
+class RequeueKeyboard : public FakeKeyboard
+{
+    int head;
+public:
+    RequeueKeyboard(const int *k, int c) : FakeKeyboard(k, c), head(-1) { }
+    virtual int getch(void)
+    {
+        if (head >= 0) {
+            int key = head;
+            head = -1;
+            return key;
+        }
+        return FakeKeyboard::getch();
+    }
+    virtual void push_head(int key) { head = key; }
+};
+
 static int test_wait_for_sentinel_drops_execution_keys()
 {
     TestUserInterface ui;
@@ -8234,8 +8252,9 @@ static int test_wait_for_sentinel_drops_execution_keys()
     BrkSessionBackend backend(false);
     monitor_reset_saved_state();
 
-    const int keys[] = { 'J', 'A', 'D', 'T', 'T', KEY_BREAK, KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 8);
+    const int keys[] = { 'J', 'A', 'D', 'T', 'T', 'U', KEY_BREAK, KEY_BREAK,
+                         KEY_BREAK };
+    RequeueKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("0801", 1);
@@ -8251,6 +8270,8 @@ static int test_wait_for_sentinel_drops_execution_keys()
     if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug after the trace")) return 1;
     if (expect(backend.last_session->brk_patch_writes == brk_patches_after_trace,
                "Trace wait must drop repeated execution keys instead of replaying them")) return 1;
+    if (expect(ui.popup_count == 0,
+               "Trace wait must drop a queued Step Out too")) return 1;
     if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
     monitor.deinit();
     return 0;
