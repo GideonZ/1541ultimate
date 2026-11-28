@@ -917,10 +917,18 @@ void MachineMonitor :: debug_request_go()
         monitor_log_address("debug go handoff", last_go_addr);
         return;
     }
-    // Invalidate up-front; G discards the captured context per the spec.
-    debug.invalidate_context();
     DebugSession::Result r = session->go(from, &breakpoints, start_pc);
     monitor_log_debug("go", start_pc, r);
+    // G discards the captured context per the spec, except where it failed
+    // with the CPU still stopped.
+    DebugContext stopped;
+    bool still_stopped = r != DebugSession::DBG_OK &&
+        session->has_parked_context() &&
+        session->snapshot(&stopped) == DebugSession::DBG_OK;
+    debug.invalidate_context();
+    if (still_stopped) {
+        debug.set_context(stopped);
+    }
     debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
         if (!debug_has_enabled_breakpoint()) {

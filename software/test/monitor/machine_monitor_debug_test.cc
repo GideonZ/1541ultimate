@@ -2367,6 +2367,38 @@ static int test_g_invalidates_context()
                "G without breakpoint must leave Debug")) return 1;
     if (expect(free_run.poll(0) == 1, "RUN/STOP then exits the monitor")) return 1;
     free_run.deinit();
+
+    // A failed G keeps the registers while the CPU stays stopped, and drops
+    // them when the run left it executing.
+    static const struct {
+        DebugSession::Result result;
+        bool parked;
+    } failures[] = {
+        { DebugSession::DBG_REFUSED, true },
+        { DebugSession::DBG_PATCH_FAILED, true },
+        { DebugSession::DBG_TIMEOUT, false },
+    };
+    for (int i = 0; i < 3; i++) {
+        monitor_reset_saved_state();
+        TrackingDebugBackend failing_backend;
+        const int failing_keys[] = { 'A', 'D', 'D', 'P', 'G' };
+        FakeKeyboard failing_keyboard(failing_keys, 5);
+        ui.keyboard = &failing_keyboard;
+        BackendMachineMonitor failing(&ui, &failing_backend);
+        failing.init(&screen, &failing_keyboard);
+        for (int key = 0; key < 4; key++) {
+            if (expect(failing.poll(0) == 0, "Step and breakpoint setup ok")) return 1;
+        }
+        failing_backend.last_session->go_result = failures[i].result;
+        failing_backend.last_session->parked_context = failures[i].parked;
+        failing_backend.last_session->go_produces_snapshot = true;
+        if (expect(failing.poll(0) == 0, "Failed G stays in the monitor")) return 1;
+        if (expect(find_debug_footer_value(screen, "C003") == failures[i].parked,
+                   failures[i].parked ?
+                       "A failed G must keep the registers of a stopped CPU" :
+                       "A G that left the CPU running must blank the registers")) return 1;
+        failing.deinit();
+    }
     return 0;
 }
 
