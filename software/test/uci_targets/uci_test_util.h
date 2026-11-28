@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <stdio.h>
+#include <string.h>
 #include "uci_fakes.h"
 #include "command_intf.h"
 
@@ -37,11 +38,10 @@ struct Result {
 
 // parse_command, then get_more_data until the reply says last_part (the command
 // interface task does the same, one 512-byte block per host handshake)
-static Result run(Cmd &c)
+static Result dispatch(Cmd &c, int length)
 {
-    c.buf.resize(c.buf.size() + 8, 0); // the targets write a terminator at message[length]
     c.msg.message = c.buf.data();
-    c.msg.length = (int)c.buf.size() - 8;
+    c.msg.length = length;
     c.msg.last_part = true;
     Message *reply = NULL, *status = NULL;
     Result r;
@@ -55,6 +55,26 @@ static Result run(Cmd &c)
     }
     r.status.assign((const char *)status->message, status->length);
     return r;
+}
+
+static Result run(Cmd &c)
+{
+    int length = (int)c.buf.size();
+    c.buf.resize(length + 8, 0); // the targets write a terminator at message[length]
+    return dispatch(c, length);
+}
+
+// The command buffer is not cleared between commands: behind the parameters of
+// this one it still holds the bytes of a longer command sent before.
+static Result run_after(Cmd &c, const char *earlier)
+{
+    int length = (int)c.buf.size();
+    size_t n = strlen(earlier);
+    // a shorter one leaves nothing behind, and the test would pass without proving anything
+    if (n <= (size_t)length) check(false, "run_after_needs_a_longer_earlier_command");
+    for (size_t i = length; i < n; i++) c.u8((uint8_t)earlier[i]);
+    c.buf.resize(c.buf.size() + 8, 0);
+    return dispatch(c, length);
 }
 
 static std::vector<uint8_t> pattern(size_t n, uint8_t seed)

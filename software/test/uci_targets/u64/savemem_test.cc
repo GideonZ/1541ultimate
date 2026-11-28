@@ -37,6 +37,13 @@ int main()
              !f ? "missing" : content ? "= the machine's RAM" : "differs", copies);
     check(r.status.compare(0, 2, "00") == 0 && content && copies == 1, "savemem_saves_the_machines_whole_ram_copy", d);
 
+    // The name ends where the command ends, not at the first zero a longer command left behind it.
+    Cmd c2(4, CTRL_CMD_U64_SAVEMEM);
+    c2.str("/Usb0/b.bin");
+    r = run_after(c2, "\x04\x0F/Usb0/a-much-longer-name.bin");
+    snprintf(d, sizeof d, "status %s, /Usb0/b.bin %s", r.status.c_str(), uci_fake::fs_file("/Usb0/b.bin") ? "written" : "missing");
+    check(r.status.compare(0, 2, "00") == 0 && uci_fake::fs_file("/Usb0/b.bin"), "savemem_name_ends_with_the_command", d);
+
     printf("u64 savemem: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }
