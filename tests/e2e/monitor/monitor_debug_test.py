@@ -2697,6 +2697,25 @@ def run_cleanup_exit_tests(rest_host: str, session: mt.MonitorSession) -> None:
             raise mt.Failure(f"left-arrow did not leave Debug: {header!r}")
 
 
+def _stop_at_breakpoint(session: mt.MonitorSession, breakpoint: int,
+                        start: int, context: str) -> None:
+    """Arm one breakpoint and G to it from `start`."""
+    session.goto(f"{start:04X}")
+    session.send_char("A")
+    session.send_char("D")
+    _clear_all_breakpoints(session, f"{context} setup")
+    _ensure_breakpoint_at(session, breakpoint, f"{context} breakpoint")
+    session.goto(f"{start:04X}")
+    session.send_char("G")
+    _wait_for_go_pc(session, f"{breakpoint:04X}")
+
+
+def _clear_breakpoints_and_leave(session: mt.MonitorSession, context: str) -> None:
+    _dismiss_modal_if_present(session)
+    _clear_all_breakpoints(session, context)
+    _ensure_no_debug(session, context)
+
+
 def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Ensure repeated Go from the current breakpoint re-arms cleanly."""
 
@@ -2763,6 +2782,65 @@ def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> 
         finally:
             _clear_breakpoint_at(session, 0xC324, "G after jump breakpoint clear")
             _ensure_no_debug(session)
+
+    with mt.check("Debug: K from a breakpoint runs on to the cursor"):
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0xC300, program)
+        mt.write_rest_memory(rest_host, 0xC190, bytes([0x00]))
+        _stop_at_breakpoint(session, 0xC300, 0xC300, "K from breakpoint")
+        try:
+            session.goto("C306")
+            session.send_char("K")
+            _wait_for_pc_register(session, "C306", "xr", "01",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoints_and_leave(session, "K from breakpoint cleanup")
+
+    with mt.check("Debug: G from a breakpoint stops there again beside another breakpoint"):
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0xC300, program)
+        mt.write_rest_memory(rest_host, 0xC190, bytes([0x00]))
+        _stop_at_breakpoint(session, 0xC300, 0xC300, "G beside breakpoint")
+        try:
+            # $C3F0 is never executed.
+            _ensure_breakpoint_at(session, 0xC3F0, "G beside breakpoint second")
+            session.send_char("G")
+            _wait_for_pc_register(session, "C300", "xr", "01",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoints_and_leave(session, "G beside breakpoint cleanup")
+
+    with mt.check("Debug: U from a breakpoint stops there again before returning"):
+        _reopen_monitor(session)
+        # $C340: JSR $C346 / JMP $C343 / LDX #$03 / DEX / BNE $C348 / RTS
+        mt.write_rest_memory(rest_host, 0xC340,
+                             bytes.fromhex("2046C34C43C3A203CAD0FD60"))
+        _stop_at_breakpoint(session, 0xC348, 0xC340, "U from breakpoint")
+        try:
+            session.send_char("U")
+            _wait_for_pc_register(session, "C348", "xr", "02",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoints_and_leave(session, "U from breakpoint cleanup")
+
+    with mt.check("Debug: a cartridge breakpoint in RAM under KERNAL stops the program"):
+        if mt.TestConfig.target != "u2":
+            raise mt.SkipCheck("banked-breakpoints covers a selectable view bank")
+        _reopen_monitor(session)
+        # $C380: SEI / LDA #$35 / STA $01 / NOP / JMP $E000
+        mt.write_rest_memory(rest_host, 0xC380,
+                             bytes.fromhex("78A9358501EA4C00E0"))
+        # RAM $E000: INC $C190 / JMP $E000
+        mt.write_rest_memory(rest_host, 0xE000, bytes.fromhex("EE90C14C00E0"))
+        try:
+            # This stop tells the monitor that the CPU has the KERNAL banked out.
+            _stop_at_breakpoint(session, 0xC385, 0xC380, "RAM under KERNAL")
+            _ensure_breakpoint_at(session, 0xE000, "RAM under KERNAL breakpoint")
+            session.send_char("G")
+            _wait_for_go_pc(session, "E000")
+        finally:
+            _clear_breakpoints_and_leave(session, "RAM under KERNAL cleanup")
+            _reset_c64_core(rest_host)
 
 
 def run_rom_single_step_tests(rest_host: str, session: mt.MonitorSession) -> None:
