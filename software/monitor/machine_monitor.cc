@@ -7066,8 +7066,10 @@ void MachineMonitor::handle_save_command()
     const char *err = monitor_io::save_from_memory(get_ui(), path_buf, name_buf, backend, start, end);
     redraw_full();
     if (err) {
-        get_ui()->popup(err, BUTTON_OK);
-        redraw_full();
+        if (*err) {
+            get_ui()->popup(err, BUTTON_OK);
+            redraw_full();
+        }
         return;
     }
     uint32_t bytes = (uint32_t)end - (uint32_t)start + 1;

@@ -40,7 +40,8 @@ const char *load_into_memory(const char *path, const char *name,
 
 // Save the C64 memory range [start..end] to <path>/<name>. The shared overwrite
 // helper (`create_file_ask_if_exists`) is used, hence the UI parameter.
-// Returns NULL on success, otherwise a static error string.
+// Returns NULL on success, an empty string if the user declined to overwrite,
+// otherwise a static error string.
 const char *save_from_memory(UserInterface *ui, const char *path, const char *name,
                              MemoryBackend *backend,
                              uint16_t start, uint16_t end);

@@ -713,7 +713,7 @@ The range is inclusive. Save writes a normal PRG file with a two-byte load addre
 
 In the file picker, choose one of the following:
 
-- Select an existing file by pressing `ENTER` on it, then choosing `Select` from the context-sensitive menu. The monitor asks before it overwrites the file.
+- Select an existing file by pressing `ENTER` on it, then choosing `Select` from the context-sensitive menu. The monitor asks before it overwrites the file; answering `No` leaves the file unchanged and returns to the monitor.
 - Select `<< Create New File >>` at the top of a writable directory, then type the filename at the `Save as` prompt.
 
 The `<< Create New File >>` entry only appears in directories that can be written to.

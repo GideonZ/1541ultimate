@@ -321,6 +321,9 @@ const char *monitor_io::save_from_memory(UserInterface *ui, const char *path, co
     FileManager *fm = FileManager::getFileManager();
     File *f = NULL;
     FRESULT res = create_file_ask_if_exists(fm, ui, path, name, &f);
+    if (res == FR_EXIST) {
+        return ""; // the user declined to overwrite
+    }
     if (res != FR_OK || !f) {
         return "CREATE FAILED";
     }

@@ -6935,6 +6935,30 @@ static int test_load_save_and_goto_command_flow(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
+        const int keys[] = { 'S' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0801-0801", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_name, "save.prg");
+        // An empty error text is the shim's answer to a declined overwrite.
+        monitor_io::g_monitor_io.save_error = "";
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Declined overwrite test failed.")) return 1;
+        if (expect(monitor_io::g_monitor_io.save_called && ui.popup_count == 0,
+                   "A declined overwrite must show neither an error nor a confirmation.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
         const int keys[] = { 'S', KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
         backend.write(0x0801, 0xA9);
