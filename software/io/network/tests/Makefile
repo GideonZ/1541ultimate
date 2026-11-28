@@ -12,9 +12,10 @@ SEND_ALL_TEST := $(OUTPUT_DIR)/sendAllTest
 SEND_ALL_RED := $(OUTPUT_DIR)/sendAllTestLegacy
 NETWORK_TARGET_TEST := $(OUTPUT_DIR)/networkTargetTest
 # The network target with the host's sockets for lwIP's, and the UCI host stand-ins.
+# lwip/opt.h is the stand-in in target3_host (listed first); the real lwip/prot/iana.h supplies the port numbers.
 NETWORK_TARGET_FLAGS := -std=c++11 -g -Wall -DRUNS_ON_PC -include target3_host/network_interface.h -Itarget3_host -I../../command_interface/tests/host_uci \
 	-I../../command_interface/tests/host_rtos -I.. -I../../command_interface -I../../../network \
-	-fsanitize=address,undefined
+	-I../../../lwip/src/include -fsanitize=address,undefined
 REF_POOL_TEST := $(OUTPUT_DIR)/refPoolTest
 REF_POOL_RED := $(OUTPUT_DIR)/refPoolTestLegacy
 SYS_ARCH_TEST := $(OUTPUT_DIR)/sysArchTest
