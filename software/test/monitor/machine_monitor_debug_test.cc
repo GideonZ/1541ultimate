@@ -6516,6 +6516,16 @@ static int test_breakpoint_in_the_debugger_scratch_area_is_a_patch_failure()
     DebugSession::Result r = m.over_at(0xC020, pred, &bps, &ctx);
     if (expect(r == DebugSession::DBG_PATCH_FAILED,
                "A breakpoint inside the debugger's own page-three area must report a patch failure")) return 1;
+
+    // $D020 with I/O banked in is a register: a BRK written there changes it.
+    bps.clear_all();
+    bps.allocate(0xD020, 0x07);
+    m.ram[0xD020] = 0x0E;
+    r = m.over_at(0xC020, pred, &bps, &ctx);
+    if (expect(r == DebugSession::DBG_PATCH_FAILED,
+               "A breakpoint on an I/O address must report a patch failure")) return 1;
+    if (expect(!fake_recorded_brk_patch(m, 0xD020) && m.ram[0xD020] == 0x0E,
+               "A breakpoint on an I/O address must be refused before it writes")) return 1;
     return 0;
 }
 

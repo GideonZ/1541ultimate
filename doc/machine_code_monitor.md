@@ -901,7 +901,7 @@ There are 10 breakpoints, numbered `0` to `9`.
 
 #### Breakpoints under ROM and I/O
 
-At `$A000-$BFFF`, `$D000-$DFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory selected with `O` when you set it, as shown by the memory tag. `$E000` in KERNAL and `$E000` in RAM are separate breakpoints. A breakpoint stops the program only while the program has that memory banked in.
+At `$A000-$BFFF`, `$D000-$DFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory selected with `O` when you set it, as shown by the memory tag. `$E000` in KERNAL and `$E000` in RAM are separate breakpoints. A breakpoint stops the program only while the program has that memory banked in. A breakpoint in I/O is refused with `PATCH FAILED` when the program is run.
 
 If it is not banked in when you set the breakpoint, the monitor shows `BRK <memory>, CPU <memory>; not mapped now`: the memory of the breakpoint, then the memory the CPU has at that address.
 
@@ -950,7 +950,7 @@ The two messages that start with `Step` appear on the bottom row. All others app
 | `UNSAFE TARGET`                              | The next instruction is a `BRK`, or an `RTS` / `RTI` before the first stop.                                 |
 | `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR`. Set a breakpoint at the return address and press `G`. |
 | `RETURN NOT REACHED`                         | `U` did not stop at the caller.                                                                            |
-| `PATCH FAILED`                               | The address is in a reserved range, or the memory did not accept the `BRK`.                                |
+| `PATCH FAILED`                               | The address is in I/O or a reserved range, or memory did not accept the `BRK`.                              |
 | `NO FREE BRK SLOT`                           | All 10 breakpoints are in use.                                                                             |
 | `BRK <memory>, CPU <memory>; not mapped now` | The breakpoint is set in memory the CPU does not have banked in.                                           |
 | `DEBUG TIMEOUT`                              | No breakpoint was reached in time.                                                                         |

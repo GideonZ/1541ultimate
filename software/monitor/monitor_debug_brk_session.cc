@@ -703,7 +703,8 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     uint16_t addr, uint8_t cpu_port, MonitorBackingStore target)
 {
     cpu_port &= 0x07;
-    if (reserved_patch_address(addr)) {
+    // A BRK written to I/O changes a register instead of arming a trap.
+    if (reserved_patch_address(addr) || target == MONITOR_BACKING_IO) {
         return PATCH_INSTALL_FAILED;
     }
     if (already_patched(addr, target)) {
