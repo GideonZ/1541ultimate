@@ -65,10 +65,11 @@ bool MachineMonitor :: consume_release_host_after_exit(void)
 
 void MachineMonitor :: request_reopen_after_reset(void)
 {
+    // A monitor that stays open through the reset has nothing to reopen.
     monitor_reset_reopen_state = monitor_reset_reentry_state(state);
-    monitor_reset_reopen_state_valid = true;
-    monitor_reset_reopen_debug_active = debug.is_active();
-    reopen_after_reset = true;
+    monitor_reset_reopen_state_valid = reset_exits_monitor;
+    monitor_reset_reopen_debug_active = reset_exits_monitor && debug.is_active();
+    reopen_after_reset = reset_exits_monitor;
     reopen_on_debug_reset = true;
     if (debug_session) debug_session->request_reset_cancel();
 }

@@ -2655,6 +2655,8 @@ static int test_ctrl_r_resets_and_keeps_debug_open()
                "Stepping after reset must recreate the debug session")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    if (expect(!monitor.consume_reopen_after_reset(),
+               "A monitor that stayed open through CTRL+R must close for good")) return 1;
     monitor.deinit();
     return 0;
 }
