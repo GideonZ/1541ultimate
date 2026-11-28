@@ -191,6 +191,7 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
     browser->use_ui_focus_stack = false;
     browser->title = title;
     browser->pick_mode = save_mode ? TreeBrowser::PICK_SAVE : TreeBrowser::PICK_LOAD;
+    browser->ignore_tool_shortcuts = true;
     browser->init();
     if (s_monitor_browse_path.length() > 1) {
         browser->cd(s_monitor_browse_path.c_str());
@@ -321,6 +322,9 @@ const char *monitor_io::save_from_memory(UserInterface *ui, const char *path, co
     FileManager *fm = FileManager::getFileManager();
     File *f = NULL;
     FRESULT res = create_file_ask_if_exists(fm, ui, path, name, &f);
+    if (res == FR_EXIST) {
+        return ""; // the user declined to overwrite
+    }
     if (res != FR_OK || !f) {
         return "CREATE FAILED";
     }

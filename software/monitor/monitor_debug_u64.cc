@@ -108,16 +108,10 @@ protected:
         }
         return machine->peek_raw(address);
     }
+    // A store to a ROM-mapped address reaches the RAM underneath, as on a 6510.
+    // Only write_patch_byte writes the ROM image.
     virtual void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port)
     {
-        if (rom_patch_ptr(address, cpu_port)) {
-            // The base never pokes a ROM-mapped address through poke_cpu (only
-            // RAM scratch: stack, vectors, trampolines). Route any future ROM
-            // write through the single patch path so it uses poke_cpu_rom's
-            // aligned store rather than a raw byte poke.
-            write_patch_byte(address, byte, cpu_port);
-            return;
-        }
         if (monitor_backing_store_for_cpu_port(address, cpu_port) == MONITOR_BACKING_IO) {
             machine->poke_visible(address, byte);
             return;

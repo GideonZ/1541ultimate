@@ -92,6 +92,8 @@ struct UIStringEditPolicy
     // One extra key that cancels the field, beside RUN/STOP and Escape.
     // 0 for none.
     int cancel_key;
+    // Return on an untouched template cancels, for a template of placeholders.
+    bool cancel_untouched_template;
 };
 
 class UIStringEdit

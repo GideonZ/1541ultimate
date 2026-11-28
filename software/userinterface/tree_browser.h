@@ -88,6 +88,7 @@ public:
     bool has_border;
     bool use_ui_focus_stack;
     PickMode pick_mode;
+    bool     ignore_tool_shortcuts; // a picker that ignores C=+O, C=+R and C=+I
     bool     picked;
     mstring  picked_path;
     mstring  picked_name;

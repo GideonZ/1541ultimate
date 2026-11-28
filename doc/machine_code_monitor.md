@@ -36,14 +36,14 @@ C=+R      Reset    C=+I     Interface
 F1/SH+SPC Page Up  F7/SPACE Page Down
 ```
 
-While the monitor is open, `C=+R` resets the machine without confirmation. Outside Debug it works from the memory views, Edit and help, and closes the monitor. In Debug it also works from the monitor's lists and pickers, and the monitor stays in Debug. It does not work while a command prompt or message box is open. On hardware that cannot reach a reset the monitor shows `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
+While the monitor is open, `C=+R` resets the machine without confirmation. Outside Debug it works from the memory views, Edit and help, and closes the monitor. In Debug it also works from the monitor's lists and pickers, except the Load and Save file picker, and the monitor stays in Debug. It does not work while a command prompt or message box is open. On hardware that cannot reach a reset the monitor shows `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
 
 To close the monitor:
 
 - Press `C=+O` again.
 - Press `RUN/STOP`, `ESC`, or the C64's top-left `←` key when no edit mode, Debug mode, or popup is active.
 
-`RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode - and closes the monitor only once nothing is left. In Debug mode, `RUN/STOP` and `ESC` leave Debug and stay in the monitor; in Edit mode they leave Edit first. The breakpoint list closes with `RUN/STOP`, `ESC` or `C=+P`, and a message box with an `Ok` button closes with `RETURN`. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
+`RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode - and closes the monitor only once nothing is left. In Debug mode it leaves Debug and stays in the monitor; in Edit mode it leaves Edit first. The breakpoint list also closes with `C=+P`, and a message box with an `Ok` button closes with `RETURN`. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
 
 Two shortcuts act on the machine rather than the view, and both work from a memory view and from edit mode:
 
@@ -96,6 +96,8 @@ Mode indicators may include any combination of the following:
 | `Poll`    | Polling is active                                     |
 | `Dbg`     | Debug mode is active                                  |
 | `EDIT`    | Edit mode is active                                   |
+
+While range selection (`R`) is active in the Screen or Binary view, the header omits the word `MONITOR`, so that the address fits beside the `Range` indicator.
 
 Each indicator has a fixed slot, counted back from the right edge of the header. `Undoc` and `Range` share one slot, so only one of them is shown at a time. `Poll` and `Dbg` share a slot too, and entering Debug turns poll off, so only one of those is ever shown.
 
@@ -199,7 +201,7 @@ On the U2+ cartridge the monitor reads through the CPU-visible aperture, so it c
 
 A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `Left` / `Right` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row. `[I/O]` is writable. A write to a `[CHR]` row goes to the RAM underneath, so the displayed ROM byte does not change. The same bytes can also be edited in Memory view with `M`. `DEL` clears a `DATA` row's bytes to `$00`, where on a decoded instruction it writes `NOP`.
 
-The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
+The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes. In edit mode, `C=+C`, `N` and `R` on a `DATA` row take the byte under the cursor; `N` and `R` are available there from the second byte of a row.
 
 Assembly view also allows you to assemble instructions inline (in `E`dit mode) and to debug code (in `D`ebug mode).
 
@@ -421,7 +423,7 @@ Addresses in command prompts are hexadecimal.
 
 Follow code flow in the Assembly view:
 
-- `Enter` follows the resolved target when the cursor is on a jumpable instruction: `JSR`, `JMP` absolute, `JMP` indirect, or any of `BEQ`, `BNE`, `BCC`, `BCS`, `BMI`, `BPL`, `BVC`, `BVS`. For `JMP` indirect the monitor reads the vector and follows the address stored there.
+- `Enter` follows the resolved target when the cursor is on a jumpable instruction: `JSR`, `JMP` absolute, `JMP` indirect, or any of `BEQ`, `BNE`, `BCC`, `BCS`, `BMI`, `BPL`, `BVC`, `BVS`. For `JMP` indirect the monitor reads the vector and follows the address stored there; as on the 6510, a vector at `$xxFF` takes its high byte from `$xx00`.
 - `Enter` returns to the most recent saved source location when the current Assembly instruction is not jumpable and the follow stack is non-empty.
 - The follow stack holds up to 10 return locations. When it is full, the oldest entry is discarded and the newest 10 are kept.
 - After each successful follow or return, the bottom row shows a compact zero-based follow-stack status for about 2 seconds, for example `F1 JMP $E000` and `F0 RET $A000`.
@@ -523,7 +525,7 @@ Typing a letter in the mnemonic field opens the opcode picker. A branch operand 
 | Binary       | Clears the selected bit                         |
 | Assembly     | Replaces the current instruction with `NOP` bytes; clears a `DATA` row to `$00` |
 
-In Memory view, `DEL` first rolls back a half-typed nibble. In Assembly view, `DEL` first undoes the characters typed on the current instruction.
+In Memory view, `DEL` first rolls back a half-typed nibble. In Assembly view, `DEL` first undoes the characters typed on the current instruction. Moving to another address discards a half-typed digit; in Assembly view, a digit that is already written stays in memory.
 
 ## Selection and Clipboard
 
@@ -552,7 +554,7 @@ The number tool is a compact base-conversion and overwrite popup for the current
 - ASCII
 - Screen code
 
-The popup title shows the target address and whether the target is a `BYTE` or a `WORD`. In Assembly view the target is the operand of the current instruction; for an instruction without an operand it is the byte after the instruction.
+The popup title shows the target address and whether the target is a `BYTE` or a `WORD`. In Assembly view the target is the operand of the current instruction; for an instruction without an operand it is the byte after the instruction. On a `DATA` row the target is the byte under the cursor.
 
 The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views.
 
@@ -562,7 +564,7 @@ Number tool controls:
 | ----------- | ----------------------------------------------------------- |
 | `Up`/`Down` | Select the row to type in                                   |
 | Typing      | Build a new value in the selected row's notation            |
-| `DEL`       | Remove the last typed character                             |
+| `DEL`       | Remove the last typed character; with none left, preview the target |
 | `Return`    | Write the previewed value to the target                     |
 | `C=+C`      | Copy the previewed value to the clipboard and close         |
 | `+ - * /`   | Open the calculator with the current value and that operator |
@@ -630,7 +632,7 @@ T C000-C005,C010,C000-C008
 
 Here the first two instructions are copied to `$C010` while the scan covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
 
-`Hunt` and `Compare` open a result picker with these controls:
+`Hunt` and `Compare` open a result picker. Its header shows the selected match and the number of matches, for example `Hunt results  1/20`. The picker has these controls:
 
 | Key                       | Action                    |
 | ------------------------- | ------------------------- |
@@ -641,7 +643,7 @@ Here the first two instructions are copied to `$C010` while the scan covers a th
 
 Both pickers list at most 256 matches. A search with no result shows `No matches` or `No differences`.
 
-A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`.
+A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`. On Fill and Transfer, `Return` on the untouched placeholder closes the prompt without running the command.
 
 ## File I/O
 
@@ -649,6 +651,8 @@ A command prompt accepts only characters that can occur in the command being ent
 - `S`: save memory to a file.
 
 Files may exist directly in the Ultimate filesystem or inside a disk image such as `.D64`.
+
+The Load and Save file picker ignores `C=+O`, `C=+R` and `C=+I`. Load and Save use the whole file name, up to 127 characters.
 
 ### Load
 
@@ -709,7 +713,7 @@ The range is inclusive. Save writes a normal PRG file with a two-byte load addre
 
 In the file picker, choose one of the following:
 
-- Select an existing file by pressing `ENTER` on it, then choosing `Select` from the context-sensitive menu. The monitor asks before it overwrites the file.
+- Select an existing file by pressing `ENTER` on it, then choosing `Select` from the context-sensitive menu. The monitor asks before it overwrites the file; answering `No` leaves the file unchanged and returns to the monitor.
 - Select `<< Create New File >>` at the top of a writable directory, then type the filename at the `Save as` prompt.
 
 The `<< Create New File >>` entry only appears in directories that can be written to.
@@ -767,7 +771,7 @@ Default slots are aimed at common C64 locations:
 
 Debug mode runs your program on the C64's own 6510 under your control. You can execute it one instruction at a time, stop it at breakpoints, and see the CPU registers after every stop. Debug works in the Assembly view, and the other monitor commands stay available between stops.
 
-To stop a program, the debugger writes a temporary `BRK` where execution should stop, and puts the original byte back at the stop. A breakpoint therefore needs memory the debugger can write to: RAM, and on the Ultimate 64 also BASIC, KERNAL and character ROM (see [Hardware support](#hardware-support)).
+To stop a program, the debugger writes a temporary `BRK` where execution should stop, and puts the original byte back at the stop. A breakpoint therefore needs memory the debugger can write to: RAM, and on the Ultimate 64 also BASIC and KERNAL ROM (see [Hardware support](#hardware-support)).
 
 ### Quick start
 
@@ -797,12 +801,12 @@ C021  RTS
 
 `D` starts Debug in the Assembly view. It turns Poll off, because `P` sets breakpoints. Starting Debug runs nothing.
 
-Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and `G` start at the cursor address. After a stop, `T`, `D`, `U` and `K` continue from the stop.
+Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and `G` start at the cursor address. `K` starts where Debug started and runs to the cursor. Moving the view with the cursor keys, `J`, a bookmark or a follow does not change where execution starts. After a stop, `T`, `D`, `U`, `G` and `K` continue from the stop.
 
 | Key                 | Effect                                                                   |
 | ------------------- | ------------------------------------------------------------------------ |
 | `C=+D`              | Leave Debug.                                                             |
-| `RUN/STOP` or `ESC` | Leave Debug. In Edit mode, the first press leaves Edit.                  |
+| `←`, `RUN/STOP`, `ESC` | Leave Debug. In Edit mode, the first press leaves Edit.               |
 | `C=+O`              | Leave Debug and close the monitor.                                       |
 | `C=+R`              | Reset the C64. Debug stays on, with blank registers.                     |
 
@@ -858,11 +862,14 @@ In the example, `-` and `B` are 1 because the program is stopped by a `BRK`, and
 
 The CPU executes from the memory banked in through `$01`, not from the bank selected with `O`. After each stop on an Ultimate 64, the view switches to the bank the CPU is using.
 
-- `T` executes one instruction. It refuses an `RTS` whose return address does not follow a `JSR`.
+- `T` executes one instruction. An `RTS` goes to the address on the stack. Outside a subroutine entered with `T`, it is refused when that address does not follow a `JSR`.
 - `D` runs a `JSR` as one step, including calls into KERNAL or BASIC. For any other instruction it does the same as `T`.
 - `U` needs a stop first. After `T` into subroutines it works at any depth. After a breakpoint or `K` inside a subroutine it works while the return address is on top of the stack. Otherwise it shows `NOT IN SUBROUTINE`.
-- `G` runs until an enabled breakpoint, and runs past a breakpoint the program is stopped on. With no enabled breakpoint, the program runs freely; on the C64 or HDMI screen the monitor closes.
+- `G` runs until an enabled breakpoint. With no enabled breakpoint, the program runs freely and Debug ends; on the C64 or HDMI screen the monitor also closes.
 - `K` runs until the cursor address, or an earlier enabled breakpoint.
+- `U`, `G` and `K` step past a breakpoint the program is stopped on. It stays set, and stops the program the next time it gets there. If it is on a `BRK` or an undocumented opcode, it stays unarmed for that whole run, and `G` is refused when no other breakpoint is enabled.
+
+On the Ultimate 64, a `BRK` in the program also stops `G` and `K`.
 
 If no breakpoint is reached within a few seconds, the debugger shows `DEBUG TIMEOUT`.
 
@@ -876,7 +883,9 @@ Code in ROM, and in RAM under ROM, is limited until the program has stopped once
 | ------------------------------ | ------------------------------------------------ |
 | RAM or I/O space               | All but `U`, and `T` / `D` on `RTS` or `RTI`     |
 | RAM under BASIC, KERNAL or I/O | All but `T` and `U`, and `D` on `RTS` or `RTI`   |
-| BASIC, KERNAL or character ROM | `G`, `K`, and `D` on a `JSR`                     |
+| BASIC or KERNAL ROM            | `G`, `K`, and `D` on a `JSR`                     |
+
+`T`, `D`, `U` and `K` write their own `BRK` into I/O space. Cartridge RAM at `$DE00-$DFFF` can execute it. A register changes instead, and shows `PATCH FAILED` if it does not read back `$00`.
 
 To get the first stop, set a breakpoint, move the cursor to where execution should start and press `G`, or use `D` on a `JSR`.
 
@@ -897,7 +906,9 @@ There are 10 breakpoints, numbered `0` to `9`.
 
 #### Breakpoints under ROM and I/O
 
-At `$A000-$BFFF`, `$D000-$DFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory selected with `O` when you set it, as shown by the memory tag. `$E000` in KERNAL and `$E000` in RAM are separate breakpoints. A breakpoint stops the program only while the program has that memory banked in.
+At `$A000-$BFFF`, `$D000-$DFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory selected with `O` when you set it, as shown by the memory tag. `$E000` in KERNAL and `$E000` in RAM are separate breakpoints. A breakpoint stops the program only while the program has that memory banked in. A breakpoint in I/O is refused with `PATCH FAILED` when the program is run.
+
+An Ultimate II+ or II+L cartridge has no `O` selection: at `$A000-$BFFF` and `$E000-$FFFF`, a breakpoint belongs to the memory the CPU has banked in when you set it. A breakpoint in RAM there is also refused with `PATCH FAILED` if the program is run while ROM is banked in. RAM under I/O cannot have a breakpoint on a cartridge.
 
 If it is not banked in when you set the breakpoint, the monitor shows `BRK <memory>, CPU <memory>; not mapped now`: the memory of the breakpoint, then the memory the CPU has at that address.
 
@@ -919,7 +930,7 @@ An Ultimate II+ or II+L cartridge cannot change the C64's ROM. While a breakpoin
 | `L`                           | Give the breakpoint a label of up to 4 characters (`Lbl`)  |
 | `E`                           | Enable or disable the breakpoint (`Enbl`)                  |
 | `DEL`                         | Clear the breakpoint (`Res`)                               |
-| `RUN/STOP`, `ESC` or `C=+P`   | Close the list                                             |
+| `←`, `RUN/STOP`, `ESC`, `C=+P` | Close the list                                            |
 | `C=+O`                        | Close the monitor                                          |
 
 Showing a breakpoint moves the view and selects its memory bank. The program stays stopped where it was.
@@ -932,7 +943,7 @@ Showing a breakpoint moves the view and selects its memory bank. The program sta
 | `$0340-$035C` | Work area for executing single instructions.                                      |
 | `$035D-$03FB` | The debugger's own code and the saved CPU registers.                              |
 
-The debugger also changes the vectors at `$FFFA` and `$FFFE` temporarily and uses a few stack bytes below `SP`. Keep no data in `$0340-$03FB`. A breakpoint in `$0314-$0319` or `$035D-$03FB` is refused with `PATCH FAILED` when the program is run.
+The debugger also changes the vectors at `$FFFA` and `$FFFE` temporarily and uses a few stack bytes below `SP`. Keep no data in `$0340-$03FB`. Leaving Debug while the program is stopped puts back what the debugger wrote there, except `$035D-$0377` and `$0387-$0389`, which the CPU runs to return to the program. A breakpoint in `$0314-$0319` or `$0340-$03FB` is refused with `PATCH FAILED` when the program is run.
 
 ### Debug messages
 
@@ -942,11 +953,11 @@ The two messages that start with `Step` appear on the bottom row. All others app
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `Step Into: run to a breakpoint 1st`         | `T` in ROM or RAM under ROM before the first stop. Set a breakpoint and press `G`.                          |
 | `Step Over: run to a breakpoint 1st`         | `D` on an instruction in ROM, other than a `JSR`, before the first stop.                                    |
-| `UNSUPPORTED OPCODE`                         | `T` or `D` met an undocumented opcode, which cannot be stepped.                                             |
+| `UNSUPPORTED OPCODE`                         | `T` or `D` met an undocumented opcode. The program stays stopped.                                             |
 | `UNSAFE TARGET`                              | The next instruction is a `BRK`, or an `RTS` / `RTI` before the first stop.                                 |
-| `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR`. Set a breakpoint at the return address and press `G`. |
+| `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR` outside a subroutine entered with `T`. Set a breakpoint at the return address and press `G`. |
 | `RETURN NOT REACHED`                         | `U` did not stop at the caller.                                                                            |
-| `PATCH FAILED`                               | The address is in a reserved range, or the memory did not accept the `BRK`.                                |
+| `PATCH FAILED`                               | A breakpoint is in I/O, the address is in a reserved range or is RAM under a banked-in ROM on a cartridge, or memory did not accept the `BRK`. |
 | `NO FREE BRK SLOT`                           | All 10 breakpoints are in use.                                                                             |
 | `BRK <memory>, CPU <memory>; not mapped now` | The breakpoint is set in memory the CPU does not have banked in.                                           |
 | `DEBUG TIMEOUT`                              | No breakpoint was reached in time.                                                                         |
@@ -959,10 +970,10 @@ The two messages that start with `Step` appear on the bottom row. All others app
 
 When you leave Debug, the program continues from where it stopped. The debugger removes every `BRK` it wrote and restores the vectors and `$00` / `$01`.
 
-- With KERNAL banked in, interrupts are enabled, so the cursor, keyboard and jiffy clock keep working.
-- With KERNAL banked out (bit 1 of `$01` clear), the interrupt flag stays as the program had it.
+- With KERNAL and I/O banked in, interrupts are enabled, so the cursor, keyboard and jiffy clock keep working.
+- With KERNAL banked out (bit 1 of `$01` clear) or the character ROM banked in (bit 2 clear), the interrupt flag stays as the program had it.
 
-To keep interrupts disabled in a program with KERNAL banked in, for example between `SEI` and `CLI` in a raster routine, do not leave Debug there. Set a breakpoint after the `CLI` and press `G`.
+To keep interrupts disabled in a program with KERNAL and I/O banked in, for example between `SEI` and `CLI` in a raster routine, do not leave Debug there. Set a breakpoint after the `CLI` and press `G`.
 
 ### Help screen
 
@@ -997,7 +1008,7 @@ The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 a
 | Memory view, edit, fill, compare                  | Yes                            | Yes                                                          |
 | `G` jump to address                               | Yes                            | Yes                                                          |
 | Stepping and breakpoints in C64 RAM               | Yes                            | Yes                                                          |
-| Stepping and breakpoints in BASIC / KERNAL / character ROM | Yes                   | No, the cartridge cannot change the C64's ROM                |
+| Stepping and breakpoints in BASIC / KERNAL ROM             | Yes                   | No, the cartridge cannot change the C64's ROM                |
 | Memory tag per row (`[KRN]`, `[RAM]`, ...)        | Yes                            | Yes, once the monitor has read `$01`; `[CPU]` until then      |
 | CPU bank selection with `O`                       | Yes                            | No; the footer shows the CPU's banking instead               |
 | VIC bank selection with `SH+O`                    | Yes                            | Yes                                                          |

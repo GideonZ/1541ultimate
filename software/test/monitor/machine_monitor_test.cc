@@ -67,12 +67,12 @@ namespace monitor_io {
 struct FakeMonitorIOState {
     bool pick_file_result;
     char pick_path[256];
-    char pick_name[64];
+    char pick_name[256];
     int pick_file_calls;
     bool last_pick_save_mode;
     bool load_called;
     char load_path[256];
-    char load_name[64];
+    char load_name[256];
     uint16_t load_start_addr;
     bool load_use_prg;
     uint32_t load_offset;
@@ -84,7 +84,7 @@ struct FakeMonitorIOState {
 
     bool save_called;
     char save_path[256];
-    char save_name[64];
+    char save_name[256];
     uint16_t save_start;
     uint16_t save_end;
     const char *save_error;
@@ -1520,6 +1520,8 @@ static int test_parsers_and_formatters(void)
 
     if (expect(monitor_parse_expression("$1234", &value) == MONITOR_OK && value == 0x1234, "Hex expression parse failed.")) return 1;
     if (expect(monitor_parse_expression("0x1234", &value) == MONITOR_SYNTAX, "0x-prefixed expressions must be rejected.")) return 1;
+    if (expect(monitor_parse_expression("$10000", &value) == MONITOR_RANGE, "A five-digit hex value must be out of range.")) return 1;
+    if (expect(monitor_parse_expression("$1$2", &value) == MONITOR_SYNTAX, "Text after a hex value must be rejected.")) return 1;
     if (expect(monitor_parse_expression("4660", &value) == MONITOR_OK && value == 0x1234, "Decimal expression parse failed.")) return 1;
     if (expect(monitor_parse_expression("%0001001000110100", &value) == MONITOR_OK && value == 0x1234, "Binary expression parse failed.")) return 1;
 
@@ -4009,7 +4011,8 @@ static int test_asm_number_popup_targets_operands(void)
         CaptureScreen screen;
         FakeMemoryBackend backend;
         char line[32];
-        const int keys[] = { 'J', 'A', 'N', '1', '2', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
+        const int keys[] = { 'J', 'A', 'N', '5', KEY_DELETE, KEY_RETURN,
+                             '1', '2', '3', '4', KEY_RETURN, KEY_BREAK, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
         backend.write(0x9010, 0xB9);
@@ -4035,6 +4038,15 @@ static int test_asm_number_popup_targets_operands(void)
         get_popup_line(screen, 6, line, sizeof(line));
         if (expect(strncmp(line, "Calc with +-*/ $Hex Dec %Bin", 28) == 0,
                    "ASM Number popup must show the compact calculator legend after removing redundant rows.")) return 1;
+        for (int i = 0; i < 2; i++) {
+            if (expect(mon.poll(0) == 0, "ASM word Number test: type and delete failed.")) return 1;
+        }
+        get_popup_line(screen, 1, line, sizeof(line));
+        if (expect(strstr(line, "Hex      $FF99") == line,
+                   "DEL of the only typed digit must restore the operand word.")) return 1;
+        if (expect(mon.poll(0) == 0, "ASM word Number test: commit after DEL failed.")) return 1;
+        if (expect(backend.read(0x9011) == 0x99 && backend.read(0x9012) == 0xFF,
+                   "Return after DEL must leave both operand bytes unchanged.")) return 1;
         for (int i = 0; i < 5; i++) {
             if (expect(mon.poll(0) == 0, "ASM word Number test: editing/commit failed.")) return 1;
         }
@@ -5239,6 +5251,36 @@ static int test_opcode_picker_near_bottom_refresh_stays_inside_content(void)
     if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should close the picker first.")) return 1;
     if (expect(mon.poll(0) == 0, "Lower-border popup bounds test: RUN/STOP should leave edit mode next.")) return 1;
     mon.deinit();
+
+    // On the bottom row the box moves up, so the opcode Return writes is shown.
+    n = 0;
+    keys[n++] = 'A';
+    keys[n++] = 'E';
+    for (int i = 0; i < 17; i++) keys[n++] = KEY_DOWN;
+    keys[n++] = 'L';
+    keys[n++] = 'D';
+    keys[n++] = 'A';
+    keys[n++] = KEY_RETURN;
+    FakeKeyboard bottom_kb(keys, n);
+    ui.keyboard = &bottom_kb;
+    monitor_reset_saved_state();
+    for (uint16_t addr = 0x0000; addr < 0x0020; addr++) {
+        backend.write(addr, 0xEA);
+    }
+
+    BackendMachineMonitor bottom(&ui, &backend);
+    bottom.init(&screen, &bottom_kb);
+    for (int i = 0; i < n - 1; i++) {
+        if (expect(bottom.poll(0) == 0, "Bottom-row opcode picker test: setup failed.")) return 1;
+    }
+    char row[39];
+    screen.get_slice(1, 21, 38, row);
+    if (expect(strstr(row, "LDA #") != NULL,
+               "Opcode picker on the bottom row must show the selected entry.")) return 1;
+    if (expect(bottom.poll(0) == 0, "Bottom-row opcode picker test: commit failed.")) return 1;
+    if (expect(backend.read(0x0011) == 0xA9,
+               "Return on the bottom row must write the opcode the picker shows.")) return 1;
+    bottom.deinit();
     return 0;
 }
 
@@ -5997,6 +6039,9 @@ static int test_hunt_and_compare_picker_navigation(void)
         if (expect(mon.poll(0) == 0, "Hunt picker test: hunt command failed.")) return 1;
         screen.get_slice(1, 4, 37, row);
         if (expect(strstr(row, "C000 DE") == row, "Hunt picker must show the first match at the top initially.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Hunt results  1/20 ") == header && strstr(header, "RETURN jumps") != NULL,
+                   "Hunt picker header must show the whole counter and its hint.")) return 1;
         if (expect(mon.poll(0) == 0, "Hunt picker test: page-down failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hunt picker test: RETURN jump failed.")) return 1;
         screen.get_slice(1, 3, 38, header);
@@ -6038,6 +6083,33 @@ static int test_hunt_and_compare_picker_navigation(void)
         if (expect(strstr(header, "MONITOR HEX $C102") == header,
                    "Compare picker RETURN must jump to the selected difference.")) return 1;
         if (expect(mon.poll(0) == 1, "Compare picker test: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        // The widest counter either picker can show.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'C', KEY_END };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        for (uint16_t addr = 0xC000; addr < 0xC100; addr++) {
+            backend.write(addr, 0x01);
+        }
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000-C0FF,C200", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Compare counter test: compare command failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Compare counter test: END failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "Compare results  256/256 ") == header &&
+                   strstr(header, "RETURN jumps") != NULL,
+                   "Compare picker header must fit its widest counter and the hint.")) return 1;
         mon.deinit();
     }
 
@@ -6256,6 +6328,46 @@ static int test_number_popup_edit_and_commit(void)
         r = expr_mon.poll(0);
         if (expect(r == 0, "Expression Number popup invalid-char test: expression close failed.")) return 1;
         expr_mon.deinit();
+    }
+
+    // A hex value is taken whole: five digits are out of range, and anything
+    // else after the digits is a syntax error.
+    {
+        struct HexCase {
+            const char *expression;
+            const char *status;
+        } cases[] = {
+            { "$10000/$100", "RANGE" },
+            { "1+$10000", "RANGE" },
+            { "$1$2", "SYNTAX" },
+        };
+
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            char line[40];
+            int keys[24] = { 'N', '+', KEY_DELETE, KEY_DELETE, KEY_DELETE, KEY_DELETE };
+            int count = 6;
+            for (const char *typed = cases[i].expression; *typed; typed++) {
+                keys[count++] = *typed;
+            }
+            keys[count++] = KEY_RETURN;
+            FakeKeyboard kb(keys, count);
+
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor expr_mon(&ui, &backend);
+            expr_mon.init(&screen, &kb);
+            for (int step = 0; step < count; step++) {
+                if (expect(expr_mon.poll(0) == 0, "Expression hex value test: key failed.")) return 1;
+            }
+            get_popup_line(screen, 6, line, sizeof(line));
+            if (expect(strstr(line, cases[i].status) != NULL, cases[i].expression)) return 1;
+            expr_mon.deinit();
+        }
     }
 
     return 0;
@@ -6687,6 +6799,44 @@ static int test_prompt_cancel_and_empty_clipboard(void)
         mon.deinit();
     }
 
+    // Nothing scripted, so Return reaches the real prompt: a placeholder
+    // template does nothing, and a prompt holding real values accepts them.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        uint16_t go_addr = 0;
+        const int keys[] = { 'F', KEY_RETURN, 'T', KEY_RETURN, 'S', KEY_RETURN,
+                             'L', KEY_RETURN, 'G', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_name, "demo.prg");
+        monitor_io::g_monitor_io.load_data[1] = 0x08;
+        monitor_io::g_monitor_io.load_size = 3;
+        backend.write(0xAAAA, 0x11);
+        backend.write(0xCCCC, 0x22);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Untouched Fill test: command failed.")) return 1;
+        if (expect(backend.read(0xAAAA) == 0x11 && ui.popup_count == 0,
+                   "Return on the untouched Fill template must do nothing.")) return 1;
+        if (expect(mon.poll(0) == 0, "Untouched Transfer test: command failed.")) return 1;
+        if (expect(backend.read(0xCCCC) == 0x22 && ui.popup_count == 0,
+                   "Return on the untouched Transfer template must do nothing.")) return 1;
+        if (expect(mon.poll(0) == 0 && monitor_io::g_monitor_io.save_called,
+                   "Return on the pre-filled Save prompt must accept it.")) return 1;
+        if (expect(mon.poll(0) == 0 && monitor_io::g_monitor_io.load_called,
+                   "Return on the pre-filled Load prompt must accept it.")) return 1;
+        if (expect(mon.poll(0) == 1 && mon.consume_pending_go(&go_addr),
+                   "Return on the pre-filled Go prompt must accept it.")) return 1;
+        mon.deinit();
+    }
+
     {
         TestUserInterface ui;
         CaptureScreen screen;
@@ -6785,6 +6935,30 @@ static int test_load_save_and_goto_command_flow(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
+        const int keys[] = { 'S' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0801-0801", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_name, "save.prg");
+        // An empty error text is the shim's answer to a declined overwrite.
+        monitor_io::g_monitor_io.save_error = "";
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Declined overwrite test failed.")) return 1;
+        if (expect(monitor_io::g_monitor_io.save_called && ui.popup_count == 0,
+                   "A declined overwrite must show neither an error nor a confirmation.")) return 1;
+        mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
         const int keys[] = { 'S', KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
         backend.write(0x0801, 0xA9);
@@ -6813,6 +6987,44 @@ static int test_load_save_and_goto_command_flow(void)
     }
 
     {
+        // A name of 127 characters, the longest a directory listing reports,
+        // reaches Save and Load whole and is the next "Save as" default.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char long_name[128];
+        const int keys[] = { 'S', 'S', KEY_RETURN, 'L', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        memset(long_name, 'N', sizeof(long_name) - 1);
+        strcpy(long_name + sizeof(long_name) - 5, ".PRG");
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.push_prompt("0801-0801", 1);
+        ui.push_prompt("0801-0801", 1);
+        monitor_reset_saved_state();
+        monitor_io::reset_fake_monitor_io();
+        monitor_io::g_monitor_io.pick_file_result = true;
+        strcpy(monitor_io::g_monitor_io.pick_name, long_name);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Long name SAVE failed.")) return 1;
+        if (expect(strcmp(monitor_io::g_monitor_io.save_name, long_name) == 0,
+                   "SAVE over a picked file must keep the whole file name.")) return 1;
+        monitor_io::g_monitor_io.pick_name[0] = 0;
+        monitor_io::g_monitor_io.save_name[0] = 0;
+        if (expect(mon.poll(0) == 0, "Long default name SAVE failed.")) return 1;
+        if (expect(ui.last_prompt_maxlen == 127 &&
+                   strcmp(monitor_io::g_monitor_io.save_name, long_name) == 0,
+                   "\"Save as\" must offer and accept the whole file name.")) return 1;
+        strcpy(monitor_io::g_monitor_io.pick_name, long_name);
+        if (expect(mon.poll(0) == 0, "Long name LOAD failed.")) return 1;
+        if (expect(strcmp(monitor_io::g_monitor_io.load_name, long_name) == 0,
+                   "LOAD must keep the whole file name.")) return 1;
+        mon.deinit();
+    }
+
+    {
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;
@@ -6833,7 +7045,7 @@ static int test_load_save_and_goto_command_flow(void)
     return 0;
 }
 
-static int test_hex_single_nibble_commits_on_navigation(void)
+static int test_hex_single_nibble_is_discarded_on_navigation(void)
 {
     {
         TestUserInterface ui;
@@ -6851,8 +7063,8 @@ static int test_hex_single_nibble_commits_on_navigation(void)
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: enter edit mode failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: typing nibble failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: moving right failed.")) return 1;
-        if (expect(backend.read(0x0000) == 0x0E,
-                   "Leaving a half-typed hex nibble with cursor-right must commit it as 0x0N.")) return 1;
+        if (expect(backend.read(0x0000) == 0xFF,
+                   "Leaving a half-typed hex nibble with cursor-right must discard it.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble cursor-right test: edit-mode exit failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Hex nibble cursor-right test: monitor exit failed.")) return 1;
         mon.deinit();
@@ -6874,11 +7086,75 @@ static int test_hex_single_nibble_commits_on_navigation(void)
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: enter edit mode failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: typing nibble failed.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: page down failed.")) return 1;
-        if (expect(backend.read(0x0000) == 0x0E,
-                   "Leaving a half-typed hex nibble with page movement must commit it as 0x0N.")) return 1;
+        if (expect(backend.read(0x0000) == 0xFF,
+                   "Leaving a half-typed hex nibble with page movement must discard it.")) return 1;
         if (expect(mon.poll(0) == 0, "Hex nibble page-move test: edit-mode exit failed.")) return 1;
         if (expect(mon.poll(0) == 1, "Hex nibble page-move test: monitor exit failed.")) return 1;
         mon.deinit();
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'E', 'E', 'J', 'F' };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("1000", 1);
+        monitor_reset_saved_state();
+        backend.write(0x1000, 0xFF);
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "Hex nibble jump test failed.")) return 1;
+        }
+        if (expect(backend.read(0x1000) == 0xFF,
+                   "A half-typed hex nibble must not complete a byte at a jump target.")) return 1;
+        mon.deinit();
+    }
+
+    // Assembly edit mode: one digit of an operand, then a move, then a digit.
+    {
+        const int jump[] = { 'J', 'A', 'E', KEY_RIGHT, '5', 'J', '7' };
+        const int page[] = { 'J', 'A', 'E', KEY_RIGHT, '5', KEY_PAGEDOWN, '7' };
+        const int paste[] = { 'J', 'A', 'R', KEY_CTRL_C, 'E', KEY_RIGHT, '5', KEY_CTRL_V, '7' };
+        struct MoveCase {
+            const int *keys;
+            int count;
+            const char *message;
+        } cases[] = {
+            { jump, 7, "A half-typed operand digit must be discarded by a jump." },
+            { page, 7, "A half-typed operand digit must be discarded by paging." },
+            { paste, 9, "A half-typed operand digit must be discarded by a paste." },
+        };
+        for (int c = 0; c < 3; c++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            FakeKeyboard kb(cases[c].keys, cases[c].count);
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            ui.push_prompt("C000", 1);
+            ui.push_prompt("C010", 1);
+            monitor_reset_saved_state();
+            for (int addr = 0xC000; addr < 0xC100; addr += 2) {
+                backend.write((uint16_t)addr, 0xA9);
+                backend.write((uint16_t)(addr + 1), 0x12);
+            }
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int i = 0; i < cases[c].count; i++) {
+                if (expect(mon.poll(0) == 0, "Operand digit move test failed.")) return 1;
+            }
+            for (int addr = 0xC002; addr < 0xC100; addr++) {
+                if (expect(backend.read((uint16_t)addr) == ((addr & 1) ? 0x12 : 0xA9),
+                           cases[c].message)) return 1;
+            }
+            mon.deinit();
+        }
     }
 
     return 0;
@@ -7130,6 +7406,41 @@ static int test_edit_indicator_layout_across_views(void)
         if (expect(strncmp(header + 34, "EDIT", 4) == 0,
                    "EDIT must remain fixed at the far right when Undoc, Freeze, and Poll are active.")) return 1;
         mon.deinit();
+    }
+
+    {
+        // Range leaves too little room for these two headers with "MONITOR".
+        struct RangeCase {
+            int view_key;
+            const char *left;
+        } cases[] = {
+            { 'V', "SCR U/G $0000 " },
+            { 'B', "BIN $0000/7 " },
+            { 'M', "MONITOR HEX $0000 " },
+        };
+
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            char header[39];
+            const int keys[] = { cases[i].view_key, 'R' };
+            FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int step = 0; step < 2; step++) {
+                if (expect(mon.poll(0) == 0, "Range header test: key failed.")) return 1;
+            }
+            screen.get_slice(1, 3, 38, header);
+            if (expect(strstr(header, cases[i].left) == header &&
+                       strncmp(header + 19, "Range", 5) == 0, cases[i].left)) return 1;
+            mon.deinit();
+        }
     }
 
     return 0;
@@ -7513,6 +7824,30 @@ static int test_asm_follow_and_return_navigation(void)
         screen.get_slice(1, 22, 38, status);
         if (expect(strstr(status, "F0 RET $C200") == status,
                    "Follow/Back: return status must use the restored address.")) return 1;
+        mon.deinit();
+    }
+
+    // RETURN on JMP ($xxFF) takes the vector's high byte from $xx00, as the
+    // 6510 does.
+    {
+        const int keys[] = { 'J', 'A', KEY_RETURN };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C300", 1);
+        backend.write(0xC300, 0x6C); backend.write(0xC301, 0xFF); backend.write(0xC302, 0xC4);
+        backend.write(0xC4FF, 0x34);
+        backend.write(0xC400, 0xC6);
+        backend.write(0xC500, 0xC7);
+        monitor_reset_saved_state();
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "Follow JMP ($xxFF): key failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C634") == header,
+                   "Follow JMP ($xxFF) must wrap the vector within its page.")) return 1;
         mon.deinit();
     }
 
@@ -8398,6 +8733,7 @@ public:
         policy.accepts = input.accepts;
         policy.transform = input.transform;
         policy.cancel_key = monitor_key_arrow_left;
+        policy.cancel_untouched_template = input.cancel_untouched_template;
         edit.set_uppercase(input.uppercase);
         edit.set_policy(&policy);
         edit.init(&window, &keyboard, 0, 2, MONITOR_CONTENT_WIDTH - 2);
@@ -9227,6 +9563,55 @@ static int test_assembly_data_range_is_byte_addressable(void)
         mon.deinit();
     }
 
+    // In edit mode the cursor is on one byte of the row, and copy, Number and
+    // Range take that byte.
+    {
+        const int copy[] = { 'J', 'A', 'E', KEY_RIGHT, KEY_CTRL_C, KEY_BREAK, 'J', KEY_CTRL_V };
+        const int number[] = { 'J', 'A', 'E', KEY_RIGHT, 'N' };
+        const int range[] = { 'J', 'A', 'E', KEY_RIGHT, 'R', KEY_RIGHT, KEY_CTRL_C, KEY_BREAK,
+                              'J', KEY_CTRL_V };
+        struct EditCase {
+            const int *keys;
+            int count;
+        } cases[] = { { copy, 8 }, { number, 5 }, { range, 10 } };
+
+        for (int c = 0; c < 3; c++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeBankedMemoryBackend backend;
+            FakeKeyboard kb(cases[c].keys, cases[c].count);
+            char line[32];
+
+            for (uint16_t i = 0; i < 8; i++) {
+                backend.io[i] = (uint8_t)(0xA0 + i);
+            }
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            ui.set_prompt("D000", 1);
+            ui.push_prompt("C100", 1);
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor mon(&ui, &backend);
+            mon.init(&screen, &kb);
+            for (int i = 0; i < cases[c].count; i++) {
+                if (expect(mon.poll(0) == 0, "DATA edit shortcut: command failed.")) return 1;
+            }
+            if (c == 0) {
+                if (expect(backend.read(0xC100) == 0xA1,
+                           "C=+C in DATA edit must copy the byte under the cursor.")) return 1;
+            } else if (c == 1) {
+                get_popup_line(screen, 0, line, sizeof(line));
+                if (expect(strstr(line, "MONITOR NUM $D001 BYTE") == line,
+                           "N in DATA edit must target the byte under the cursor.")) return 1;
+            } else {
+                if (expect(backend.read(0xC100) == 0xA1 && backend.read(0xC101) == 0xA2 &&
+                           backend.read(0xC102) == 0x00,
+                           "A range in DATA edit must run between the bytes under the cursor.")) return 1;
+            }
+            mon.deinit();
+        }
+    }
+
     // A range that starts in code and ends in data covers both, with the code
     // end still taken as a whole instruction.
     {
@@ -9876,7 +10261,7 @@ int main()
     if (test_hunt_and_compare_picker_navigation()) return 1;
     if (test_prompt_cancel_and_empty_clipboard()) return 1;
     if (test_load_save_and_goto_command_flow()) return 1;
-    if (test_hex_single_nibble_commits_on_navigation()) return 1;
+    if (test_hex_single_nibble_is_discarded_on_navigation()) return 1;
     if (test_header_invariants_and_parity()) return 1;
     if (test_poll_mode_refreshes_visible_ram()) return 1;
     if (test_poll_mode_disabled_on_full_refresh_screen()) return 1;

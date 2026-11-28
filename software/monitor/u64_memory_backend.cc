@@ -273,8 +273,22 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
         return 0;
     }
 
-    uint8_t dd00 = machine->peek_cpu(0xDD00, 0x07);
+    // A held menu has made the bank pins inputs (init_io), so a live $DD00
+    // reads bank 0; the program's value is in the freeze backup.
+    uint8_t dd00 = machine->is_accessible() ? machine->get_frozen_cia2_porta()
+                                            : machine->peek_cpu(0xDD00, 0x07);
     return (uint8_t)(3 - (dd00 & 0x03));
+}
+
+void U64MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
+{
+    if (machine && machine->is_accessible()) {
+        // restore_io() writes the backup to $DD00 when the menu lets go.
+        uint8_t porta = machine->get_frozen_cia2_porta();
+        machine->set_frozen_cia2_porta((uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03))));
+        return;
+    }
+    MemoryBackend :: set_live_vic_bank(vic_bank);
 }
 
 uint8_t U64MemoryBackend :: monitor_poll_hz(void) const

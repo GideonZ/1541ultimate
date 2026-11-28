@@ -168,9 +168,13 @@ protected:
             0x8D, 0xFF, 0xFF,
             0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
         };
-        memcpy(contextless_reload +
-                   (CONTEXTLESS_LAUNCHER - CONTEXTLESS_RELOAD_START),
-               launcher, sizeof(launcher));
+        uint8_t *image = contextless_reload +
+                         (CONTEXTLESS_LAUNCHER - CONTEXTLESS_RELOAD_START);
+        for (unsigned i = 0; i < sizeof(launcher); i++) {
+            claim_work_area_byte((uint16_t)(CONTEXTLESS_LAUNCHER + i),
+                                 image[i], launcher[i]);
+        }
+        memcpy(image, launcher, sizeof(launcher));
         return true;
     }
     virtual bool launch_contextless_with_breakpoints(uint16_t address)

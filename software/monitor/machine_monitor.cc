@@ -113,7 +113,7 @@ static uint32_t monitor_last_load_length = 0;
 
 static uint16_t monitor_last_save_start = 0x0800;
 static uint16_t monitor_last_save_end = 0x9FFF;
-static char     monitor_last_save_name[40] = "";
+static char     monitor_last_save_name[MONITOR_FILE_NAME_MAX] = "";
 
 static bool     monitor_last_go_valid = false;
 static uint16_t monitor_last_go_addr = 0;
@@ -590,7 +590,11 @@ static MonitorError parse_number_core(const char *text, uint16_t *value)
     }
     if (buffer[0] == '$') {
         const char *hex = buffer;
-        return parse_hex_digits(hex, 1, 4, 0xFFFF, value);
+        MonitorError error = parse_hex_digits(hex, 1, 4, 0xFFFF, value);
+        if (error == MONITOR_OK && *hex) {
+            return is_hex_char(*hex) ? MONITOR_RANGE : MONITOR_SYNTAX;
+        }
+        return error;
     }
     if (buffer[0] == '%') {
         return parse_binary(buffer + 1, value) ? MONITOR_OK : MONITOR_SYNTAX;
@@ -603,7 +607,7 @@ static bool monitor_number_expr_operator(char c)
     return c == '+' || c == '-' || c == '*' || c == '/';
 }
 
-static bool monitor_number_expr_parse_value(const char *&cursor, uint32_t *value)
+static MonitorError monitor_number_expr_parse_value(const char *&cursor, uint32_t *value)
 {
     char token[32];
     int len = 0;
@@ -612,27 +616,29 @@ static bool monitor_number_expr_parse_value(const char *&cursor, uint32_t *value
     skip_spaces(cursor);
     while (*cursor && !is_space_char(*cursor) && !monitor_number_expr_operator(*cursor)) {
         if (len >= (int)sizeof(token) - 1) {
-            return false;
+            return MONITOR_SYNTAX;
         }
         token[len++] = *cursor++;
     }
     token[len] = 0;
     if (len <= 0) {
-        return false;
+        return MONITOR_SYNTAX;
     }
-    if (parse_number_core(token, &parsed) != MONITOR_OK) {
-        return false;
+    MonitorError error = parse_number_core(token, &parsed);
+    if (error != MONITOR_OK) {
+        return (error == MONITOR_RANGE) ? MONITOR_RANGE : MONITOR_SYNTAX;
     }
     *value = parsed;
-    return true;
+    return MONITOR_OK;
 }
 
 static MonitorError monitor_number_expr_parse_term(const char *&cursor, uint32_t *value)
 {
     uint32_t result;
 
-    if (!monitor_number_expr_parse_value(cursor, &result)) {
-        return MONITOR_SYNTAX;
+    MonitorError error = monitor_number_expr_parse_value(cursor, &result);
+    if (error != MONITOR_OK) {
+        return error;
     }
     while (true) {
         uint32_t rhs;
@@ -644,8 +650,9 @@ static MonitorError monitor_number_expr_parse_term(const char *&cursor, uint32_t
             break;
         }
         cursor++;
-        if (!monitor_number_expr_parse_value(cursor, &rhs)) {
-            return MONITOR_SYNTAX;
+        error = monitor_number_expr_parse_value(cursor, &rhs);
+        if (error != MONITOR_OK) {
+            return error;
         }
         if (op == '*') {
             if (rhs != 0 && result > 0xFFFFFFFFUL / rhs) {
@@ -2230,9 +2237,9 @@ const MonitorCommandInput monitor_input_jump =
 const MonitorCommandInput monitor_input_go =
     { "Go AAAA", "A", accepts_address, 0, true, true };
 const MonitorCommandInput monitor_input_fill =
-    { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true };
+    { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true, true };
 const MonitorCommandInput monitor_input_transfer =
-    { "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", "A-A,A,A-A", accepts_transfer, 0, true, true };
+    { "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", "A-A,A,A-A", accepts_transfer, 0, true, true, true };
 const MonitorCommandInput monitor_input_compare =
     { "Compare AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
 // Hunt keeps its default range and takes the needle after it, so there is no
@@ -2444,6 +2451,7 @@ void MachineMonitor :: apply_go_local(uint16_t address)
         debug_cursor_override = true;
     }
     state.current_addr = address;
+    discard_partial_entry();
     // Every way of being sent to an address goes through here, so this is where
     // the Assembly view learns which boundary it disassembles from. See
     // decode_row: no row above it may reach across it, which is what keeps a
@@ -2571,18 +2579,31 @@ uint8_t MachineMonitor :: range_span(uint16_t address) const
     return disasm_length(address);
 }
 
+// Editing a data row, each byte is an edit part, so the cursor can be on a
+// later byte than current_addr.
+uint16_t MachineMonitor :: cursor_byte_addr(void) const
+{
+    // A part beyond a short row is drawn on its first byte, so it counts as that.
+    if (edit_mode && state.view == MONITOR_VIEW_ASM && address_is_data(state.current_addr) &&
+        asm_edit_part < data_group_length(state.current_addr)) {
+        return (uint16_t)(state.current_addr + asm_edit_part);
+    }
+    return state.current_addr;
+}
+
 bool MachineMonitor :: range_contains(uint16_t address) const
 {
     if (!range_mode) {
         return false;
     }
     uint16_t start = range_anchor;
-    uint16_t end = state.current_addr;
+    uint16_t cursor = cursor_byte_addr();
+    uint16_t end = cursor;
     if (state.view == MONITOR_VIEW_ASM) {
         uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
-        if (state.current_addr < range_anchor) {
-            start = state.current_addr;
+        uint16_t current_end = (uint16_t)(cursor + range_span(cursor) - 1);
+        if (cursor < range_anchor) {
+            start = cursor;
             end = anchor_end;
         } else {
             start = range_anchor;
@@ -2624,18 +2645,19 @@ bool MachineMonitor :: clipboard_copy_byte(uint8_t value)
 
 bool MachineMonitor :: clipboard_copy_current(void)
 {
-    return clipboard_copy_byte(canonical_read(state.current_addr));
+    return clipboard_copy_byte(canonical_read(cursor_byte_addr()));
 }
 
 bool MachineMonitor :: clipboard_copy_range(void)
 {
     uint16_t start = range_anchor;
-    uint16_t end = state.current_addr;
+    uint16_t cursor = cursor_byte_addr();
+    uint16_t end = cursor;
     if (state.view == MONITOR_VIEW_ASM) {
         uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
-        if (state.current_addr < range_anchor) {
-            start = state.current_addr;
+        uint16_t current_end = (uint16_t)(cursor + range_span(cursor) - 1);
+        if (cursor < range_anchor) {
+            start = cursor;
             end = anchor_end;
         } else {
             start = range_anchor;
@@ -2699,7 +2721,7 @@ bool MachineMonitor :: clipboard_paste(void)
     } else {
         ensure_current_visible();
     }
-    pending_hex_nibble = -1;
+    discard_partial_entry();
     if (edit_mode) {
         reset_edit_blink();
     }
@@ -2709,7 +2731,7 @@ bool MachineMonitor :: clipboard_paste(void)
 void MachineMonitor :: toggle_range_mode(void)
 {
     if (!range_mode) {
-        range_anchor = state.current_addr;
+        range_anchor = cursor_byte_addr();
         range_mode = true;
         return;
     }
@@ -2737,7 +2759,7 @@ void MachineMonitor :: open_number_picker(void)
 
 void MachineMonitor :: number_picker_resolve_target(void)
 {
-    number_target_addr = state.current_addr;
+    number_target_addr = cursor_byte_addr();
     number_target_bytes = 1;
     number_target_locked = false;
 
@@ -2813,8 +2835,7 @@ void MachineMonitor :: number_picker_update_preview_from_buffer(void)
     bool word;
 
     if (number_edit_length <= 0) {
-        number_preview_value = number_base_bytes[0];
-        number_word = false;
+        number_picker_refresh_preview_from_memory();
         return;
     }
     if (!monitor_number_parse_buffer(number_selected, number_edit_buffer, number_edit_length,
@@ -3320,7 +3341,6 @@ uint16_t MachineMonitor :: row_span(void) const
 
 void MachineMonitor :: move_current(int delta)
 {
-    commit_pending_hex_nibble();
     state.current_addr = (uint16_t)(state.current_addr + delta);
     if (state.view == MONITOR_VIEW_ASM) {
         ensure_disasm_visible();
@@ -3368,7 +3388,6 @@ void MachineMonitor :: move_binary_bits(int delta)
 
 void MachineMonitor :: page_move(int lines)
 {
-    commit_pending_hex_nibble();
     uint16_t span = row_span();
     if (span == 0) span = 1;
     uint16_t step = (uint16_t)(lines * span);
@@ -3403,19 +3422,11 @@ bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_l
 
 bool MachineMonitor :: prompt_command(const MonitorCommandInput &input, char *buffer, int max_len)
 {
-    UIStringEditPolicy policy = { input.accepts, input.transform, monitor_key_arrow_left };
+    UIStringEditPolicy policy = { input.accepts, input.transform, monitor_key_arrow_left,
+                                  input.cancel_untouched_template };
 
     return get_ui()->string_box(input.title, buffer, max_len,
                                 input.template_mode, input.uppercase, &policy) > 0;
-}
-
-void MachineMonitor :: commit_pending_hex_nibble(void)
-{
-    if (!edit_mode || state.view != MONITOR_VIEW_HEX || pending_hex_nibble < 0) {
-        return;
-    }
-    canonical_write(state.current_addr, (uint8_t)pending_hex_nibble);
-    pending_hex_nibble = -1;
 }
 
 void MachineMonitor :: toggle_help()
@@ -3689,7 +3700,9 @@ bool MachineMonitor :: follow_target(uint16_t *target)
                 } else {
                     uint16_t vector = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
                     uint8_t low = canonical_read(vector);
-                    uint8_t high = canonical_read((uint16_t)(vector + 1));
+                    // The 6510 does not carry into the vector's page.
+                    uint8_t high = canonical_read((uint16_t)((vector & 0xFF00) |
+                                                             ((vector + 1) & 0x00FF)));
                     *target = (uint16_t)(low | ((uint16_t)high << 8));
                     return true;
                 }
@@ -4306,7 +4319,7 @@ void MachineMonitor :: draw_header()
 
     const char *right = NULL;
     if (!help_visible) {
-        if (hunt_picker_active) right = "ENTER jumps RSTOP exits";
+        if (hunt_picker_active) right = "RETURN jumps";
         else if (edit_mode) right = "Edit";
     }
     if (right && (help_visible || hunt_picker_active)) {
@@ -4345,14 +4358,19 @@ void MachineMonitor :: draw_header()
 
         memset(fixed, ' ', width);
         fixed[width] = 0;
-        int left_len = strlen(line);
+        // Next to the indicators, drop "MONITOR " rather than cut the address.
+        const char *left = line;
+        if ((int)strlen(left) > first_slot - 1 && strncmp(left, "MONITOR ", 8) == 0) {
+            left += 8;
+        }
+        int left_len = strlen(left);
         if (left_len > first_slot - 1) {
             left_len = first_slot - 1;
         }
         if (left_len < 0) {
             left_len = 0;
         }
-        memcpy(fixed, line, left_len);
+        memcpy(fixed, left, left_len);
         if (show_undoc && flag_slot + 5 <= width) {
             memcpy(fixed + flag_slot, "Undoc", 5);
         } else if (range_mode && flag_slot + 5 <= width) {
@@ -5312,6 +5330,8 @@ void MachineMonitor :: draw_opcode_picker()
     if (box_x + box_w > width) box_x = width - box_w;
     if (box_x < 0) box_x = 0;
 
+    // The bottom row has no room below it, so the box starts one row up.
+    if (anchor_row >= content_height) anchor_row = content_height - 1;
     int max_rows = content_height - anchor_row;
     if (max_rows < 0) max_rows = 0;
     int visible = opcode_candidate_count;
@@ -5990,6 +6010,15 @@ bool MachineMonitor :: consume_pending_interface_swap(void)
     return wanted;
 }
 
+// A half-typed digit belongs to the address it was typed at.
+void MachineMonitor :: discard_partial_entry(void)
+{
+    pending_hex_nibble = -1;
+    asm_edit_part = 0;
+    asm_edit_pending = 0;
+    asm_edit_history_reset(state.current_addr);
+}
+
 void MachineMonitor :: exit_edit_mode()
 {
     edit_mode = false;
@@ -6600,6 +6629,7 @@ int MachineMonitor :: handle_key(int key)
         case KEY_CONFIG:
             if (state.view == MONITOR_VIEW_DISASM) {
                 page_disassembly(-content_height);
+                discard_partial_entry();
                 draw();
                 return 0;
             }
@@ -6609,6 +6639,7 @@ int MachineMonitor :: handle_key(int key)
         case KEY_PAGEDOWN:
             if (state.view == MONITOR_VIEW_DISASM) {
                 page_disassembly(content_height);
+                discard_partial_entry();
                 draw();
                 return 0;
             }
@@ -6913,7 +6944,7 @@ int MachineMonitor :: poll(int)
 void MachineMonitor::handle_load_command()
 {
     char path_buf[256] = "";
-    char name_buf[64] = "";
+    char name_buf[MONITOR_FILE_NAME_MAX] = "";
     if (!monitor_io::pick_file(get_ui(), "MONITOR LOAD: Select File", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), false)) {
         redraw_full();
@@ -7006,7 +7037,7 @@ void MachineMonitor::handle_save_command()
     last_save_end = end;
 
     char path_buf[256] = "";
-    char name_buf[36] = "";
+    char name_buf[MONITOR_FILE_NAME_MAX] = "";
     if (!monitor_io::pick_file(get_ui(), "MONITOR SAVE: Pick File/Dir", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), true)) {
         redraw_full();
@@ -7035,8 +7066,10 @@ void MachineMonitor::handle_save_command()
     const char *err = monitor_io::save_from_memory(get_ui(), path_buf, name_buf, backend, start, end);
     redraw_full();
     if (err) {
-        get_ui()->popup(err, BUTTON_OK);
-        redraw_full();
+        if (*err) {
+            get_ui()->popup(err, BUTTON_OK);
+            redraw_full();
+        }
         return;
     }
     uint32_t bytes = (uint32_t)end - (uint32_t)start + 1;

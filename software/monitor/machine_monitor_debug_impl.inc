@@ -65,10 +65,11 @@ bool MachineMonitor :: consume_release_host_after_exit(void)
 
 void MachineMonitor :: request_reopen_after_reset(void)
 {
+    // A monitor that stays open through the reset has nothing to reopen.
     monitor_reset_reopen_state = monitor_reset_reentry_state(state);
-    monitor_reset_reopen_state_valid = true;
-    monitor_reset_reopen_debug_active = debug.is_active();
-    reopen_after_reset = true;
+    monitor_reset_reopen_state_valid = reset_exits_monitor;
+    monitor_reset_reopen_debug_active = reset_exits_monitor && debug.is_active();
+    reopen_after_reset = reset_exits_monitor;
     reopen_on_debug_reset = true;
     if (debug_session) debug_session->request_reset_cancel();
 }
@@ -707,8 +708,6 @@ void MachineMonitor :: debug_request_over()
     monitor_read_predict_bytes(session, backend, start_pc, bytes);
     if (disassembler_6502_is_illegal(bytes[0])) {
         monitor_log_debug("over", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        debug_cleanup_session();
         get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
         redraw_full();
         return;
@@ -770,8 +769,6 @@ void MachineMonitor :: debug_request_trace()
     monitor_read_predict_bytes(session, backend, start_pc, bytes);
     if (disassembler_6502_is_illegal(bytes[0])) {
         monitor_log_debug("trace", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        debug_cleanup_session();
         get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
         redraw_full();
         return;
@@ -846,9 +843,6 @@ void MachineMonitor :: debug_request_go()
 {
     debug_clear_status();
     DebugContext from = debug.context();
-    if (debug_cursor_override) {
-        debug_context_reset(&from);
-    }
     bool busy;
     DebugSession *session = ensure_debug_session(&busy);
     if (busy) {
@@ -876,10 +870,8 @@ void MachineMonitor :: debug_request_go()
         monitor_log_address("debug go fallback", last_go_addr);
         return;
     }
-    // Start PC for a fresh Go is the Assembly view cursor: this is what the
-    // user is looking at and where they expect execution to begin. If a
-    // captured context is already in hand, the session prefers `from.pc`
-    // and ignores this fallback.
+    // Before the first stop, Go starts at the Assembly view cursor. With a
+    // captured context the session continues at `from.pc` and ignores this.
     uint16_t start_pc = state.current_addr;
     if (debug_run_window_refreeze_enabled &&
             !debug_has_enabled_breakpoint() &&
@@ -925,12 +917,25 @@ void MachineMonitor :: debug_request_go()
         monitor_log_address("debug go handoff", last_go_addr);
         return;
     }
-    // Invalidate up-front; G discards the captured context per the spec.
-    debug.invalidate_context();
     DebugSession::Result r = session->go(from, &breakpoints, start_pc);
     monitor_log_debug("go", start_pc, r);
+    // G discards the captured context per the spec, except where it failed
+    // with the CPU still stopped.
+    DebugContext stopped;
+    bool still_stopped = r != DebugSession::DBG_OK &&
+        session->has_parked_context() &&
+        session->snapshot(&stopped) == DebugSession::DBG_OK;
+    debug.invalidate_context();
+    if (still_stopped) {
+        debug.set_context(stopped);
+    }
     debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
+        if (!debug_has_enabled_breakpoint()) {
+            // The program runs freely: there is no stop left to show.
+            debug_leave();
+            return;
+        }
         // If the session captured a fresh context (BRK fired during this
         // Go), `snapshot` now returns it. Pull it back so the footer shows
         // the real post-stop state on the next draw.
@@ -1010,6 +1015,13 @@ MonitorBackingStore MachineMonitor :: breakpoint_target_for_view(uint16_t addres
 {
     uint8_t view_cpu_port = state.cpu_port & 0x07;
 
+    // A cartridge cannot select the view bank, so under BASIC and KERNAL the
+    // view is whatever the CPU has banked in. RAM under I/O is left out: a
+    // cartridge could not restore the BRK there once I/O is banked back in.
+    if (backend && !backend->supports_cpu_banking() &&
+            (address < 0xD000 || address > 0xDFFF)) {
+        return breakpoint_target_for_live_cpu(address);
+    }
     return backend ? backend->backing_store_for_cpu_port(address, view_cpu_port) :
         monitor_backing_store_for_cpu_port(address, view_cpu_port);
 }
@@ -1122,7 +1134,8 @@ void MachineMonitor :: edit_breakpoint_label(uint8_t slot)
 
 int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_P) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left ||
+            key == KEY_CTRL_P) {
         debug_close_breakpoint_popup();
         redraw_full();
         return 0;
@@ -1149,12 +1162,9 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             if (backend && backend->supports_cpu_banking()) {
                 backend->set_monitor_cpu_port(state.cpu_port);
             }
-            // Moves the view, not the program counter. apply_go_local() sets
-            // debug_cursor_override when it is given an address the cursor is
-            // not already on, and that override makes the next Continue start
-            // here instead of resuming the captured stop. Reading the
-            // breakpoint list must not cost the session its context, so the
-            // cursor is placed first and RETURN below does the same.
+            // Moves the view, not the program counter. The cursor is placed
+            // first so that apply_go_local() does not record this as a jump the
+            // next command starts from; RETURN below does the same.
             state.current_addr = bp->address;
             apply_go_local(bp->address);
             printf("MCM breakpoint jump %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
@@ -1307,9 +1317,10 @@ int MachineMonitor :: debug_handle_key(int key)
     if (breakpoint_popup_active) {
         return debug_breakpoint_popup_handle_key(key);
     }
-    // Exit Debug shortcuts. ESC / RUN/STOP drop Debug only once Edit has
+    // Exit Debug shortcuts. The Back keys drop Debug only once Edit has
     // already been left by the outer edit-mode handler.
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_D) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left ||
+            key == KEY_CTRL_D) {
         debug_leave();
         draw();
         return 0;

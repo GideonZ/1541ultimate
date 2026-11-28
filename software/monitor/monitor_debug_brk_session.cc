@@ -51,9 +51,10 @@ static const uint8_t HARD_VECTOR_ROM_CPU_PORT = 0x07;
 static const uint8_t HARD_VECTOR_DEFAULT_LO = 0x48;
 static const uint8_t HARD_VECTOR_DEFAULT_HI = 0xFF;
 static const uint16_t DEBUG_AREA_END  = 0x03FB;
+static const int STORE_BLOCK_LEN = DEBUG_AREA_END - STORE_Y + 1;
 
-// Max extra attempts to re-issue a patched launch when the live 6510 fetched past
-// an installed BRK and ran away. The race is rare per launch, so keep it bounded.
+// Max extra attempts to re-issue a patched launch that ran no program code
+// (relaunch_on_breakpoint_runaway). A miss is rare per launch, so keep it bounded.
 static const int MAX_BREAKPOINT_RELAUNCH = 2;
 // A cartridge contextless launch delivers its NMI through a vector the U2
 // writes into RAM under the KERNAL, over a DMA path that loses a write now and
@@ -181,6 +182,15 @@ static bool patch_verify_now(uint16_t addr, uint8_t live_cpu_port,
     return monitor_backing_store_for_cpu_port(addr, live_cpu_port) == target;
 }
 
+// Stepping past a breakpoint enters a RAM subroutine, so that every breakpoint
+// is armed again after the one JSR. Other callees are run as a whole.
+static bool jsr_targets_ram(const DebugPredictResult &pred, uint8_t cpu_port)
+{
+    return pred.kind == DBG_PREDICT_JSR && pred.has_target &&
+        monitor_backing_store_for_cpu_port(pred.branch_target, cpu_port) ==
+            MONITOR_BACKING_RAM;
+}
+
 struct DebugOwnerState {
     BrkDebugSession *owner;
     bool remote;
@@ -205,6 +215,10 @@ BrkDebugSession :: BrkDebugSession()
     memset(patches, 0, sizeof(patches));
     memset(return_targets, 0, sizeof(return_targets));
     memset(saved_handler_bytes, 0, sizeof(saved_handler_bytes));
+    memset(saved_store_bytes, 0, sizeof(saved_store_bytes));
+    memset(work_area_claimed, 0, sizeof(work_area_claimed));
+    memset(work_area_saved, 0, sizeof(work_area_saved));
+    memset(work_area_written, 0, sizeof(work_area_written));
     memset(saved_nmi_trampoline_bytes, 0, sizeof(saved_nmi_trampoline_bytes));
     memset(saved_nmi_vector, 0, sizeof(saved_nmi_vector));
     memset(saved_brk_vector, 0, sizeof(saved_brk_vector));
@@ -319,6 +333,7 @@ void BrkDebugSession :: forget_installed_state(void)
     hard_vector_installed = false;
     hard_rom_vector_installed = false;
     hard_nmi_vector_installed = false;
+    memset(work_area_claimed, 0, sizeof(work_area_claimed));
     clear_return_targets();
 }
 
@@ -453,6 +468,10 @@ void BrkDebugSession :: save_and_install_handler(void)
 
     saved_brk_vector[0] = peek_visible(BRK_VECTOR_LO);
     saved_brk_vector[1] = peek_visible(BRK_VECTOR_HI);
+    for (int i = 0; i < STORE_BLOCK_LEN; i++) {
+        saved_store_bytes[i] = peek_visible((uint16_t)(STORE_Y + i));
+    }
+    saved_store_bytes[STORE_BLOCK_LEN] = peek_visible(STORE_HARD_CPU_PORT);
 
     for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
         poke_visible((uint16_t)(HANDLER_ADDR + i), HANDLER_BYTES[i]);
@@ -514,10 +533,10 @@ void BrkDebugSession :: restore_stale_visible_hard_vector(void)
     uint8_t lo = read_patch_byte(HARD_VECTOR_LO, HARD_VECTOR_ROM_CPU_PORT);
     uint8_t hi = read_patch_byte(HARD_VECTOR_HI, HARD_VECTOR_ROM_CPU_PORT);
     if (hard_vector_points_to_stub(lo, hi)) {
-        poke_cpu(HARD_VECTOR_LO, HARD_VECTOR_DEFAULT_LO,
-                 HARD_VECTOR_ROM_CPU_PORT);
-        poke_cpu(HARD_VECTOR_HI, HARD_VECTOR_DEFAULT_HI,
-                 HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_LO, HARD_VECTOR_DEFAULT_LO,
+                         HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_HI, HARD_VECTOR_DEFAULT_HI,
+                         HARD_VECTOR_ROM_CPU_PORT);
     }
     end_stopped_session(stopped_it);
 }
@@ -543,10 +562,12 @@ void BrkDebugSession :: save_and_install_visible_hard_vector(void)
         saved_hard_rom_vector[0] = HARD_VECTOR_DEFAULT_LO;
         saved_hard_rom_vector[1] = HARD_VECTOR_DEFAULT_HI;
     }
-    poke_cpu(HARD_VECTOR_LO, (uint8_t)(HARD_BRK_STUB_ADDR & 0xFF),
-             HARD_VECTOR_ROM_CPU_PORT);
-    poke_cpu(HARD_VECTOR_HI, (uint8_t)(HARD_BRK_STUB_ADDR >> 8),
-             HARD_VECTOR_ROM_CPU_PORT);
+    // A patch of the ROM image: poke_cpu stores to the RAM underneath, as the
+    // 6510 does.
+    write_patch_byte(HARD_VECTOR_LO, (uint8_t)(HARD_BRK_STUB_ADDR & 0xFF),
+                     HARD_VECTOR_ROM_CPU_PORT);
+    write_patch_byte(HARD_VECTOR_HI, (uint8_t)(HARD_BRK_STUB_ADDR >> 8),
+                     HARD_VECTOR_ROM_CPU_PORT);
     // Point the stub's forward vector ($03EE/$03EF) at the KERNAL's own IRQ/BRK
     // entry, not the RAM default ($0000): the ~60x/sec jiffy IRQ hits this stub
     // while armed, and forwarding to $0000 executed the 6510 port register as
@@ -612,10 +633,10 @@ void BrkDebugSession :: uninstall_hard_vector(void)
     poke_cpu(HARD_VECTOR_LO, saved_hard_vector[0], HARD_VECTOR_RAM_CPU_PORT);
     poke_cpu(HARD_VECTOR_HI, saved_hard_vector[1], HARD_VECTOR_RAM_CPU_PORT);
     if (hard_rom_vector_installed) {
-        poke_cpu(HARD_VECTOR_LO, saved_hard_rom_vector[0],
-                 HARD_VECTOR_ROM_CPU_PORT);
-        poke_cpu(HARD_VECTOR_HI, saved_hard_rom_vector[1],
-                 HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_LO, saved_hard_rom_vector[0],
+                         HARD_VECTOR_ROM_CPU_PORT);
+        write_patch_byte(HARD_VECTOR_HI, saved_hard_rom_vector[1],
+                         HARD_VECTOR_ROM_CPU_PORT);
         hard_rom_vector_installed = false;
     }
     for (int i = 0; i < HARD_BRK_STUB_BYTES_LEN; i++) {
@@ -715,6 +736,13 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     if (visible_rom_patch && !supports_visible_rom_patching()) {
         return PATCH_INSTALL_NOT_SUPPORTED;
     }
+    // Without ROM patching a read follows the CPU's banking, so the RAM byte
+    // under a banked-in ROM or I/O cannot be saved for the restore.
+    if (!supports_visible_rom_patching() && target == MONITOR_BACKING_RAM &&
+            monitor_backing_store_for_cpu_port(addr, current_cpu_port()) !=
+                MONITOR_BACKING_RAM) {
+        return PATCH_INSTALL_FAILED;
+    }
     if (visible_rom_patch) {
         save_and_install_visible_hard_vector();
     }
@@ -762,8 +790,14 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
         if (skipped) {
             continue;
         }
-        PatchInstallResult patched = install_brk_at(bp->address, bp->view_cpu_port,
-                                                    bp->target);
+        // $0340-$035C is overwritten by the step trampoline, which arms its
+        // own BRK there, and by the cartridge's CPU-port capture.
+        bool scratch = bp->address >= INSN_TRAMPOLINE_ADDR &&
+                bp->address < HANDLER_ADDR;
+        // A BRK written to I/O can change a register instead of arming a trap.
+        bool refused = scratch || bp->target == MONITOR_BACKING_IO;
+        PatchInstallResult patched = refused ? PATCH_INSTALL_FAILED :
+                install_brk_at(bp->address, bp->view_cpu_port, bp->target);
         if (patched != PATCH_INSTALL_OK) {
             blocking_bp_address = bp->address;
             blocking_bp_valid = true;
@@ -924,33 +958,38 @@ DebugSession::Result BrkDebugSession :: relaunch_on_breakpoint_runaway(
     bool nmi_launch_valid, uint16_t nmi_target, bool nmi_force_cpu_port,
     uint8_t cpu_port, int wait_ms)
 {
-    // Self-heal a launch that missed an installed BRK patch (never traps, or
-    // traps at an unrelated $00): re-park and re-issue, via the parked restore
-    // path for context launches (registers preserved) or a repeated NMI
-    // redirect for no-context ones. A normal launch returns immediately.
+    // Re-park and re-issue a launch that ran no program code: a launch NMI the
+    // CPU never took, or a trap on the launch address itself. A launch that ran
+    // the program is reported as it ended, since running it again would repeat
+    // what it has already done.
     if ((!launch_ctx && !nmi_launch_valid) || !has_any_patch()) {
         return waited;
     }
     for (int attempt = 0; attempt < MAX_BREAKPOINT_RELAUNCH; attempt++) {
-        bool runaway;
         bool launch_byte_last = false;
         if (waited == DBG_TIMEOUT) {
-            runaway = true;
+            // The NMI trampoline puts the NMI vector back first, so a vector
+            // that still names it means the launch NMI was never taken.
+            bool stopped_it = begin_stopped_session();
+            bool nmi_not_taken = nmi_trampoline_installed &&
+                peek_visible(NMI_VECTOR_LO) == (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF) &&
+                peek_visible(NMI_VECTOR_HI) == (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8);
+            end_stopped_session(stopped_it);
+            if (!nmi_not_taken) {
+                return waited;
+            }
         } else if (waited == DBG_OK) {
             uint16_t captured_brk_pc;
             if (captured_at_installed_patch(&captured_brk_pc)) {
                 return waited;   // legitimate trap at one of our BRKs
             }
-            if (launch_ctx && launch_ctx->valid &&
-                    captured_brk_pc == launch_ctx->pc) {
-                launch_byte_last = true;
+            if (!launch_ctx || !launch_ctx->valid ||
+                    captured_brk_pc != launch_ctx->pc) {
+                return waited;   // the program ran into a BRK of its own
             }
-            runaway = true;
+            launch_byte_last = true;
         } else {
             return waited;       // cancelled / reset / refused - never retry
-        }
-        if (!runaway) {
-            return waited;
         }
         repark_running_cpu(cpu_port);
         if (launch_ctx && launch_byte_last) {
@@ -1036,6 +1075,7 @@ void BrkDebugSession :: drop_queued_execution_keys(void)
         if (key == 'd' || key == 'D' ||
             key == 't' || key == 'T' ||
             key == 'o' || key == 'O' ||
+            key == 'u' || key == 'U' ||
             key == 'g' || key == 'G' ||
             key == 'k' || key == 'K') {
             continue;
@@ -1228,14 +1268,15 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     uint8_t resume_ddr = from.cpu_port_registers_valid ? from.cpu_ddr : 0x37;
     uint8_t resume_port = from.cpu_port_registers_valid ?
         from.cpu_port_latch : (uint8_t)(from.live_cpu_port & 0x07);
-    // Clear I on resume (only when KERNAL is mapped) so a program that never
-    // re-enables interrupts itself (e.g. BASIC's idle loop) does not leave the
-    // cursor/keyboard/jiffy dead until a reset; with KERNAL banked out there is
-    // no IRQ handler at $FFFE, so clearing I there would wedge it worse.
+    // Clear I on resume (only when KERNAL and I/O are mapped) so a program that
+    // never re-enables interrupts itself (e.g. BASIC's idle loop) does not leave
+    // the cursor/keyboard/jiffy dead until a reset. Without KERNAL there is no
+    // IRQ handler at $FFFE; without I/O the KERNAL handler cannot acknowledge
+    // the CIA and takes the IRQ again after every RTI.
     uint8_t resume_effective_port = from.live_cpu_port_valid ?
         (uint8_t)(from.live_cpu_port & 0x07) : (uint8_t)(resume_port & 0x07);
     uint8_t resume_sr = from.sr;
-    if (resume_effective_port & 0x02) {
+    if ((resume_effective_port & 0x06) == 0x06) {
         resume_sr &= (uint8_t)~0x04;
     }
     poke_visible(0x0000, resume_ddr);
@@ -1262,15 +1303,39 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
         poke_visible((uint16_t)(HANDLER_ADDR + i),
                                                bytes[i]);
     }
+    // From here the CPU runs only the stub above and the spin JMP, so the rest
+    // of the area goes back before the spin is redirected and the program runs.
+    if (handler_installed) {
+        for (int i = (int)sizeof(bytes); i < SPIN_JMP - HANDLER_ADDR; i++) {
+            poke_visible((uint16_t)(HANDLER_ADDR + i), saved_handler_bytes[i]);
+        }
+        for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
+            poke_visible((uint16_t)(TRAMPOLINE_ADDR + i),
+                         saved_handler_bytes[HANDLER_BYTES_LEN + i]);
+        }
+        for (int i = 0; i < STORE_BLOCK_LEN; i++) {
+            poke_visible((uint16_t)(STORE_Y + i), saved_store_bytes[i]);
+        }
+        poke_visible(STORE_HARD_CPU_PORT, saved_store_bytes[STORE_BLOCK_LEN]);
+    }
+    // A work-area byte that no longer holds what the debugger wrote was
+    // changed by the program, and stays.
+    for (int i = 0; i < WORK_AREA_LEN; i++) {
+        uint16_t address = (uint16_t)(INSN_TRAMPOLINE_ADDR + i);
+        if (work_area_claimed[i] && peek_visible(address) == work_area_written[i]) {
+            poke_visible(address, work_area_saved[i]);
+        }
+        work_area_claimed[i] = false;
+    }
     poke_visible(SPIN_JMP, 0x4C);
     poke_visible(SPIN_OPERAND_LO,
                                            (uint8_t)(HANDLER_ADDR & 0xFF));
     poke_visible(SPIN_OPERAND_HI,
                                            (uint8_t)(HANDLER_ADDR >> 8));
     // Restore the interrupted program's soft vectors inside this same stopped
-    // session so a live CPU sees them before leaving the spin loop. The
-    // cassette-buffer scratch stays in place (the CPU is about to run its
-    // restore stub); clearing handler_installed makes uninstall_handler() a no-op.
+    // session so a live CPU sees them before leaving the spin loop. The stub
+    // and the spin JMP stay in place (the CPU is about to run them); clearing
+    // handler_installed makes uninstall_handler() a no-op.
     if (handler_installed) {
         poke_visible(BRK_VECTOR_LO,
                                                saved_brk_vector[0]);
@@ -1389,6 +1454,21 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
 uint16_t BrkDebugSession :: hard_brk_stub_address(void)
 {
     return HARD_BRK_STUB_ADDR;
+}
+
+void BrkDebugSession :: claim_work_area_byte(uint16_t address, uint8_t current,
+                                             uint8_t byte)
+{
+    int i = address - INSN_TRAMPOLINE_ADDR;
+    if (i < 0 || i >= WORK_AREA_LEN) {
+        return;
+    }
+    // A byte that no longer holds the debugger's last write is the program's again.
+    if (!work_area_claimed[i] || current != work_area_written[i]) {
+        work_area_saved[i] = current;
+    }
+    work_area_written[i] = byte;
+    work_area_claimed[i] = true;
 }
 
 void BrkDebugSession :: clear_run_result_markers(uint8_t *page, uint16_t base,
@@ -1544,8 +1624,10 @@ DebugSession::Result BrkDebugSession :: step_linear_via_trampoline(
     }
     bool stopped = begin_stopped_session();
     for (uint8_t i = 0; i < pred.length; i++) {
-        poke_cpu((uint16_t)(INSN_TRAMPOLINE_ADDR + i),
-                 instruction_bytes[i], cpu_port);
+        uint16_t address = (uint16_t)(INSN_TRAMPOLINE_ADDR + i);
+        claim_work_area_byte(address, peek_cpu(address, cpu_port),
+                             instruction_bytes[i]);
+        poke_cpu(address, instruction_bytes[i], cpu_port);
     }
     end_stopped_session(stopped);
 
@@ -1965,6 +2047,7 @@ DebugSession::Result BrkDebugSession :: interpret_simple_linear(
 
 done:
     next.pc = pred.fall_through;
+    fill_vectors(&next, cpu_port);
     *out = next;
     last_context = next;
     has_last_context = true;
@@ -2150,6 +2233,7 @@ DebugSession::Result BrkDebugSession :: emulate_control_flow_step(
     if (pop_traced_return) {
         pop_return_target(next.pc);
     }
+    fill_vectors(&next, cpu_port);
     *out = next;
     last_context = next;
     has_last_context = true;
@@ -2337,20 +2421,21 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
         }
         case DBG_PREDICT_RTS: {
             uint16_t traced_target;
-            if (peek_return_target(&traced_target)) {
+            bool traced = peek_return_target(&traced_target);
+            if (!from || !from->valid) {
+                if (!traced) return DBG_REFUSED;
                 addrs[n++] = traced_target;
                 break;
             }
-            if (!from || !from->valid) return DBG_REFUSED;
             uint16_t sp1 = (uint16_t)(0x0100 + ((from->sp + 1) & 0xFF));
             uint16_t sp2 = (uint16_t)(0x0100 + ((from->sp + 2) & 0xFF));
             uint16_t ret = (uint16_t)(peek_cpu(sp1, cpu_port) |
                                       (peek_cpu(sp2, cpu_port) << 8));
-            // RTS is only meaningful for an active subroutine frame. Reject
-            // stale/forged stack targets early so Over/Trace report a clear
-            // "not in subroutine" outcome instead of a generic patch failure.
+            // RTS goes where the live stack says. Without a traced frame,
+            // reject stale/forged stack targets early so Over/Trace report a
+            // clear "not in subroutine" outcome instead of a patch failure.
             uint16_t caller = (uint16_t)(ret - 2);
-            if (read_patch_byte(caller, cpu_port) != 0x20) {
+            if (!traced && read_patch_byte(caller, cpu_port) != 0x20) {
                 return DBG_NOT_IN_SUBROUTINE;
             }
             addrs[n++] = (uint16_t)(ret + 1);
@@ -2538,12 +2623,47 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     } else {
         return DBG_NOT_IN_SUBROUTINE;
     }
+    // A breakpoint the program is stopped on is stepped past first, so that the
+    // rest of the frame runs with it armed.
+    DebugContext start = from;
+    if (context_at_breakpoint(from, bps, 0, false)) {
+        uint8_t bytes[3];
+        for (int i = 0; i < 3; i++) {
+            bytes[i] = read_patch_byte((uint16_t)(from.pc + i), cpu_port);
+        }
+        DebugPredictResult pred;
+        debug_predict(from.pc, bytes, false, &pred);
+        // An opcode that cannot be stepped stays masked for the whole run.
+        if (pred.kind != DBG_PREDICT_BRK && pred.kind != DBG_PREDICT_UNSAFE) {
+            bool into = jsr_targets_ram(pred, cpu_port);
+            Result stepped = step_with_predict(&from, from.pc, pred, into,
+                                               &start, cpu_port, bps, from.pc,
+                                               true);
+            if (stepped != DBG_OK) {
+                return stepped;
+            }
+            if (start.pc == target) {
+                pop_return_target(target);
+            }
+            if (start.pc == target ||
+                    context_at_breakpoint(start, bps, 0, false)) {
+                *ctx = start;
+                return DBG_OK;
+            }
+            if (into) {
+                pop_return_target(pred.fall_through);
+            }
+            cpu_port = execution_cpu_port(&start);
+        }
+    }
+    // Nothing to mask once the starting breakpoint is behind the CPU.
+    bool mask_start = start.pc == from.pc;
     // A Step Out that would free-run through visible ROM (launch or return
     // site) walks the remainder of the frame while parked instead of
     // releasing the live CPU into the fetch-lagging aperture.
-    if (frozen_rom_run_unreliable(from.pc, target, true, cpu_port)) {
-        Result walked = parked_step_walk(from, target, return_sp, bps,
-                                         from.pc, true, ctx);
+    if (frozen_rom_run_unreliable(start.pc, target, true, cpu_port)) {
+        Result walked = parked_step_walk(start, target, return_sp, bps,
+                                         from.pc, mask_start, ctx);
         if (walked == DBG_OK && ctx->valid && ctx->pc == target) {
             pop_return_target(target);
         }
@@ -2557,7 +2677,8 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     MonitorBackingStore from_target =
         monitor_backing_store_for_cpu_port(from.pc, cpu_port);
     PatchInstallResult bp_patched = install_breakpoints(bps, from.pc,
-                                                        from_target, true, true);
+                                                        from_target, mask_start,
+                                                        true);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
@@ -2569,12 +2690,12 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
         return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
             DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
     }
-    Result result = perform_run(&from, from.pc, false, ctx, cpu_port);
+    Result result = perform_run(&start, start.pc, false, ctx, cpu_port);
     if (result == DBG_OK && ctx->valid && ctx->pc == target) {
         pop_return_target(target);
     }
     if (result == DBG_OK && ctx->valid &&
-            context_at_breakpoint(*ctx, bps, from.pc, true)) {
+            context_at_breakpoint(*ctx, bps, from.pc, mask_start)) {
         return DBG_OK;
     }
     if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
@@ -2609,26 +2730,41 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
 
     const DebugContext *resume_from = &from;
     DebugContext step_ctx;
-    if (skip_current_bp && !has_other_bp) {
+    if (skip_current_bp) {
         uint8_t bytes[3];
         for (int i = 0; i < 3; i++) {
             bytes[i] = read_patch_byte((uint16_t)(from.pc + i), cpu_port);
         }
         DebugPredictResult pred;
         debug_predict(from.pc, bytes, false, &pred);
-        Result skip = step_with_predict(&from, from.pc, pred, false, &step_ctx, cpu_port,
-                                        bps, from.pc, true);
-        if (skip != DBG_OK) {
-            return skip;
+        // Beside other breakpoints an opcode that cannot be stepped stays
+        // masked for the whole run. Alone, it is refused by the step.
+        if (!has_other_bp || (pred.kind != DBG_PREDICT_BRK &&
+                              pred.kind != DBG_PREDICT_UNSAFE)) {
+            // The run after the step would arm this breakpoint in I/O.
+            if (monitor_backing_store_for_cpu_port(from.pc, cpu_port) ==
+                    MONITOR_BACKING_IO) {
+                return DBG_PATCH_FAILED;
+            }
+            bool into = jsr_targets_ram(pred, cpu_port);
+            Result skip = step_with_predict(&from, from.pc, pred, into,
+                                            &step_ctx, cpu_port,
+                                            bps, from.pc, true);
+            if (skip != DBG_OK) {
+                return skip;
+            }
+            if (step_ctx.valid && step_ctx.pc == from.pc) {
+                return DBG_OK;
+            }
+            if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
+                return DBG_OK;
+            }
+            if (into) {
+                pop_return_target(pred.fall_through);
+            }
+            DebugContext out;
+            return run_to(step_ctx, from.pc, bps, step_ctx.pc, &out);
         }
-        if (step_ctx.valid && step_ctx.pc == from.pc) {
-            return DBG_OK;
-        }
-        if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
-            return DBG_OK;
-        }
-        DebugContext out;
-        return run_to(step_ctx, from.pc, 0, step_ctx.pc, &out);
     }
 
     MonitorBackingStore from_target =
@@ -2835,11 +2971,16 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
     uint16_t run_pc = have_context ? from.pc : start_pc;
     uint8_t cpu_port = execution_cpu_port(have_context ? &from : 0);
 
-    // Step once to escape self-hits or stale visible-ROM launch fetches.
+    // A breakpoint the program is stopped on traps again at once if armed there.
+    bool on_breakpoint = context_at_breakpoint(from, bps, 0, false);
+
+    // Step once to leave such a breakpoint, a self-hit or a stale visible-ROM
+    // launch fetch.
     bool launch_site_lags = visible_rom_fetch_lags() && !debug_owner.remote &&
         monitor_backing_store_is_visible_rom(
             monitor_backing_store_for_cpu_port(run_pc, cpu_port));
-    if (run_pc == target_pc || launch_site_lags) {
+    bool mask_current = false;
+    if (run_pc == target_pc || on_breakpoint || launch_site_lags) {
         uint8_t bytes[3];
         if (launch_site_lags) {
             // Use the disassembly byte source for the trampoline copy.
@@ -2854,28 +2995,46 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
         DebugPredictResult pred;
         debug_predict(run_pc, bytes, false, &pred);
         DebugContext stepped;
+        // As in go(), a breakpoint on an opcode that cannot be stepped stays
+        // masked for the whole run.
+        mask_current = on_breakpoint && run_pc != target_pc &&
+            (pred.kind == DBG_PREDICT_BRK || pred.kind == DBG_PREDICT_UNSAFE);
+        if (mask_current) {
+            stepped = from;
+        }
         // Self-hit escape steps into; launch priming steps over.
-        bool into = (run_pc == target_pc);
-        Result skip = step_with_predict(have_context ? &from : 0, run_pc, pred, into,
-                                        &stepped, cpu_port, bps, run_pc, true,
-                                        launch_site_lags ? bytes : 0,
-                                        !launch_site_lags);
+        bool into = (run_pc == target_pc) ||
+            (on_breakpoint && jsr_targets_ram(pred, cpu_port));
+        Result skip = mask_current ? DBG_OK :
+            step_with_predict(have_context ? &from : 0, run_pc, pred, into,
+                              &stepped, cpu_port, bps, run_pc, true,
+                              launch_site_lags ? bytes : 0, !launch_site_lags);
         if (skip != DBG_OK) {
             return skip;
         }
         resume_from = stepped;
         have_context = stepped.valid;
         run_pc = have_context ? stepped.pc : run_pc;
-        if (have_context && run_pc == target_pc) {
+        // The instruction stepped may have changed the banking.
+        cpu_port = execution_cpu_port(have_context ? &stepped : 0);
+        if (!mask_current && have_context && (run_pc == target_pc ||
+                context_at_breakpoint(stepped, bps, 0, false))) {
             *ctx = stepped;
             return DBG_OK;
+        }
+        // The run goes on through a frame the step entered.
+        if (on_breakpoint && jsr_targets_ram(pred, cpu_port)) {
+            pop_return_target(pred.fall_through);
         }
     }
 
     MonitorBackingStore target_store =
         monitor_backing_store_for_cpu_port(target_pc, cpu_port);
-    PatchInstallResult bp_patched = install_breakpoints(
-        bps, target_pc, target_store, true);
+    PatchInstallResult bp_patched = mask_current ?
+        install_breakpoints(bps, run_pc,
+                            monitor_backing_store_for_cpu_port(run_pc, cpu_port),
+                            true, true) :
+        install_breakpoints(bps, target_pc, target_store, true);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?

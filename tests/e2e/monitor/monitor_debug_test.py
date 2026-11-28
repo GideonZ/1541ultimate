@@ -623,6 +623,10 @@ def _ensure_breakpoint_at(session: mt.MonitorSession, address: int,
     if "[BRK" in row:
         return
     session.send_char("P")
+    # Armed against a store the live CPU does not map, P raises a note that
+    # owns the keyboard.
+    if "not mapped now" in session.capture().text():
+        session.send_key("ENTER")
     _assert_no_debug_modal(session, context)
     row = _disassembly_row(session.capture(), address)
     if "[BRK" not in row:
@@ -2310,6 +2314,28 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: mt.MonitorSession
         _assert_flag_bits("RTI", parsed, N="1", Z="0", C="1")
         _ensure_no_debug(session)
 
+    with mt.check("Debug: an undocumented opcode leaves the program stopped"):
+        _reopen_monitor(session)
+        # $C2C0: INC $C2D0 / $04 $00 (undocumented NOP) / JMP $C2C0
+        mt.write_rest_memory(rest_host, 0xC2C0, bytes.fromhex("EED0C204004CC0C2"))
+        session.goto("C2C0")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("T")
+        _wait_for_pc(session, "C2C3")
+        session.send_char("T")
+        _wait_for_screen_text(session, "UNSUPPORTED OPCODE")
+        session.send_key("ENTER")
+        parsed = _parse_footer_values(_footer_value_line(session))
+        first = mt.read_rest_memory(rest_host, 0xC2D0, 1)[0]
+        time.sleep(0.3)
+        second = mt.read_rest_memory(rest_host, 0xC2D0, 1)[0]
+        _ensure_no_debug(session)
+        if parsed["pc"].upper() != "C2C3" or first != second:
+            raise mt.Failure(
+                f"the program must stay stopped at $C2C3: footer={parsed!r} "
+                f"$C2D0 ${first:02X} -> ${second:02X}")
+
 
 def run_page_cross_and_indirect_jump_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Cover page-crossing branches and the 6502 indirect-JMP wrap quirk."""
@@ -2656,6 +2682,43 @@ def run_cleanup_exit_tests(rest_host: str, session: mt.MonitorSession) -> None:
             rest_host, session,
             "Stop Debugging + Exit $2000 loop")
 
+    with mt.check("Debug: the left-arrow key closes the breakpoint list, then leaves Debug"):
+        _reopen_monitor(session)
+        session.goto("C000")
+        session.send_char("A")
+        session.send_char("D")
+        _header_line(session, expect="Dbg")
+        session.send_key("CTRL_P")
+        _wait_for_screen_text(session, "BREAKPOINTS")
+        session.send_key("ARROW_LEFT")
+        snap = _await_snapshot(session, lambda s: "BREAKPOINTS" not in s.text())
+        if "BREAKPOINTS" in snap.text():
+            raise mt.Failure(f"left-arrow did not close the breakpoint list:\n{snap.text()}")
+        _header_line(session, expect="Dbg")
+        session.send_key("ARROW_LEFT")
+        header = _wait_header(session, lambda line: "Dbg" not in line)
+        if "Dbg" in header:
+            raise mt.Failure(f"left-arrow did not leave Debug: {header!r}")
+
+
+def _stop_at_breakpoint(session: mt.MonitorSession, breakpoint: int,
+                        start: int, context: str) -> None:
+    """Arm one breakpoint and G to it from `start`."""
+    session.goto(f"{start:04X}")
+    session.send_char("A")
+    session.send_char("D")
+    _clear_all_breakpoints(session, f"{context} setup")
+    _ensure_breakpoint_at(session, breakpoint, f"{context} breakpoint")
+    session.goto(f"{start:04X}")
+    session.send_char("G")
+    _wait_for_go_pc(session, f"{breakpoint:04X}")
+
+
+def _clear_breakpoints_and_leave(session: mt.MonitorSession, context: str) -> None:
+    _dismiss_modal_if_present(session)
+    _clear_all_breakpoints(session, context)
+    _ensure_no_debug(session, context)
+
 
 def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Ensure repeated Go from the current breakpoint re-arms cleanly."""
@@ -2703,6 +2766,110 @@ def run_breakpoint_reentry_tests(rest_host: str, session: mt.MonitorSession) -> 
         session.send_char("D")
         _clear_breakpoint_at(session, 0xC300, "$C300 re-entry breakpoint clear")
         _ensure_no_debug(session)
+
+    with mt.check("Debug: G after a jump continues from the stop"):
+        _reopen_monitor(session)
+        # $C320: LDX #$05 / INX / INX / NOP / JMP $C324
+        mt.write_rest_memory(rest_host, 0xC320, bytes.fromhex("A205E8E8EA4C24C3"))
+        session.goto("C320")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "G after jump setup")
+        session.send_char("T")
+        _wait_for_pc(session, "C322")
+        try:
+            # Setting the breakpoint jumps the cursor to $C324.
+            _ensure_breakpoint_at(session, 0xC324, "G after jump breakpoint set")
+            session.send_char("G")
+            _wait_for_pc_register(session, "C324", "xr", "07",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoint_at(session, 0xC324, "G after jump breakpoint clear")
+            _ensure_no_debug(session)
+
+    with mt.check("Debug: K from a breakpoint runs on to the cursor"):
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0xC300, program)
+        mt.write_rest_memory(rest_host, 0xC190, bytes([0x00]))
+        _stop_at_breakpoint(session, 0xC300, 0xC300, "K from breakpoint")
+        try:
+            session.goto("C306")
+            session.send_char("K")
+            _wait_for_pc_register(session, "C306", "xr", "01",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoints_and_leave(session, "K from breakpoint cleanup")
+
+    with mt.check("Debug: G from a breakpoint stops there again beside another breakpoint"):
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0xC300, program)
+        mt.write_rest_memory(rest_host, 0xC190, bytes([0x00]))
+        _stop_at_breakpoint(session, 0xC300, 0xC300, "G beside breakpoint")
+        try:
+            # The previous check leaves this loop running, so the counter has
+            # moved on by the time the first stop is reached.
+            count = mt.read_rest_memory(rest_host, 0xC190, 1)[0]
+            # $C3F0 is never executed.
+            _ensure_breakpoint_at(session, 0xC3F0, "G beside breakpoint second")
+            session.send_char("G")
+            _wait_for_pc_register(session, "C300", "xr", f"{(count + 1) & 0xFF:02X}",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoints_and_leave(session, "G beside breakpoint cleanup")
+
+    with mt.check("Debug: U from a breakpoint stops there again before returning"):
+        _reopen_monitor(session)
+        # $C340: JSR $C346 / JMP $C343 / LDX #$03 / DEX / BNE $C348 / RTS
+        mt.write_rest_memory(rest_host, 0xC340,
+                             bytes.fromhex("2046C34C43C3A203CAD0FD60"))
+        _stop_at_breakpoint(session, 0xC348, 0xC340, "U from breakpoint")
+        try:
+            session.send_char("U")
+            _wait_for_pc_register(session, "C348", "xr", "02",
+                                  timeout=_pc_wait_budget(after_go=True))
+        finally:
+            _clear_breakpoints_and_leave(session, "U from breakpoint cleanup")
+
+    with mt.check("Debug: a cartridge breakpoint in RAM under KERNAL stops the program"):
+        if mt.TestConfig.target != "u2":
+            raise mt.SkipCheck("banked-breakpoints covers a selectable view bank")
+        _reopen_monitor(session)
+        # $C380: SEI / LDA #$35 / STA $01 / NOP / JMP $E000
+        mt.write_rest_memory(rest_host, 0xC380,
+                             bytes.fromhex("78A9358501EA4C00E0"))
+        # RAM $E000: INC $C190 / JMP $E000
+        mt.write_rest_memory(rest_host, 0xE000, bytes.fromhex("EE90C14C00E0"))
+        try:
+            # This stop tells the monitor that the CPU has the KERNAL banked out.
+            _stop_at_breakpoint(session, 0xC385, 0xC380, "RAM under KERNAL")
+            _ensure_breakpoint_at(session, 0xE000, "RAM under KERNAL breakpoint")
+            session.send_char("G")
+            _wait_for_go_pc(session, "E000")
+        finally:
+            _clear_breakpoints_and_leave(session, "RAM under KERNAL cleanup")
+            _reset_c64_core(rest_host)
+
+    with mt.check("Debug: a G that times out after a stop runs the program once"):
+        _reopen_monitor(session)
+        # $C350: INC $C193 / JMP $C353
+        mt.write_rest_memory(rest_host, 0xC350, bytes.fromhex("EE93C14C53C3"))
+        mt.write_rest_memory(rest_host, 0xC193, bytes([0x00]))
+        _stop_at_breakpoint(session, 0xC350, 0xC350, "timeout after stop")
+        try:
+            _clear_breakpoint_at(session, 0xC350, "timeout after stop clear")
+            # $C3F0 is never executed.
+            _ensure_breakpoint_at(session, 0xC3F0, "timeout after stop second")
+            started = time.monotonic()
+            session.send_char("G")
+            _wait_for_screen_text(session, "DEBUG TIMEOUT", timeout=18.0)
+            took = time.monotonic() - started
+            count = mt.read_rest_memory(rest_host, 0xC193, 1)[0]
+            if count != 1 or took > 10.0:
+                raise mt.Failure(
+                    f"G that timed out ran INC $C193 {count} times in {took:.1f} s")
+        finally:
+            _clear_breakpoints_and_leave(session, "timeout after stop cleanup")
+            _reset_c64_core(rest_host)
 
 
 def run_rom_single_step_tests(rest_host: str, session: mt.MonitorSession) -> None:
@@ -2888,20 +3055,14 @@ def run_kernal_basic_breakpoint_regression(rest_host: str, session: mt.MonitorSe
         if parsed["pc"].upper() != "BC0F":
             raise mt.Failure(f"$E002 Go did not stop at $BC0F: {parsed!r}")
 
-        session.goto("BCF2")
-        row = _disassembly_row(session.capture(), 0xBCF2)
-        if "[BAS]" not in row:
-            raise mt.Failure(f"$BCF2 must be visible as BASIC ROM before breakpointing: {row!r}")
-        _ensure_breakpoint_at(session, 0xBCF2, "$BCF2 breakpoint set")
+        _ensure_breakpoint_at(session, 0xE005, "$E005 return breakpoint set")
 
         session.send_char("G")
-        parsed = _wait_for_pc_not(session, "BC0F")
-        _assert_no_debug_modal(session, "$BC0F Go with $BCF2 armed")
-        if parsed["pc"].upper() == "BC0F":
-            raise mt.Failure(f"Continue from $BC0F did not advance: {parsed!r}")
+        _wait_for_go_pc(session, "E005")
+        _assert_no_debug_modal(session, "$BC0F Go with $E005 armed")
 
         _clear_breakpoint_at(session, 0xBC0F, "$BC0F breakpoint clear")
-        _clear_breakpoint_at(session, 0xBCF2, "$BCF2 breakpoint clear")
+        _clear_breakpoint_at(session, 0xE005, "$E005 breakpoint clear")
         _ensure_no_debug(session)
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
@@ -3485,6 +3646,26 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
     boot = bytes([0x78, 0xA9, 0x00, 0x85, 0x01, 0x4C, 0x00, 0xE0])
     pay = bytes([0xEE, 0x21, 0xD0, 0x4C, 0x00, 0xE0])
 
+    with mt.check("Debug: over Telnet, G with no breakpoint leaves Debug"):
+        if session.backend.reopens_menu:
+            raise mt.SkipCheck("Overlay and Freeze close the monitor on this G")
+        _reopen_monitor(session)
+        # $C360: INC $C390 / JMP $C360
+        mt.write_rest_memory(rest_host, 0xC360, bytes.fromhex("EE90C34C60C3"))
+        session.goto("C360")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "G without breakpoint setup")
+        session.send_char("T")
+        _wait_for_pc(session, "C363")
+        session.send_char("G")
+        header = _wait_header(session, lambda line: "Dbg" not in line)
+        if "Dbg" in header:
+            _ensure_no_debug(session)
+            raise mt.Failure(f"G with no breakpoint must leave Debug: {header!r}")
+        _assert_rest_byte_changes(
+            rest_host, 0xC390, "G with no breakpoint must let the program run")
+
     with mt.check("Debug: $01=$00 continue repro reaches live CPU0 RAM-under-KERNAL",
                   u2=False,
                   u2_reason="U64 live $0001 CPU banking and RAM-under-KERNAL are required"):
@@ -3991,6 +4172,248 @@ def run_side_effect_step_tests(rest_host: str, session: mt.MonitorSession) -> No
                 f"(expected +2)")
         _ensure_no_debug(session)
 
+    run_rom_store_step_checks(rest_host, session)
+
+
+# Stores to an address where ROM is banked in. Some steps are completed by the
+# firmware while the 6510 stays parked (Trace in or under ROM, and Over or Out
+# into ROM while an Overlay or Freeze menu holds the C64); such a store has to
+# reach the RAM underneath, as it does on a 6510, and leave the ROM alone.
+#
+# The program reads the target the way the CPU sees it before and after the
+# call, and the RAM underneath with $01=$34. The monitor's own ROM view is a
+# cached copy of the loaded image, so only the CPU's read shows a changed ROM.
+ROM_STORE_PROGRAM = 0xC000
+# before, after, RAM underneath, done marker, started marker
+ROM_STORE_RESULTS = 0xC0F0
+ROM_STORE_DONE = 0x99
+ROM_STORE_STARTED = 0x77
+# LDY $D3 / STA ($D1),Y / TXA / STA ($F3),Y / RTS in the stock KERNAL. The second
+# store goes to the colour pointer, which the program aims at $C0E0.
+KERNAL_STORE_ROUTINE = 0xEA1C
+UNDER_BASIC_STUB = 0xA000
+
+
+def _rom_store_program(target: int, port: int, sub: int,
+                       value: int | None) -> tuple[bytes, int]:
+    """The test program and the address of its JSR. With `value` None the
+    stored byte is the complement of what the CPU read, so it always differs."""
+    lo, hi = target & 0xFF, target >> 8
+    head = bytes([
+        0x78,                          # SEI
+        0xA9, 0x2F, 0x85, 0x00,        # LDA #$2F / STA $00
+        0xA9, 0x37, 0x85, 0x01,
+        # Leaving Debug can clear the I flag. With no CIA1 source enabled or
+        # pending, no IRQ runs while I/O or the KERNAL is banked out, and the
+        # cursor blink cannot store through ($D1) into the target.
+        0xA9, 0x7F, 0x8D, 0x0D, 0xDC,  # LDA #$7F / STA $DC0D
+        0xAD, 0x0D, 0xDC,              # LDA $DC0D: acknowledge
+        0x85, 0xCC,                    # STA $CC: no cursor blink
+        0xA9, lo, 0x85, 0xD1,          # ($D1) = target
+        0xA9, hi, 0x85, 0xD2,
+        0xA9, 0x00, 0x85, 0xD3,        # Y = 0 in the routine
+        0xA9, 0xE0, 0x85, 0xF3,        # ($F3) = $C0E0
+        0xA9, 0xC0, 0x85, 0xF4,
+        0xA9, port, 0x85, 0x01,        # bank under test
+        0xA9, ROM_STORE_STARTED, 0x8D, 0xF4, 0xC0,
+        0xAD, lo, hi,                  # LDA target: what the CPU reads
+        0x8D, 0xF0, 0xC0,
+        # RAM underneath = the ROM byte, so a store that is lost cannot pass.
+        0xA2, 0x34, 0x86, 0x01,        # LDX #$34 / STX $01
+        0x8D, lo, hi,                  # STA target
+        0xA2, port, 0x86, 0x01,        # LDX #port / STX $01
+    ]) + (bytes([0x49, 0xFF]) if value is None else bytes([0xA9, value]))
+    jsr_at = ROM_STORE_PROGRAM + len(head)
+    body = head + bytes([
+        0x20, sub & 0xFF, sub >> 8,    # JSR: the store under test
+        0xAC, lo, hi,                  # LDY target: what the CPU reads now
+        0xA9, 0x34, 0x85, 0x01,
+        0xAE, lo, hi,                  # LDX target: the RAM underneath
+        0xA9, 0x37, 0x85, 0x01,
+        0x8C, 0xF1, 0xC0,
+        0x8E, 0xF2, 0xC0,
+        0xA9, 0x81, 0x8D, 0x0D, 0xDC,  # CIA1 timer A interrupt back on
+        0xA9, ROM_STORE_DONE, 0x8D, 0xF3, 0xC0,
+    ])
+    spin = ROM_STORE_PROGRAM + len(body)
+    return body + bytes([0x4C, spin & 0xFF, spin >> 8]), jsr_at
+
+
+def _rom_store_run(rest_host: str, session: mt.MonitorSession, context: str, *,
+                   target: int, port: int, how: str,
+                   value: int | None = None) -> bytes:
+    """Run the program, stop it at a breakpoint and step the store as `how`
+    says, then let it finish. Returns the five result bytes.
+
+    `how`: "run" (the 6510 runs the store), "trace" (Trace into the KERNAL
+    routine's STA), "under-basic" (Trace of an STA in RAM under BASIC), "over"
+    (Over the JSR), "out" (Out of the KERNAL routine), "probe" (no Debug)."""
+    sub = UNDER_BASIC_STUB if how == "under-basic" else KERNAL_STORE_ROUTINE
+    program, jsr_at = _rom_store_program(target, port, sub, value)
+    back = jsr_at + 3
+    bp, steps = {
+        "run": (KERNAL_STORE_ROUTINE, ()),
+        "trace": (KERNAL_STORE_ROUTINE, (("T", 0xEA1E), ("T", 0xEA20))),
+        "under-basic": (UNDER_BASIC_STUB, (("T", UNDER_BASIC_STUB + 3),)),
+        "over": (jsr_at, (("D", back),)),
+        "out": (KERNAL_STORE_ROUTINE, (("U", back),)),
+        "probe": (None, ()),
+    }[how]
+    _reopen_monitor(session)
+    _ensure_no_debug(session, context)
+    mt.write_rest_memory(rest_host, ROM_STORE_RESULTS, bytes(5))
+    mt.write_rest_memory_confirmed(rest_host, ROM_STORE_PROGRAM, program)
+    if bp is None:
+        session.goto_run(f"{ROM_STORE_PROGRAM:04X}")
+    else:
+        _select_monitor_view(session, port if how == "under-basic" else 7, context)
+        if how == "under-basic":
+            # STA target / RTS. A REST write here could reach the BASIC image.
+            for offset, byte in enumerate((0x8D, target & 0xFF, target >> 8, 0x60)):
+                address = UNDER_BASIC_STUB + offset
+                session.fill(f"{address:04X}-{address:04X},{byte:02X}")
+        session.goto(f"{bp:04X}")
+        session.send_char("A")
+        if "Dbg" not in _header_line(session):
+            session.send_char("D")
+        _ensure_breakpoint_at(session, bp, f"{context}: bp")
+        try:
+            session.goto(f"{ROM_STORE_PROGRAM:04X}")
+            session.send_char("G")
+            _wait_rom_entry_outcome(session, bp, context)
+            for key, pc in steps:
+                if key == "U":
+                    _step_out_to(session, f"{pc:04X}")
+                else:
+                    _step_and_assert_pc(session, key, pc, context)
+        finally:
+            _clear_breakpoint_at(session, bp, f"{context}: bp clear")
+        _ensure_no_debug(session, context)
+    session.leave_monitor()
+    results = b""
+    with _c64_running():
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            results = mt.read_rest_memory(rest_host, ROM_STORE_RESULTS, 5)
+            if results[3] == ROM_STORE_DONE:
+                break
+            time.sleep(0.1)
+    if results[3:4] != bytes([ROM_STORE_DONE]):
+        raise mt.Failure(f"{context}: the program did not finish; results "
+                         f"${ROM_STORE_RESULTS:04X}={results.hex().upper()}")
+    return results
+
+
+def _put_rom_byte_back(rest_host: str, session: mt.MonitorSession, context: str,
+                       target: int, port: int, results: bytes | None) -> None:
+    """Make the CPU read the ROM byte it read before the check.
+
+    A store stepped as "trace" writes the ROM image on firmware with the
+    defect, so stepping one that stores the original byte repairs it. On
+    correct firmware the ROM is never changed and nothing is stepped."""
+    if results is None:
+        recorded = mt.read_rest_memory(rest_host, ROM_STORE_RESULTS, 5)
+        if recorded[4] != ROM_STORE_STARTED:
+            return  # the store was never reached
+        original = recorded[0]
+        current = _rom_store_run(rest_host, session, f"{context} probe",
+                                 target=target, port=port, how="probe")[0]
+    else:
+        original, current = results[0], results[1]
+    if current == original:
+        return
+    print(f"[info] {context}: putting ${original:02X} back at ${target:04X}", flush=True)
+    repaired = _rom_store_run(rest_host, session, f"{context} repair",
+                              target=target, port=port, how="trace",
+                              value=original)
+    if repaired[1] != original:
+        raise mt.Failure(f"{context}: ROM byte at ${target:04X} could not be put "
+                         f"back: the CPU reads ${repaired[1]:02X}, not ${original:02X}")
+
+
+def _recover_rom_store_state(rest_host: str, session: mt.MonitorSession,
+                             context: str) -> None:
+    """From whatever a failed check left on screen, get to a reset C64, no
+    armed breakpoint and a monitor outside Debug."""
+    session.enter_monitor()
+    _dismiss_modal_if_present(session)  # an alert box owns the keyboard
+    _reopen_monitor(session)
+    _reset_c64_core(rest_host)
+    _reopen_monitor(session)
+    # Outside Debug, C=+P is ignored while the breakpoint table is empty.
+    session.goto("C000")
+    session.send_char("A")
+    if "Dbg" not in _header_line(session):
+        session.send_char("D")
+    _clear_all_breakpoints(session, context)
+    _ensure_no_debug(session, context)
+
+
+def _assert_rom_store_reaches_ram(rest_host: str, session: mt.MonitorSession,
+                                  context: str, *, target: int, port: int,
+                                  how: str) -> None:
+    results = None
+    failed = True
+    try:
+        results = _rom_store_run(rest_host, session, context,
+                                 target=target, port=port, how=how)
+        before, after, ram = results[0], results[1], results[2]
+        problems = []
+        if after != before:
+            problems.append(f"the CPU reads ${after:02X} at ${target:04X}, "
+                            f"not the ROM byte ${before:02X}")
+        if ram != before ^ 0xFF:
+            problems.append(f"the RAM underneath holds ${ram:02X}, not the "
+                            f"stored ${before ^ 0xFF:02X}")
+        if problems:
+            raise mt.Failure(f"{context}: " + "; ".join(problems))
+        failed = False
+    finally:
+        try:
+            if failed:
+                _recover_rom_store_state(rest_host, session, f"{context}: cleanup")
+            _put_rom_byte_back(rest_host, session, context, target, port, results)
+        except Exception as exc:  # noqa: BLE001 - never replace the original outcome
+            if not failed:
+                raise
+            print(f"[info] {context}: ROM repair failed: {exc}", flush=True)
+        finally:
+            if failed:
+                # The repair steps a program of its own and can fail part way.
+                try:
+                    _recover_rom_store_state(rest_host, session,
+                                             f"{context}: after repair")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[info] {context}: cleanup failed: {exc}", flush=True)
+
+
+def run_rom_store_step_checks(rest_host: str, session: mt.MonitorSession) -> None:
+    """A stepped store to an address showing ROM reaches the RAM underneath."""
+    cases = (
+        # Control: the 6510 runs the store, so this holds on any firmware and
+        # proves the program's oracle.
+        ("Debug: a KERNAL store the 6510 runs writes RAM under the KERNAL",
+         0xE4C0, 0x37, "run"),
+        ("Debug: Trace of a KERNAL store writes RAM under the KERNAL",
+         0xE4C0, 0x37, "trace"),
+        ("Debug: Trace of a KERNAL store writes RAM under BASIC",
+         0xBF60, 0x37, "trace"),
+        ("Debug: Trace of a KERNAL store writes RAM under the character ROM",
+         0xD7F8, 0x33, "trace"),
+        ("Debug: Trace of a store in RAM under BASIC writes RAM under the KERNAL",
+         0xE4C0, 0x36, "under-basic"),
+        ("Debug: Over a JSR into a KERNAL store writes RAM under the KERNAL",
+         0xE4C0, 0x37, "over"),
+        ("Debug: Out of a KERNAL store routine writes RAM under the KERNAL",
+         0xE4C0, 0x37, "out"),
+    )
+    for label, target, port, how in cases:
+        with mt.check(label, u2=False,
+                      u2_reason="U64 CPU banking and the ROM image are required"):
+            mt.skip_unsupported()
+            _assert_rom_store_reaches_ram(rest_host, session, label,
+                                          target=target, port=port, how=how)
+
 
 def run_jsr_runcursor_rts_tests(rest_host: str, session: mt.MonitorSession) -> None:
     """Step into a visible-ROM JSR, run to the cursor at the subroutine's RTS,
@@ -4122,12 +4545,18 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
         _acquire_rom_context_at(rest_host, session, 0xE000, "exit-liveness ROM step")
         snap = session.capture()
         row = _disassembly_row(snap, 0xE000)
-        _step_and_assert_pc(session, "T", 0xE000 + _instruction_length_from_row(row),
-                            "exit-liveness ROM step")
-        # The KERNAL step resumes inside live KERNAL code; the IRQ (jiffy) is the
-        # deterministic anti-freeze proof. The editor-main-loop oracle is asserted
-        # in the RETURN-follow case below, where the C64 stays at the live BASIC
-        # editor (an arbitrary KERNAL step does not deterministically resume there).
+        stepped = _step_and_assert_pc(session, "T", 0xE000 + _instruction_length_from_row(row),
+                                      "exit-liveness ROM step")
+        # $E000 is the middle of BASIC's EXP, entered with JMP, so its closing
+        # RTS pops whatever the stack page holds above SP. A stale address there
+        # can run the program into a JAM (measured on u64: 3 of 16 with SP=$F0),
+        # so the return goes to a RAM loop that keeps the IRQ, and the jiffy, live.
+        # The editor-main-loop oracle is asserted in the RETURN-follow case below.
+        landing = 0xC7E0
+        mt.write_rest_memory(rest_host, landing, bytes([0x4C, landing & 0xFF, landing >> 8]))
+        sp = int(stepped["sp"], 16)
+        for offset, value in ((1, (landing - 1) & 0xFF), (2, (landing - 1) >> 8)):
+            mt.write_rest_memory(rest_host, 0x0100 + ((sp + offset) & 0xFF), bytes([value]))
         prove_monitor_exit_basic_liveness_and_reentry(
             rest_host, session, "KERNAL ROM step exit",
             require_jiffy=True, require_editor=False)
@@ -4248,6 +4677,47 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: mt.MonitorSession) 
             session.send_char("D")
         _step_and_assert_pc(session, "D", 0xC7A1, "RAM-under-KERNAL exit re-entry step")
         _ensure_no_debug(session)
+
+    with mt.check("Exit-liveness: leaving Debug with I/O banked out keeps interrupts masked"):
+        # With the character ROM over I/O the KERNAL IRQ handler cannot
+        # acknowledge CIA1, so a cleared I flag takes the IRQ after every RTI
+        # and the jiffy clock races (about 420 counts a second) instead of
+        # standing still.
+        base, loop, counter = 0xCA00, 0xCA09, 0xCAF0
+        program = bytes([0x78,                    # SEI
+                         0xA9, 0x2F, 0x85, 0x00,  # LDA #$2F / STA $00
+                         0xA9, 0x33, 0x85, 0x01,  # LDA #$33 / STA $01
+                         0xEE, 0xF0, 0xCA,        # loop: INC $CAF0
+                         0x4C, 0x09, 0xCA])       # JMP loop
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, base, program)
+        session.goto(f"{base:04X}")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "I/O-out exit clear")
+        _ensure_breakpoint_at(session, loop, "I/O-out exit breakpoint")
+        session.goto(f"{base:04X}")
+        session.send_char("G")
+        _wait_for_go_pc(session, f"{loop:04X}")
+        _clear_all_breakpoints(session, "I/O-out exit release")
+        _ensure_no_debug(session, "I/O-out exit")
+        with _c64_running():
+            time.sleep(0.3)
+            jiffy = mt.read_rest_memory(rest_host, 0x00A0, 3)
+            count = mt.read_rest_memory(rest_host, counter, 1)
+            time.sleep(1.0)
+            jiffy_after = mt.read_rest_memory(rest_host, 0x00A0, 3)
+            count_after = mt.read_rest_memory(rest_host, counter, 1)
+        if count_after == count:
+            raise mt.Failure(
+                f"the program did not run on after Debug was left: jiffy clock "
+                f"{jiffy.hex()} -> {jiffy_after.hex()} in one second")
+        if jiffy_after != jiffy:
+            raise mt.Failure(
+                f"interrupts were taken with I/O banked out: jiffy clock "
+                f"{jiffy.hex()} -> {jiffy_after.hex()} in one second")
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
 
 
 def run_edit_visibility_tests(rest_host: str, session: mt.MonitorSession) -> None:

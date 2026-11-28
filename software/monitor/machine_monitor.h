@@ -171,6 +171,7 @@ struct MonitorCommandInput {
     int (*transform)(const char *buffer, int cursor, int key);
     bool template_mode;     // pre-filled, and the first typed key replaces it
     bool uppercase;         // typed letters are normalised to upper case
+    bool cancel_untouched_template; // a placeholder, so Return must not run it
 };
 
 extern const MonitorCommandInput monitor_input_jump;
@@ -202,6 +203,9 @@ class Keyboard;
 class Window;
 class MonitorBookmarks;
 
+// File name buffer: INFO_SIZE, the longest name a directory listing reports.
+#define MONITOR_FILE_NAME_MAX 128
+
 class MachineMonitor : public UIObject
 {
     MemoryBackend *backend;
@@ -213,7 +217,7 @@ class MachineMonitor : public UIObject
     uint32_t last_load_length;
     uint16_t last_save_start;
     uint16_t last_save_end;
-    char last_save_name[40];
+    char last_save_name[MONITOR_FILE_NAME_MAX];
     bool last_go_valid;
     uint16_t last_go_addr;
     bool go_pending;
@@ -407,6 +411,7 @@ class MachineMonitor : public UIObject
     void move_binary_bits(int delta);
     void page_move(int lines);
     Cursor active_cursor(void) const;
+    uint16_t cursor_byte_addr(void) const;
     bool range_contains(uint16_t address) const;
     bool clipboard_copy_bytes(const uint8_t *data, size_t length);
     bool clipboard_copy_current(void);
@@ -500,7 +505,6 @@ class MachineMonitor : public UIObject
     // Apply a typed bit (0 or 1) to the byte at the cursor at binary_bit_index.
     void binary_apply_bit(uint8_t bit_value);
     void enter_edit_mode();
-    void commit_pending_hex_nibble(void);
     void apply_hex_digit(uint8_t value);
     void apply_ascii_char(char value);
     void apply_screen_char(char value);
@@ -511,6 +515,7 @@ class MachineMonitor : public UIObject
     int handle_reset_shortcut(void);
     int handle_interface_shortcut(void);
     void exit_edit_mode();
+    void discard_partial_entry(void);
     void reset_edit_blink();
     bool update_edit_blink();
     uint16_t next_poll_interval_ms(void);
