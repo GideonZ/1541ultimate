@@ -6246,6 +6246,57 @@ static int test_step_out_from_a_breakpoint_rearms_it()
     return 0;
 }
 
+// $DE00-$DFFF can be cartridge RAM, which holds the debugger's own traps.
+static int test_debugger_traps_in_cartridge_ram_are_installed()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0xDE00] = 0x20; // JSR $C000
+    m.ram[0xDE01] = 0x00;
+    m.ram[0xDE02] = 0xC0;
+    m.ram[0xDE03] = 0xEA;
+
+    uint8_t bytes[3] = { 0x20, 0x00, 0xC0 };
+    DebugPredictResult pred;
+    debug_predict(0xDE00, bytes, false, &pred);
+
+    DebugContext ctx;
+    if (expect(m.over_at(0xDE00, pred, 0, &ctx) == DebugSession::DBG_OK &&
+               fake_recorded_brk_patch(m, 0xDE03) && m.ram[0xDE03] == 0xEA,
+               "D on a JSR in cartridge RAM must trap after it and restore the byte")) return 1;
+
+    DebugContext none;
+    debug_context_reset(&none);
+    m.ram[0xDE10] = 0xEA;
+    if (expect(m.run_to(none, 0xDE10, 0, 0x2000, &ctx) == DebugSession::DBG_OK &&
+               fake_recorded_brk_patch(m, 0xDE10) && m.ram[0xDE10] == 0xEA,
+               "K to cartridge RAM must trap there and restore the byte")) return 1;
+    return 0;
+}
+
+static int test_go_from_a_breakpoint_in_io_does_not_rearm_it()
+{
+    FakeTrappingMachine m;
+    m.ram[0xDE00] = 0x4C; // JMP $2000
+    m.ram[0xDE01] = 0x00;
+    m.ram[0xDE02] = 0x20;
+    m.ram[0x2000] = 0xEA;
+    if (expect(m.park(), "parking step must complete")) return 1;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xDE00, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xDE00;
+    from.sp = 0xF8;
+
+    if (expect(m.go(from, &bps, 0xDE00) == DebugSession::DBG_PATCH_FAILED &&
+               !fake_recorded_brk_patch(m, 0xDE00),
+               "G must refuse to arm the I/O breakpoint it started from")) return 1;
+    return 0;
+}
+
 static int test_step_out_uses_the_banking_after_leaving_a_breakpoint()
 {
     FakeTrappingMachine m;
@@ -10439,6 +10490,8 @@ int main()
     RUN(test_run_to_leaves_the_breakpoint_it_is_stopped_on);
     RUN(test_run_to_uses_the_banking_after_leaving_a_breakpoint);
     RUN(test_go_from_a_breakpoint_rearms_it_beside_another);
+    RUN(test_debugger_traps_in_cartridge_ram_are_installed);
+    RUN(test_go_from_a_breakpoint_in_io_does_not_rearm_it);
     RUN(test_step_out_from_a_breakpoint_rearms_it);
     RUN(test_step_out_uses_the_banking_after_leaving_a_breakpoint);
     RUN(test_step_out_from_a_breakpoint_on_rts_returns_in_one_step);

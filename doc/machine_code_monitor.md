@@ -885,7 +885,7 @@ Code in ROM, and in RAM under ROM, is limited until the program has stopped once
 | RAM under BASIC, KERNAL or I/O | All but `T` and `U`, and `D` on `RTS` or `RTI`   |
 | BASIC, KERNAL or character ROM | `G`, `K`, and `D` on a `JSR`                     |
 
-`T`, `D` and `K` show `PATCH FAILED` when they would need a `BRK` in I/O space.
+`T`, `D`, `U` and `K` write their own `BRK` into I/O space. Cartridge RAM at `$DE00-$DFFF` can execute it. A register changes instead, and shows `PATCH FAILED` if it does not read back `$00`.
 
 To get the first stop, set a breakpoint, move the cursor to where execution should start and press `G`, or use `D` on a `JSR`.
 
@@ -957,7 +957,7 @@ The two messages that start with `Step` appear on the bottom row. All others app
 | `UNSAFE TARGET`                              | The next instruction is a `BRK`, or an `RTS` / `RTI` before the first stop.                                 |
 | `NOT IN SUBROUTINE`                          | `U` found no caller, or `T` / `D` met an `RTS` with no matching `JSR` outside a subroutine entered with `T`. Set a breakpoint at the return address and press `G`. |
 | `RETURN NOT REACHED`                         | `U` did not stop at the caller.                                                                            |
-| `PATCH FAILED`                               | The address is in I/O or a reserved range, is RAM under a banked-in ROM on a cartridge, or memory did not accept the `BRK`. |
+| `PATCH FAILED`                               | A breakpoint is in I/O, the address is in a reserved range or is RAM under a banked-in ROM on a cartridge, or memory did not accept the `BRK`. |
 | `NO FREE BRK SLOT`                           | All 10 breakpoints are in use.                                                                             |
 | `BRK <memory>, CPU <memory>; not mapped now` | The breakpoint is set in memory the CPU does not have banked in.                                           |
 | `DEBUG TIMEOUT`                              | No breakpoint was reached in time.                                                                         |

@@ -722,8 +722,7 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     uint16_t addr, uint8_t cpu_port, MonitorBackingStore target)
 {
     cpu_port &= 0x07;
-    // A BRK written to I/O changes a register instead of arming a trap.
-    if (reserved_patch_address(addr) || target == MONITOR_BACKING_IO) {
+    if (reserved_patch_address(addr)) {
         return PATCH_INSTALL_FAILED;
     }
     if (already_patched(addr, target)) {
@@ -795,7 +794,9 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
         // own BRK there, and by the cartridge's CPU-port capture.
         bool scratch = bp->address >= INSN_TRAMPOLINE_ADDR &&
                 bp->address < HANDLER_ADDR;
-        PatchInstallResult patched = scratch ? PATCH_INSTALL_FAILED :
+        // A BRK written to I/O can change a register instead of arming a trap.
+        bool refused = scratch || bp->target == MONITOR_BACKING_IO;
+        PatchInstallResult patched = refused ? PATCH_INSTALL_FAILED :
                 install_brk_at(bp->address, bp->view_cpu_port, bp->target);
         if (patched != PATCH_INSTALL_OK) {
             blocking_bp_address = bp->address;
@@ -2739,6 +2740,11 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         // masked for the whole run. Alone, it is refused by the step.
         if (!has_other_bp || (pred.kind != DBG_PREDICT_BRK &&
                               pred.kind != DBG_PREDICT_UNSAFE)) {
+            // The run after the step would arm this breakpoint in I/O.
+            if (monitor_backing_store_for_cpu_port(from.pc, cpu_port) ==
+                    MONITOR_BACKING_IO) {
+                return DBG_PATCH_FAILED;
+            }
             bool into = jsr_targets_ram(pred, cpu_port);
             Result skip = step_with_predict(&from, from.pc, pred, into,
                                             &step_ctx, cpu_port,
