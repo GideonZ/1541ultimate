@@ -590,7 +590,11 @@ static MonitorError parse_number_core(const char *text, uint16_t *value)
     }
     if (buffer[0] == '$') {
         const char *hex = buffer;
-        return parse_hex_digits(hex, 1, 4, 0xFFFF, value);
+        MonitorError error = parse_hex_digits(hex, 1, 4, 0xFFFF, value);
+        if (error == MONITOR_OK && *hex) {
+            return is_hex_char(*hex) ? MONITOR_RANGE : MONITOR_SYNTAX;
+        }
+        return error;
     }
     if (buffer[0] == '%') {
         return parse_binary(buffer + 1, value) ? MONITOR_OK : MONITOR_SYNTAX;
@@ -603,7 +607,7 @@ static bool monitor_number_expr_operator(char c)
     return c == '+' || c == '-' || c == '*' || c == '/';
 }
 
-static bool monitor_number_expr_parse_value(const char *&cursor, uint32_t *value)
+static MonitorError monitor_number_expr_parse_value(const char *&cursor, uint32_t *value)
 {
     char token[32];
     int len = 0;
@@ -612,27 +616,29 @@ static bool monitor_number_expr_parse_value(const char *&cursor, uint32_t *value
     skip_spaces(cursor);
     while (*cursor && !is_space_char(*cursor) && !monitor_number_expr_operator(*cursor)) {
         if (len >= (int)sizeof(token) - 1) {
-            return false;
+            return MONITOR_SYNTAX;
         }
         token[len++] = *cursor++;
     }
     token[len] = 0;
     if (len <= 0) {
-        return false;
+        return MONITOR_SYNTAX;
     }
-    if (parse_number_core(token, &parsed) != MONITOR_OK) {
-        return false;
+    MonitorError error = parse_number_core(token, &parsed);
+    if (error != MONITOR_OK) {
+        return (error == MONITOR_RANGE) ? MONITOR_RANGE : MONITOR_SYNTAX;
     }
     *value = parsed;
-    return true;
+    return MONITOR_OK;
 }
 
 static MonitorError monitor_number_expr_parse_term(const char *&cursor, uint32_t *value)
 {
     uint32_t result;
 
-    if (!monitor_number_expr_parse_value(cursor, &result)) {
-        return MONITOR_SYNTAX;
+    MonitorError error = monitor_number_expr_parse_value(cursor, &result);
+    if (error != MONITOR_OK) {
+        return error;
     }
     while (true) {
         uint32_t rhs;
@@ -644,8 +650,9 @@ static MonitorError monitor_number_expr_parse_term(const char *&cursor, uint32_t
             break;
         }
         cursor++;
-        if (!monitor_number_expr_parse_value(cursor, &rhs)) {
-            return MONITOR_SYNTAX;
+        error = monitor_number_expr_parse_value(cursor, &rhs);
+        if (error != MONITOR_OK) {
+            return error;
         }
         if (op == '*') {
             if (rhs != 0 && result > 0xFFFFFFFFUL / rhs) {

@@ -1520,6 +1520,8 @@ static int test_parsers_and_formatters(void)
 
     if (expect(monitor_parse_expression("$1234", &value) == MONITOR_OK && value == 0x1234, "Hex expression parse failed.")) return 1;
     if (expect(monitor_parse_expression("0x1234", &value) == MONITOR_SYNTAX, "0x-prefixed expressions must be rejected.")) return 1;
+    if (expect(monitor_parse_expression("$10000", &value) == MONITOR_RANGE, "A five-digit hex value must be out of range.")) return 1;
+    if (expect(monitor_parse_expression("$1$2", &value) == MONITOR_SYNTAX, "Text after a hex value must be rejected.")) return 1;
     if (expect(monitor_parse_expression("4660", &value) == MONITOR_OK && value == 0x1234, "Decimal expression parse failed.")) return 1;
     if (expect(monitor_parse_expression("%0001001000110100", &value) == MONITOR_OK && value == 0x1234, "Binary expression parse failed.")) return 1;
 
@@ -6296,6 +6298,46 @@ static int test_number_popup_edit_and_commit(void)
         r = expr_mon.poll(0);
         if (expect(r == 0, "Expression Number popup invalid-char test: expression close failed.")) return 1;
         expr_mon.deinit();
+    }
+
+    // A hex value is taken whole: five digits are out of range, and anything
+    // else after the digits is a syntax error.
+    {
+        struct HexCase {
+            const char *expression;
+            const char *status;
+        } cases[] = {
+            { "$10000/$100", "RANGE" },
+            { "1+$10000", "RANGE" },
+            { "$1$2", "SYNTAX" },
+        };
+
+        for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            char line[40];
+            int keys[24] = { 'N', '+', KEY_DELETE, KEY_DELETE, KEY_DELETE, KEY_DELETE };
+            int count = 6;
+            for (const char *typed = cases[i].expression; *typed; typed++) {
+                keys[count++] = *typed;
+            }
+            keys[count++] = KEY_RETURN;
+            FakeKeyboard kb(keys, count);
+
+            ui.screen = &screen;
+            ui.keyboard = &kb;
+            monitor_reset_saved_state();
+
+            BackendMachineMonitor expr_mon(&ui, &backend);
+            expr_mon.init(&screen, &kb);
+            for (int step = 0; step < count; step++) {
+                if (expect(expr_mon.poll(0) == 0, "Expression hex value test: key failed.")) return 1;
+            }
+            get_popup_line(screen, 6, line, sizeof(line));
+            if (expect(strstr(line, cases[i].status) != NULL, cases[i].expression)) return 1;
+            expr_mon.deinit();
+        }
     }
 
     return 0;
