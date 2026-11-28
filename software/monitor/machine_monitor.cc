@@ -2449,6 +2449,8 @@ void MachineMonitor :: apply_go_local(uint16_t address)
     uint16_t span = row_span();
     if (address != state.current_addr) {
         debug_cursor_override = true;
+        // Where a K before the first stop starts: its cursor is the target.
+        debug_entry_addr = address;
     }
     state.current_addr = address;
     discard_partial_entry();
