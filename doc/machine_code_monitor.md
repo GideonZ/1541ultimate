@@ -801,7 +801,7 @@ C021  RTS
 
 `D` starts Debug in the Assembly view. It turns Poll off, because `P` sets breakpoints. Starting Debug runs nothing.
 
-Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and `G` start at the cursor address. `K` starts where Debug started and runs to the cursor. After a stop, `T`, `D`, `U`, `G` and `K` continue from the stop.
+Until the first stop the CPU registers are unknown and shown blank. `T`, `D` and `G` start at the cursor address. `K` starts where Debug started and runs to the cursor. Moving the view with the cursor keys, `J`, a bookmark or a follow does not change where execution starts. After a stop, `T`, `D`, `U`, `G` and `K` continue from the stop.
 
 | Key                 | Effect                                                                   |
 | ------------------- | ------------------------------------------------------------------------ |
