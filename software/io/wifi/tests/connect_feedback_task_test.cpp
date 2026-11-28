@@ -280,7 +280,6 @@ TEST(WifiConnectFeedbackTask, refusal_after_the_disable_is_not_reported)
     CHECK(wifi.getState() == eWifi_Disabled, "Disabled");
 }
 
-#if U64 != 2
 // A radio-off confirmation due in 10 s, and a connect outcome due in 20 s: the task wakes
 // when the radio-off one is due, then when the other is. The pick comes while the boot's
 // radio off waits for its confirmation (the task is not Disabled yet).
@@ -317,4 +316,3 @@ TEST(WifiConnectFeedbackTask, wakes_for_the_connect_deadline_first)
     CHECK(strcmp(messages, "Could not connect to HomeNet\n") == 0, "the outcome is reported");
     CHECK(message_at == picked_at + (20 * configTICK_RATE_HZ), "at its deadline, not at the radio off one");
 }
-#endif
