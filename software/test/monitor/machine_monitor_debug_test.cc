@@ -5873,9 +5873,9 @@ static int test_go_from_current_breakpoint_stops_at_callee_breakpoint()
     if (expect(stopped.valid && stopped.pc == 0x3000,
                "G callee breakpoint must be the captured stop PC")) return 1;
     if (expect(m.brk_patch_writes == 1,
-               "G must keep the current breakpoint masked for the whole continue run")) return 1;
+               "G must stop in the callee after the one JSR")) return 1;
     if (expect(fake_recorded_brk_patch(m, 0x3000),
-               "G must arm the callee breakpoint while the current one stays masked")) return 1;
+               "G must arm the callee breakpoint while leaving the current one")) return 1;
     return 0;
 }
 
@@ -5997,6 +5997,124 @@ static int test_run_to_uses_the_banking_after_leaving_a_breakpoint()
     if (expect(m.run_to(from, 0xE000, &bps, 0x2000, &ctx) == DebugSession::DBG_OK &&
                ctx.pc == 0xE000,
                "K must target the memory banked in after the step")) return 1;
+    return 0;
+}
+
+static int test_go_from_a_breakpoint_rearms_it_beside_another()
+{
+    FakeTrappingMachine m;
+    memset(&m.ram[0x2000], 0xEA, 8);
+    if (expect(m.park(), "parking step must complete")) return 1;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x3000, 0x07);
+    bps.allocate(0x2000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xF8;
+
+    if (expect(m.go(from, &bps, 0x2000) == DebugSession::DBG_OK,
+               "G beside another breakpoint must complete")) return 1;
+    DebugContext stopped;
+    if (expect(m.snapshot(&stopped) == DebugSession::DBG_OK &&
+               stopped.pc == 0x2000,
+               "G must arm the breakpoint it started from again")) return 1;
+    return 0;
+}
+
+static int test_step_out_from_a_breakpoint_rearms_it()
+{
+    FakeTrappingMachine m;
+    m.ram[0x2000] = 0x20; // JSR $3000
+    m.ram[0x2001] = 0x00;
+    m.ram[0x2002] = 0x30;
+    m.ram[0x2003] = 0xEA;
+    memset(&m.ram[0x3000], 0xEA, 4);
+    m.ram[0x01F9] = 0x02; // return to $2003
+    m.ram[0x01FA] = 0x20;
+    if (expect(m.park(), "parking step must complete")) return 1;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x3000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x3000;
+    from.sp = 0xF8;
+
+    DebugContext ctx;
+    if (expect(m.step_out(from, &bps, &ctx) == DebugSession::DBG_OK,
+               "U from a breakpoint must complete")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0x2003,
+               "U from a breakpoint must reach the caller")) return 1;
+    if (expect(fake_recorded_brk_patch(m, 0x3000),
+               "U must arm the breakpoint it started from again")) return 1;
+    return 0;
+}
+
+static int test_step_out_uses_the_banking_after_leaving_a_breakpoint()
+{
+    FakeTrappingMachine m;
+    memset(&m.ram[0x3000], 0xEA, 4);
+    m.ram[0xE000] = 0xEA;
+    m.ram[0x01F9] = 0xFF; // return to $E000
+    m.ram[0x01FA] = 0xDF;
+    m.ram[0xDFFD] = 0x20;
+    if (expect(m.park(), "parking step must complete")) return 1;
+    // The instruction under the breakpoint banks the KERNAL out.
+    m.ram[FAKE_STORE_CPU_DDR] = 0x07;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x05;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x3000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x3000;
+    from.sp = 0xF8;
+    from.live_cpu_port_valid = true;
+    from.live_cpu_port = 0x07;
+
+    DebugContext ctx;
+    if (expect(m.step_out(from, &bps, &ctx) == DebugSession::DBG_OK &&
+               ctx.pc == 0xE000,
+               "U must return into the memory banked in after the step")) return 1;
+    return 0;
+}
+
+static int test_step_out_from_a_breakpoint_on_rts_returns_in_one_step()
+{
+    FakeTrappingMachine m;
+    m.ram[0x2000] = 0x20; // JSR $3000
+    m.ram[0x2001] = 0x00;
+    m.ram[0x2002] = 0x30;
+    m.ram[0x2003] = 0xEA;
+    m.ram[0x3000] = 0x60; // RTS
+    m.ram[0x01F9] = 0x02;
+    m.ram[0x01FA] = 0x20;
+    if (expect(m.park(), "parking step must complete")) return 1;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x3000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x3000;
+    from.sp = 0xF8;
+
+    int patches = m.brk_patch_writes;
+    DebugContext ctx;
+    if (expect(m.step_out(from, &bps, &ctx) == DebugSession::DBG_OK &&
+               ctx.pc == 0x2003,
+               "U on a breakpointed RTS must stop at the caller")) return 1;
+    if (expect(m.brk_patch_writes == patches + 1,
+               "U on a breakpointed RTS must not run on from the caller")) return 1;
     return 0;
 }
 
@@ -10025,6 +10143,10 @@ int main()
     RUN(test_step_over_stops_at_callee_breakpoint);
     RUN(test_run_to_leaves_the_breakpoint_it_is_stopped_on);
     RUN(test_run_to_uses_the_banking_after_leaving_a_breakpoint);
+    RUN(test_go_from_a_breakpoint_rearms_it_beside_another);
+    RUN(test_step_out_from_a_breakpoint_rearms_it);
+    RUN(test_step_out_uses_the_banking_after_leaving_a_breakpoint);
+    RUN(test_step_out_from_a_breakpoint_on_rts_returns_in_one_step);
     RUN(test_visible_basic_step_uses_rom_patch_support);
     RUN(test_visible_rom_step_bytes_use_cpu_visible_mapping);
     RUN(test_u64_debug_cpu_port_uses_live_cpu_bank);

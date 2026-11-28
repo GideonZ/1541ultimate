@@ -2554,12 +2554,47 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     } else {
         return DBG_NOT_IN_SUBROUTINE;
     }
+    // A breakpoint the program is stopped on is stepped past first, so that the
+    // rest of the frame runs with it armed.
+    DebugContext start = from;
+    if (context_at_breakpoint(from, bps, 0, false)) {
+        uint8_t bytes[3];
+        for (int i = 0; i < 3; i++) {
+            bytes[i] = read_patch_byte((uint16_t)(from.pc + i), cpu_port);
+        }
+        DebugPredictResult pred;
+        debug_predict(from.pc, bytes, false, &pred);
+        // An opcode that cannot be stepped stays masked for the whole run.
+        if (pred.kind != DBG_PREDICT_BRK && pred.kind != DBG_PREDICT_UNSAFE) {
+            bool into = jsr_targets_ram(pred, cpu_port);
+            Result stepped = step_with_predict(&from, from.pc, pred, into,
+                                               &start, cpu_port, bps, from.pc,
+                                               true);
+            if (stepped != DBG_OK) {
+                return stepped;
+            }
+            if (start.pc == target) {
+                pop_return_target(target);
+            }
+            if (start.pc == target ||
+                    context_at_breakpoint(start, bps, 0, false)) {
+                *ctx = start;
+                return DBG_OK;
+            }
+            if (into) {
+                pop_return_target(pred.fall_through);
+            }
+            cpu_port = execution_cpu_port(&start);
+        }
+    }
+    // Nothing to mask once the starting breakpoint is behind the CPU.
+    bool mask_start = start.pc == from.pc;
     // A Step Out that would free-run through visible ROM (launch or return
     // site) walks the remainder of the frame while parked instead of
     // releasing the live CPU into the fetch-lagging aperture.
-    if (frozen_rom_run_unreliable(from.pc, target, true, cpu_port)) {
-        Result walked = parked_step_walk(from, target, return_sp, bps,
-                                         from.pc, true, ctx);
+    if (frozen_rom_run_unreliable(start.pc, target, true, cpu_port)) {
+        Result walked = parked_step_walk(start, target, return_sp, bps,
+                                         from.pc, mask_start, ctx);
         if (walked == DBG_OK && ctx->valid && ctx->pc == target) {
             pop_return_target(target);
         }
@@ -2573,7 +2608,8 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     MonitorBackingStore from_target =
         monitor_backing_store_for_cpu_port(from.pc, cpu_port);
     PatchInstallResult bp_patched = install_breakpoints(bps, from.pc,
-                                                        from_target, true, true);
+                                                        from_target, mask_start,
+                                                        true);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
@@ -2585,12 +2621,12 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
         return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
             DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
     }
-    Result result = perform_run(&from, from.pc, false, ctx, cpu_port);
+    Result result = perform_run(&start, start.pc, false, ctx, cpu_port);
     if (result == DBG_OK && ctx->valid && ctx->pc == target) {
         pop_return_target(target);
     }
     if (result == DBG_OK && ctx->valid &&
-            context_at_breakpoint(*ctx, bps, from.pc, true)) {
+            context_at_breakpoint(*ctx, bps, from.pc, mask_start)) {
         return DBG_OK;
     }
     if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
@@ -2625,26 +2661,36 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
 
     const DebugContext *resume_from = &from;
     DebugContext step_ctx;
-    if (skip_current_bp && !has_other_bp) {
+    if (skip_current_bp) {
         uint8_t bytes[3];
         for (int i = 0; i < 3; i++) {
             bytes[i] = read_patch_byte((uint16_t)(from.pc + i), cpu_port);
         }
         DebugPredictResult pred;
         debug_predict(from.pc, bytes, false, &pred);
-        Result skip = step_with_predict(&from, from.pc, pred, false, &step_ctx, cpu_port,
-                                        bps, from.pc, true);
-        if (skip != DBG_OK) {
-            return skip;
+        // Beside other breakpoints an opcode that cannot be stepped stays
+        // masked for the whole run. Alone, it is refused by the step.
+        if (!has_other_bp || (pred.kind != DBG_PREDICT_BRK &&
+                              pred.kind != DBG_PREDICT_UNSAFE)) {
+            bool into = jsr_targets_ram(pred, cpu_port);
+            Result skip = step_with_predict(&from, from.pc, pred, into,
+                                            &step_ctx, cpu_port,
+                                            bps, from.pc, true);
+            if (skip != DBG_OK) {
+                return skip;
+            }
+            if (step_ctx.valid && step_ctx.pc == from.pc) {
+                return DBG_OK;
+            }
+            if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
+                return DBG_OK;
+            }
+            if (into) {
+                pop_return_target(pred.fall_through);
+            }
+            DebugContext out;
+            return run_to(step_ctx, from.pc, bps, step_ctx.pc, &out);
         }
-        if (step_ctx.valid && step_ctx.pc == from.pc) {
-            return DBG_OK;
-        }
-        if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
-            return DBG_OK;
-        }
-        DebugContext out;
-        return run_to(step_ctx, from.pc, 0, step_ctx.pc, &out);
     }
 
     MonitorBackingStore from_target =

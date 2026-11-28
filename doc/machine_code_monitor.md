@@ -865,8 +865,9 @@ The CPU executes from the memory banked in through `$01`, not from the bank sele
 - `T` executes one instruction. It refuses an `RTS` whose return address does not follow a `JSR`.
 - `D` runs a `JSR` as one step, including calls into KERNAL or BASIC. For any other instruction it does the same as `T`.
 - `U` needs a stop first. After `T` into subroutines it works at any depth. After a breakpoint or `K` inside a subroutine it works while the return address is on top of the stack. Otherwise it shows `NOT IN SUBROUTINE`.
-- `G` runs until an enabled breakpoint, and runs past a breakpoint the program is stopped on. With no enabled breakpoint, the program runs freely and Debug ends; on the C64 or HDMI screen the monitor also closes.
-- `K` runs until the cursor address, or an earlier enabled breakpoint. It runs past a breakpoint the program is stopped on.
+- `G` runs until an enabled breakpoint. With no enabled breakpoint, the program runs freely and Debug ends; on the C64 or HDMI screen the monitor also closes.
+- `K` runs until the cursor address, or an earlier enabled breakpoint.
+- `U`, `G` and `K` step past a breakpoint the program is stopped on. It stays set, and stops the program the next time it gets there.
 
 If no breakpoint is reached within a few seconds, the debugger shows `DEBUG TIMEOUT`.
 
