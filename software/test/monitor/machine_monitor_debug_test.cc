@@ -462,6 +462,10 @@ public:
     int drop_hard_nmi_writes;
     int brk_patch_writes;
     bool nmi_restores_vector;
+    // Models a launch NMI the CPU does not take: the trampoline never runs, so
+    // the NMI vector keeps naming it and nothing traps. The next pulse is taken.
+    int nmi_launch_misses;
+    bool nmi_launch_missed;
     uint8_t saved_fake_nmi_vector[2];
     int delay_calls;
     // Milliseconds the modelled cancel-key poll costs per sentinel poll.
@@ -511,7 +515,8 @@ public:
           contextless_launch_misses(0),
           contextless_launch_stray_pc(0xFE40),
           drop_hard_nmi_writes(0),
-          brk_patch_writes(0), nmi_restores_vector(true), delay_calls(0), cancel_poll_cost_ms(0),
+          brk_patch_writes(0), nmi_restores_vector(true), nmi_launch_misses(0),
+          nmi_launch_missed(false), delay_calls(0), cancel_poll_cost_ms(0),
           pokes_at_cancel(0),
           last_brk_patch_addr(0),
           visible_pokes(0),
@@ -683,6 +688,16 @@ protected:
     virtual void pulse_nmi_and_release(bool)
     {
         nmi_pulses++;
+        if (nmi_launch_misses > 0) {
+            nmi_launch_misses--;
+            nmi_launch_missed = true;
+            sentinel_armed = false;
+            return;
+        }
+        if (nmi_launch_missed) {
+            nmi_launch_missed = false;
+            sentinel_armed = true;
+        }
         // The redirect trampoline's first two instructions put the NMI vector
         // back, so a CPU that services the request leaves it restored. Model
         // that, or nothing here can tell a request that was taken from one
@@ -5859,6 +5874,94 @@ static int test_contextless_breakpoint_go_uses_backend_launch()
     return 0;
 }
 
+// Parks the CPU at $2001 after one trace, with a RAM breakpoint at $C000 that
+// the following run does not reach unless the test arms a trap there.
+static void fake_park_for_breakpoint_go(FakeFreezeMachine &m, DebugContext *parked,
+                                        MonitorBreakpoints *bps)
+{
+    m.ram[0x2000] = 0xEA;
+    m.ram[0x2001] = 0xEA;
+    m.ram[0xC000] = 0xEA;
+    uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, nop, false, &pred);
+    m.arm_capture_context(0x2001, 0xF8, 0, 0, 0, 0x24);
+    m.trace_at(0x2000, pred, parked);
+    bps->allocate(0xC000, 0x07);
+}
+
+static int test_parked_go_timeout_runs_the_program_once()
+{
+    // The release from the spin loop ran the program for the whole wait, so
+    // launching it again would run code that has already executed.
+    FakeFreezeMachine m(false);
+    DebugContext parked;
+    MonitorBreakpoints bps;
+    fake_park_for_breakpoint_go(m, &parked, &bps);
+    if (expect(parked.valid && parked.pc == 0x2001,
+               "Setup must park at $2001")) return 1;
+    m.sentinel_armed = false;
+    int nmi_pulses_before = m.nmi_pulses;
+
+    DebugSession::Result r = m.go(parked, &bps, parked.pc);
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "A parked G that never traps must report DBG_TIMEOUT")) return 1;
+    if (expect(m.nmi_pulses == nmi_pulses_before,
+               "A timed-out parked G must not re-park and launch the program again")) return 1;
+    if (expect(m.ram[0xC000] == 0xEA,
+               "Timeout must restore the breakpoint byte")) return 1;
+    return 0;
+}
+
+static int test_parked_go_stops_at_a_program_brk_without_rerunning()
+{
+    // A trap at a BRK the program reached is where it stopped, not a launch the
+    // CPU missed: report it instead of running the program again.
+    FakeFreezeMachine m(false);
+    DebugContext parked;
+    MonitorBreakpoints bps;
+    fake_park_for_breakpoint_go(m, &parked, &bps);
+    m.ram[0x2003] = 0x00;
+    m.arm_capture_context(0x2003, 0xF6, 0, 0, 0, 0x24);
+    int nmi_pulses_before = m.nmi_pulses;
+
+    DebugSession::Result r = m.go(parked, &bps, parked.pc);
+    DebugContext stopped;
+    m.snapshot(&stopped);
+    if (expect(r == DebugSession::DBG_OK && stopped.valid && stopped.pc == 0x2003,
+               "A parked G must stop at the program's own BRK at $2003")) return 1;
+    if (expect(m.nmi_pulses == nmi_pulses_before,
+               "A program BRK must not re-park and launch the program again")) return 1;
+    return 0;
+}
+
+static int test_missed_nmi_launch_is_issued_again()
+{
+    // A launch NMI the CPU does not take leaves the NMI vector on the
+    // trampoline and runs no code from the launch, so issuing it again is safe.
+    FakeFreezeMachine m(false);
+    m.ram[0x2000] = 0xEA;
+    m.ram[0xC000] = 0xEA;
+    MonitorBreakpoints bps;
+    bps.allocate(0xC000, 0x07);
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xF8;
+    from.sr = 0x24;
+    m.nmi_launch_misses = 1;
+
+    DebugSession::Result r = m.go(from, &bps, from.pc);
+    DebugContext stopped;
+    m.snapshot(&stopped);
+    if (expect(r == DebugSession::DBG_OK && stopped.valid && stopped.pc == 0xC000,
+               "A missed launch NMI must be issued again and stop at $C000")) return 1;
+    if (expect(m.nmi_pulses == 2,
+               "A missed launch must take one more NMI to re-park the CPU")) return 1;
+    return 0;
+}
+
 static int test_contextless_backend_launch_installs_and_restores_hard_nmi_vector()
 {
     // A cartridge launch delivers its NMI to a program that may have the KERNAL
@@ -10299,6 +10402,9 @@ int main()
     RUN(test_traced_kernal_to_basic_step_out_patches_kernal_return);
     RUN(test_freeze_go_breakpoint_refreezes);
     RUN(test_contextless_breakpoint_go_uses_backend_launch);
+    RUN(test_parked_go_timeout_runs_the_program_once);
+    RUN(test_parked_go_stops_at_a_program_brk_without_rerunning);
+    RUN(test_missed_nmi_launch_is_issued_again);
     RUN(test_contextless_backend_launch_installs_and_restores_hard_nmi_vector);
     RUN(test_contextless_launch_reissues_when_it_misses_the_breakpoint);
     RUN(test_go_from_current_breakpoint_stops_at_callee_breakpoint);

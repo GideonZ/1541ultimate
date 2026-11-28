@@ -52,8 +52,8 @@ static const uint8_t HARD_VECTOR_DEFAULT_LO = 0x48;
 static const uint8_t HARD_VECTOR_DEFAULT_HI = 0xFF;
 static const uint16_t DEBUG_AREA_END  = 0x03FB;
 
-// Max extra attempts to re-issue a patched launch when the live 6510 fetched past
-// an installed BRK and ran away. The race is rare per launch, so keep it bounded.
+// Max extra attempts to re-issue a patched launch that ran no program code
+// (relaunch_on_breakpoint_runaway). A miss is rare per launch, so keep it bounded.
 static const int MAX_BREAKPOINT_RELAUNCH = 2;
 // A cartridge contextless launch delivers its NMI through a vector the U2
 // writes into RAM under the KERNAL, over a DMA path that loses a write now and
@@ -947,33 +947,38 @@ DebugSession::Result BrkDebugSession :: relaunch_on_breakpoint_runaway(
     bool nmi_launch_valid, uint16_t nmi_target, bool nmi_force_cpu_port,
     uint8_t cpu_port, int wait_ms)
 {
-    // Self-heal a launch that missed an installed BRK patch (never traps, or
-    // traps at an unrelated $00): re-park and re-issue, via the parked restore
-    // path for context launches (registers preserved) or a repeated NMI
-    // redirect for no-context ones. A normal launch returns immediately.
+    // Re-park and re-issue a launch that ran no program code: a launch NMI the
+    // CPU never took, or a trap on the launch address itself. A launch that ran
+    // the program is reported as it ended, since running it again would repeat
+    // what it has already done.
     if ((!launch_ctx && !nmi_launch_valid) || !has_any_patch()) {
         return waited;
     }
     for (int attempt = 0; attempt < MAX_BREAKPOINT_RELAUNCH; attempt++) {
-        bool runaway;
         bool launch_byte_last = false;
         if (waited == DBG_TIMEOUT) {
-            runaway = true;
+            // The NMI trampoline puts the NMI vector back first, so a vector
+            // that still names it means the launch NMI was never taken.
+            bool stopped_it = begin_stopped_session();
+            bool nmi_not_taken = nmi_trampoline_installed &&
+                peek_visible(NMI_VECTOR_LO) == (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF) &&
+                peek_visible(NMI_VECTOR_HI) == (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8);
+            end_stopped_session(stopped_it);
+            if (!nmi_not_taken) {
+                return waited;
+            }
         } else if (waited == DBG_OK) {
             uint16_t captured_brk_pc;
             if (captured_at_installed_patch(&captured_brk_pc)) {
                 return waited;   // legitimate trap at one of our BRKs
             }
-            if (launch_ctx && launch_ctx->valid &&
-                    captured_brk_pc == launch_ctx->pc) {
-                launch_byte_last = true;
+            if (!launch_ctx || !launch_ctx->valid ||
+                    captured_brk_pc != launch_ctx->pc) {
+                return waited;   // the program ran into a BRK of its own
             }
-            runaway = true;
+            launch_byte_last = true;
         } else {
             return waited;       // cancelled / reset / refused - never retry
-        }
-        if (!runaway) {
-            return waited;
         }
         repark_running_cpu(cpu_port);
         if (launch_ctx && launch_byte_last) {
