@@ -191,6 +191,7 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
     browser->use_ui_focus_stack = false;
     browser->title = title;
     browser->pick_mode = save_mode ? TreeBrowser::PICK_SAVE : TreeBrowser::PICK_LOAD;
+    browser->ignore_tool_shortcuts = true;
     browser->init();
     if (s_monitor_browse_path.length() > 1) {
         browser->cd(s_monitor_browse_path.c_str());

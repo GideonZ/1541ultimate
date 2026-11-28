@@ -57,6 +57,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     has_border = false;
     use_ui_focus_stack = true;
     pick_mode = PICK_NONE;
+    ignore_tool_shortcuts = false;
     picked = false;
 
     if(!state) {
@@ -414,7 +415,10 @@ int TreeBrowser :: handle_key(int c)
             case KEY_CTRL_O:
             case KEY_CTRL_R:
             case KEY_CTRL_I:
-                return 0;
+                if (ignore_tool_shortcuts) {
+                    return 0;
+                }
+                break;
             default:
                 break;
         }
